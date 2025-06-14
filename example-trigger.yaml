@@ -1,0 +1,4 @@
+platform: state
+entity_id: sensor.temperature
+from: "20"
+to: "25"

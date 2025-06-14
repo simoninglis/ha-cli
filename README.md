@@ -4,6 +4,7 @@ Command-line helper for managing Home Assistant automations over HTTP + WebSocke
 
 ## Features
 
+### Core Automation Management
 - **List** all automations with their status
 - **Create** new automations from YAML/JSON files
 - **Read** automation details
@@ -12,9 +13,21 @@ Command-line helper for managing Home Assistant automations over HTTP + WebSocke
 - **Enable/Disable** automations via WebSocket
 - **Reload** all automations
 - **Dry-run mode** to preview changes before applying
+
+### Real-Time WebSocket Features (NEW!)
+- **Monitor** automation states and executions in real-time
+- **Test triggers** interactively with live feedback
+- **Stream events** from Home Assistant with filtering
+- **Control** multiple automations simultaneously
+- **Track execution metrics** and performance data
+- **Auto-reconnection** for reliable WebSocket connections
+
+### Developer Experience
 - Cross-platform support (Linux, macOS, Windows)
 - Async/await architecture for performance
 - Rich terminal output with colors and tables
+- Comprehensive error handling and recovery
+- Extensive test coverage
 
 ## Installation
 
@@ -178,6 +191,82 @@ ha-automation reload
 
 ```bash
 ha-automation version
+```
+
+### WebSocket Real-Time Commands (NEW!)
+
+#### Monitor Automations
+
+Monitor automation states and executions in real-time:
+
+```bash
+# Show current status of all automations
+ha-automation monitor
+
+# Follow mode - continuous monitoring with live updates
+ha-automation monitor --follow
+
+# See execution details with debug
+ha-automation monitor --follow --debug
+```
+
+#### Test Triggers
+
+Test automation triggers interactively:
+
+```bash
+# Test a trigger from a YAML file
+ha-automation test-trigger trigger.yaml
+
+# Interactive mode - see events as they happen
+ha-automation test-trigger trigger.yaml --interactive
+
+# Set custom timeout and max events
+ha-automation test-trigger trigger.yaml --timeout 120 --max-events 5
+```
+
+Example trigger file:
+```yaml
+platform: state
+entity_id: sensor.temperature
+from: "20"
+to: "25"
+```
+
+#### Stream Events
+
+Stream Home Assistant events in real-time:
+
+```bash
+# Stream all events
+ha-automation events
+
+# Stream specific event type
+ha-automation events state_changed
+
+# Stream only automation-related events
+ha-automation events --automations-only
+
+# Show event details with debug
+ha-automation events --debug
+```
+
+#### Control Automations
+
+Control multiple automations via WebSocket:
+
+```bash
+# Enable multiple automations
+ha-automation control enable automation1,automation2,automation3
+
+# Disable automations (can omit 'automation.' prefix)
+ha-automation control disable test1,test2
+
+# Trigger automations manually
+ha-automation control trigger my_automation
+
+# Toggle automation states
+ha-automation control toggle bedroom_lights,kitchen_lights
 ```
 
 ## Examples
