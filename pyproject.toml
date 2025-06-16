@@ -1,14 +1,15 @@
 [tool.poetry]
-name = "ha-automation-cli"
-version = "0.1.0"
-description = "Command-line helper for managing Home Assistant automations"
+name = "ha-cli"
+version = "0.3.1"
+description = "Multi-domain command-line tool for managing Home Assistant configurations"
 authors = ["Simbo <simbo@example.com>"]
 license = "MIT"
 readme = "README.md"
-packages = [{include = "ha_automation"}]
+packages = [{include = "ha_automation"}, {include = "ha_cli"}]
 
 [tool.poetry.scripts]
-ha-automation = "ha_automation.__main__:app"
+ha-cli = "ha_cli.__main__:main"
+ha-automation = "ha_cli.__main__:automation_compat"
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -17,6 +18,8 @@ websockets = "^12.0"
 pydantic = "^2.0"
 typer = {extras = ["all"], version = "^0.9.0"}
 "ruamel.yaml" = "^0.18"
+aiohttp = "^3.12.12"
+python-dotenv = "^1.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"

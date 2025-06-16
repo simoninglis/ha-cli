@@ -1,0 +1,1 @@
+"""Home Assistant domains (automations, dashboards, etc.)."""
