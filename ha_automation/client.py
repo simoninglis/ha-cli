@@ -628,3 +628,26 @@ class HAClient:
             service=service,
             service_data=data,
         )
+    
+    async def get_automation_config(self, automation_id: str) -> dict[str, Any]:
+        """Get automation configuration via WebSocket.
+        
+        Args:
+            automation_id: ID of automation to get
+            
+        Returns:
+            Automation configuration
+            
+        Raises:
+            NotFoundError: If automation not found
+        """
+        try:
+            result = await self._ws_call(
+                "automation/config",
+                automation_id=automation_id,
+            )
+            return result
+        except WebSocketError as e:
+            if "not_found" in str(e).lower():
+                raise NotFoundError(f"Automation not found: {automation_id}")
+            raise

@@ -130,7 +130,9 @@ def list(
                                     ]
                                 }
                             )
-                            print(error_output)
+                            sys.stdout.write(error_output)
+                            sys.stdout.write('\n')
+                            sys.stdout.flush()
                         else:
                             console.print(f"[red]Error:[/red] Invalid storage filter: {storage}. Use 'ui', 'file', or 'all'")
                         sys.exit(EXIT_USAGE_ERROR)
@@ -207,11 +209,16 @@ def list(
                         suggestions.setdefault("detected_issues", []).extend(advanced_issues)
                     
                     porcelain_output = formatter.success(data, metadata, suggestions)
-                    print(porcelain_output)
+                    sys.stdout.write(porcelain_output)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
                     
                 elif json_output:
                     data = [automation.to_json_dict() for automation in automations]
-                    print(json.dumps(data, indent=2))
+                    json_str = json.dumps(data, indent=2)
+                    sys.stdout.write(json_str)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
                     
                 else:
                     # Original table output
@@ -253,7 +260,9 @@ def list(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                print(error_output)
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -311,7 +320,9 @@ def read(
                                     ]
                                 }
                             )
-                            print(error_output)
+                            sys.stdout.write(error_output)
+                            sys.stdout.write('\n')
+                            sys.stdout.flush()
                         else:
                             console.print(f"[red]Error:[/red] Automation '{automation_id}' not found")
                         sys.exit(EXIT_HA_ERROR)
@@ -453,10 +464,15 @@ def read(
                         suggestions.setdefault("detected_issues", []).extend(advanced_issues)
                     
                     porcelain_output = formatter.success(automation_data, metadata, suggestions)
-                    print(porcelain_output)
+                    sys.stdout.write(porcelain_output)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
                     
                 elif json_output:
-                    print(json.dumps(automation.to_json_dict(), indent=2))
+                    json_str = json.dumps(automation.to_json_dict(), indent=2)
+                    sys.stdout.write(json_str)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
                     
                 else:
                     # Original human-readable output
@@ -493,7 +509,9 @@ def read(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                print(error_output)
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise

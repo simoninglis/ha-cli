@@ -193,3 +193,34 @@ See ha-rename documentation for full usage.
 - Always check credentials in `.mcp.json` first
 - REST API may not be available for automations - use workarounds
 - For tool development, see `../CLAUDE.md`
+
+## Technical Documentation
+
+### Home Assistant Integration
+For detailed technical information about Home Assistant API constraints, data quality issues, and integration patterns, see:
+- [`docs/HOME_ASSISTANT_INTEGRATION.md`](docs/HOME_ASSISTANT_INTEGRATION.md) - Comprehensive guide on working with Home Assistant APIs
+
+### Key Points for Quick Reference
+
+#### Control Characters in Output
+**Issue**: JSON output may appear corrupted with newlines in unexpected places
+**Root Cause**: Python's `print()` function, not the data
+**Solution**: Use `sys.stdout.write()` for all structured output:
+
+```python
+# Instead of: print(json.dumps(data, indent=2))
+import sys
+sys.stdout.write(json.dumps(data, indent=2))
+sys.stdout.write('\n')
+sys.stdout.flush()
+```
+
+#### API Availability
+- REST API (`/api/config/automation/config`) requires `config` integration
+- Always implement WebSocket fallbacks
+- Set WebSocket `max_size=10*1024*1024` for large responses
+
+#### Common Issues
+- 404 on automation endpoints: REST API not available, use WebSocket
+- Large payload errors: Increase WebSocket max_size
+- Invalid JSON output: Use sys.stdout.write() instead of print()

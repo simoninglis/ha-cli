@@ -27,18 +27,18 @@ class TestCLI:
     
     @patch("ha_automation.cli.get_client_config")
     @patch("ha_automation.cli.HAClient")
-    @patch("ha_automation.cli.AutomationCRUD")
-    def test_list_command(self, mock_crud_class, mock_client_class, mock_config):
+    @patch("ha_automation.storage.unified_automation_service.UnifiedAutomationService")
+    def test_list_command(self, mock_service_class, mock_client_class, mock_config):
         """Test list command."""
         # Setup mocks
         mock_config.return_value = ("http://test:8123", "test-token")
         mock_client = AsyncMock()
         mock_client_class.return_value.__aenter__.return_value = mock_client
         
-        mock_crud = MagicMock()
-        mock_crud_class.return_value = mock_crud
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
         
-        # Mock list_automations to return test data
+        # Mock list_all to return test data
         test_automations = [
             Automation(
                 id="test_1",
@@ -59,7 +59,7 @@ class TestCLI:
         async def mock_list():
             return test_automations
         
-        mock_crud.list_automations.side_effect = mock_list
+        mock_service.list_all.side_effect = mock_list
         
         # Run command
         result = runner.invoke(app, ["list"])
@@ -70,31 +70,32 @@ class TestCLI:
     
     @patch("ha_automation.cli.get_client_config")
     @patch("ha_automation.cli.HAClient")
-    @patch("ha_automation.cli.AutomationCRUD")
-    def test_list_command_json(self, mock_crud_class, mock_client_class, mock_config):
+    @patch("ha_automation.storage.unified_automation_service.UnifiedAutomationService")
+    def test_list_command_json(self, mock_service_class, mock_client_class, mock_config):
         """Test list command with JSON output."""
         # Setup mocks
         mock_config.return_value = ("http://test:8123", "test-token")
         mock_client = AsyncMock()
         mock_client_class.return_value.__aenter__.return_value = mock_client
         
-        mock_crud = MagicMock()
-        mock_crud_class.return_value = mock_crud
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
         
-        # Mock list_automations to return raw data
-        test_data = [
-            {
-                "id": "test_1",
-                "alias": "Test 1",
-                "trigger": [{"platform": "time"}],
-                "action": [{"service": "test"}],
-            }
+        # Mock list_all to return test data
+        test_automations = [
+            Automation(
+                id="test_1",
+                alias="Test 1",
+                trigger=[{"platform": "time"}],
+                action=[{"service": "test"}],
+                mode="single",
+            )
         ]
         
-        async def mock_list(json_output=False):
-            return test_data
+        async def mock_list():
+            return test_automations
         
-        mock_crud.list_automations.side_effect = mock_list
+        mock_service.list_all.side_effect = mock_list
         
         # Run command
         result = runner.invoke(app, ["list", "--json"])
@@ -182,21 +183,21 @@ class TestCLI:
     
     @patch("ha_automation.cli.get_client_config")
     @patch("ha_automation.cli.HAClient")
-    @patch("ha_automation.cli.AutomationCRUD")
-    def test_delete_command_with_confirmation(self, mock_crud_class, mock_client_class, mock_config, tmp_path):
+    @patch("ha_automation.storage.unified_automation_service.UnifiedAutomationService")
+    def test_delete_command_with_confirmation(self, mock_service_class, mock_client_class, mock_config, tmp_path):
         """Test delete command with confirmation."""
         # Setup mocks
         mock_config.return_value = ("http://test:8123", "test-token")
         mock_client = AsyncMock()
         mock_client_class.return_value.__aenter__.return_value = mock_client
         
-        mock_crud = MagicMock()
-        mock_crud_class.return_value = mock_crud
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
         
         async def mock_delete(automation_id):
             pass
         
-        mock_crud.delete_automation.side_effect = mock_delete
+        mock_service.delete.side_effect = mock_delete
         
         # Run command with "n" for no
         result = runner.invoke(app, ["delete", "test_automation"], input="n\n")
@@ -210,21 +211,21 @@ class TestCLI:
     
     @patch("ha_automation.cli.get_client_config")
     @patch("ha_automation.cli.HAClient")
-    @patch("ha_automation.cli.AutomationCRUD")
-    def test_delete_command_force(self, mock_crud_class, mock_client_class, mock_config):
+    @patch("ha_automation.storage.unified_automation_service.UnifiedAutomationService")
+    def test_delete_command_force(self, mock_service_class, mock_client_class, mock_config):
         """Test delete command with force flag."""
         # Setup mocks
         mock_config.return_value = ("http://test:8123", "test-token")
         mock_client = AsyncMock()
         mock_client_class.return_value.__aenter__.return_value = mock_client
         
-        mock_crud = MagicMock()
-        mock_crud_class.return_value = mock_crud
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
         
         async def mock_delete(automation_id):
             pass
         
-        mock_crud.delete_automation.side_effect = mock_delete
+        mock_service.delete.side_effect = mock_delete
         
         # Run command
         result = runner.invoke(app, ["delete", "test_automation", "--force"])
@@ -241,8 +242,12 @@ class TestCLI:
         assert result.exit_code == 3  # EXIT_HA_ERROR
         assert "Test error" in result.stdout
     
-    def test_create_dry_run(self, tmp_path):
+    @patch("ha_automation.storage.file_automation_manager.Path.home")
+    def test_create_dry_run(self, mock_home, tmp_path):
         """Test create command with dry-run flag."""
+        # Mock the home directory to use tmp_path
+        mock_home.return_value = tmp_path
+        
         # Create a test automation file
         automation_file = tmp_path / "test_automation.yaml"
         automation_file.write_text("""
@@ -263,8 +268,12 @@ mode: single
         assert "Test Automation" in result.stdout
         assert "Full YAML:" in result.stdout
     
-    def test_delete_dry_run(self):
+    @patch("ha_automation.storage.file_automation_manager.Path.home")
+    def test_delete_dry_run(self, mock_home, tmp_path):
         """Test delete command with dry-run flag."""
+        # Mock the home directory to use tmp_path
+        mock_home.return_value = tmp_path
+        
         result = runner.invoke(app, ["delete", "test_automation", "--dry-run"])
         assert result.exit_code == 0
         assert "DRY RUN:" in result.stdout

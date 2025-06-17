@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 
 class Entity(BaseModel):
@@ -15,6 +15,20 @@ class Entity(BaseModel):
     attributes: Dict[str, Any] = Field(default_factory=dict, description="Entity attributes")
     last_changed: Optional[datetime] = Field(None, description="When the entity last changed")
     last_updated: Optional[datetime] = Field(None, description="When the entity was last updated")
+    
+    # Note: We discovered that Home Assistant can send entity IDs with embedded newlines
+    # However, the main issue was with print() modifying output, not the data itself
+    # Keeping minimal sanitization for actual problematic cases
+    
+    @validator('entity_id', pre=True)
+    def validate_entity_id(cls, v):
+        """Ensure entity_id is valid."""
+        if isinstance(v, str):
+            # Only remove NULL characters which are never valid
+            # Keep newlines/tabs in case they're somehow legitimate
+            import re
+            return re.sub(r'[\x00]', '', v)
+        return v
     
     @classmethod
     def from_ha_state(cls, state_data: Dict[str, Any]) -> "Entity":
@@ -46,22 +60,14 @@ class Entity(BaseModel):
             last_updated=last_updated,
         )
     
-    def _sanitize_string(self, value: str) -> str:
-        """Sanitize string by removing control characters."""
-        if not isinstance(value, str):
-            return str(value)
-        # Remove control characters (0x00-0x1F except tab, newline, carriage return)
-        import re
-        return re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', value)
-    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "entity_id": self.entity_id,
-            "friendly_name": self._sanitize_string(self.friendly_name),
+            "friendly_name": self.friendly_name,
             "domain": self.domain,
-            "state": self._sanitize_string(self.state),
-            "attributes": self.attributes,  # TODO: Consider sanitizing attributes too if needed
+            "state": self.state,
+            "attributes": self.attributes,
             "last_changed": self.last_changed.isoformat() if self.last_changed else None,
             "last_updated": self.last_updated.isoformat() if self.last_updated else None,
         }

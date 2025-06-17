@@ -582,11 +582,26 @@ class HAClient:
                 except Exception:
                     pass
     
+    def _sanitize_value(self, value: Any) -> Any:
+        """Recursively sanitize a value by removing control characters from strings."""
+        import re
+        
+        if isinstance(value, str):
+            # Remove ALL control characters including newlines, tabs, etc.
+            cleaned = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', value)
+            return cleaned
+        elif isinstance(value, dict):
+            return {k: self._sanitize_value(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [self._sanitize_value(item) for item in value]
+        else:
+            return value
+    
     async def get_states(self) -> list[dict[str, Any]]:
         """Get all entity states via WebSocket.
         
         Returns:
-            List of all entity states
+            List of all entity states with sanitized strings
         """
         await self._ensure_ws_connected()
         
@@ -598,7 +613,10 @@ class HAClient:
             self._ws.max_size = 10 * 1024 * 1024  # 10MB
         
         result = await self._ws_call("get_states")
-        return result if isinstance(result, list) else []
+        
+        if isinstance(result, list):
+            return result
+        return []
     
     async def get_automation_states(self) -> list[dict[str, Any]]:
         """Get all automation entity states.

@@ -164,11 +164,16 @@ def list(
                         suggestions.setdefault("detected_issues", []).extend(advanced_issues)
                     
                     porcelain_output = formatter.success(data, metadata, suggestions)
-                    print(porcelain_output)
+                    sys.stdout.write(porcelain_output)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
                     
                 elif json_output:
                     data = [dashboard.model_dump() for dashboard in dashboards]
-                    print(json.dumps(data, indent=2))
+                    json_str = json.dumps(data, indent=2)
+                    sys.stdout.write(json_str)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
                     
                 else:
                     # Original table output
@@ -200,7 +205,9 @@ def list(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                print(error_output)
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -238,7 +245,9 @@ def read(
                     Path(output).write_text(output_str)
                     console.print(f"[green]Dashboard saved to {output}[/green]")
                 else:
-                    print(output_str)
+                    sys.stdout.write(output_str)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
             else:  # yaml
                 import ruamel.yaml
                 yaml = ruamel.yaml.YAML()
@@ -254,7 +263,8 @@ def read(
                     import io
                     stream = io.StringIO()
                     yaml.dump(config_dict, stream)
-                    print(stream.getvalue())
+                    sys.stdout.write(stream.getvalue())
+                    sys.stdout.flush()
     
     asyncio.run(run_async_command(_read()))
 
@@ -471,10 +481,15 @@ def entities(
                         suggestions.setdefault("detected_issues", []).extend(advanced_issues)
                     
                     porcelain_output = formatter.success(entity_data, metadata, suggestions)
-                    print(porcelain_output)
+                    sys.stdout.write(porcelain_output)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
                     
                 elif json_output:
-                    print(json.dumps(entities, indent=2))
+                    json_str = json.dumps(entities, indent=2)
+                    sys.stdout.write(json_str)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
                     
                 else:
                     # Enhanced output with view information
@@ -520,7 +535,9 @@ def entities(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                print(error_output)
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -640,7 +657,10 @@ def views(
                     views.append(view_info)
             
             if json_output:
-                print(json.dumps(views, indent=2))
+                json_str = json.dumps(views, indent=2)
+                sys.stdout.write(json_str)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
             else:
                 if not views:
                     console.print(f"No views found in dashboard '{dashboard_name}'")

@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""
+Backward compatibility wrapper for ha-rename tool.
+
+This wrapper forwards all commands to the new ha-cli entities domain
+to maintain compatibility with existing scripts and workflows.
+"""
+
+import sys
+import subprocess
+import os
+
+def main():
+    # Build the new command
+    cmd = ["poetry", "run", "ha-cli", "entities"]
+    
+    # Map old arguments to new format
+    args = sys.argv[1:]
+    
+    if not args or "--help" in args or "-h" in args:
+        # Show help for entities list (default ha-rename behavior)
+        cmd.append("list")
+        cmd.append("--help")
+    else:
+        # ha-rename defaults to list with optional filters
+        cmd.append("list")
+        
+        # Process arguments
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            
+            if arg in ["--search", "-s"]:
+                cmd.extend(["--search", args[i + 1]])
+                i += 2
+            elif arg in ["--domain", "-d"]:
+                cmd.extend(["--domain", args[i + 1]])
+                i += 2
+            elif arg in ["--output-csv", "-o"]:
+                # Map to export command
+                cmd = ["poetry", "run", "ha-cli", "entities", "export"]
+                if i + 1 < len(args):
+                    cmd.append(args[i + 1])
+                else:
+                    cmd.append("entities.csv")
+                break
+            elif arg == "--rename":
+                # Map to rename command
+                cmd = ["poetry", "run", "ha-cli", "entities", "rename"]
+                # Get search and replace patterns
+                for j in range(i + 1, len(args)):
+                    if args[j] == "--search" and j + 1 < len(args):
+                        cmd.extend(["--search", args[j + 1]])
+                    elif args[j] == "--replace" and j + 1 < len(args):
+                        cmd.extend(["--replace", args[j + 1]])
+                    elif args[j] == "--dry-run":
+                        cmd.append("--dry-run")
+                    elif args[j] == "--domain" and j + 1 < len(args):
+                        cmd.extend(["--domain", args[j + 1]])
+                break
+            elif arg == "--backup":
+                # Map to backup command
+                cmd = ["poetry", "run", "ha-cli", "entities", "backup"]
+                break
+            else:
+                # Pass through other arguments
+                cmd.append(arg)
+                i += 1
+    
+    # Execute the command
+    try:
+        result = subprocess.run(cmd, cwd=os.path.dirname(os.path.abspath(__file__)))
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

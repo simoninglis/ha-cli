@@ -8,6 +8,11 @@
 
 The WebSocket API testing confirms the research findings: **Home Assistant's WebSocket API deliberately excludes automation CRUD operations**. However, it provides excellent real-time capabilities for monitoring, validation, and control.
 
+**Update (2025-06-14)**: Further investigation revealed Home Assistant supports two automation storage types:
+- **File-based** (`automations.yaml`): Uses singular format (trigger/action), custom IDs
+- **UI-style** (`.storage/automations`): Uses plural format (triggers/actions), 32-char hex IDs
+Both types can be read via WebSocket `automation/config` command, but CRUD operations require file manipulation or REST API respectively.
+
 ## ✅ **Working WebSocket Commands**
 
 ### 1. **Authentication & Connection**
@@ -46,7 +51,19 @@ The WebSocket API testing confirms the research findings: **Home Assistant's Web
 - ✅ Can filter for automation entities
 - ✅ Essential for monitoring automation activity
 
-### 5. **Trigger Subscriptions** (`subscribe_trigger`)
+### 5. **Automation Configuration** (`automation/config`)
+- ✅ **Reads any automation's full configuration**:
+  ```json
+  {
+    "type": "automation/config",
+    "entity_id": "automation.test_automation"
+  }
+  ```
+- ✅ Works for both file-based and UI-style automations
+- ✅ Returns complete automation config including triggers/conditions/actions
+- ✅ Essential for reading automation details without file access
+
+### 6. **Trigger Subscriptions** (`subscribe_trigger`)
 - ✅ **Works for real-time trigger monitoring**:
   ```json
   {

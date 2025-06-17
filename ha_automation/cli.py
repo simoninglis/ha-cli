@@ -125,6 +125,7 @@ def list(
     url: Annotated[Optional[str], typer.Option("--url", "-u", help="Home Assistant URL")] = None,
     token: Annotated[Optional[str], typer.Option("--token", "-t", help="Access token or env var name")] = None,
     timeout: Annotated[int, typer.Option("--timeout", help="Request timeout")] = 10,
+    storage: Annotated[Optional[str], typer.Option("--storage", help="Filter by storage type: 'ui', 'file', or 'all' (default)")] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Output as JSON")] = False,
     debug: Annotated[bool, typer.Option("--debug", help="Enable debug logging")] = False,
 ) -> None:
@@ -135,39 +136,79 @@ def list(
         url_final, token_final = get_client_config(url, token)
         
         async with HAClient(url_final, token_final, timeout) as client:
-            crud = AutomationCRUD(client)
+            from .storage.unified_automation_service import UnifiedAutomationService
+            from .storage.automation_type_detector import AutomationTypeDetector, StorageType
+            
+            service = UnifiedAutomationService(client)
+            detector = AutomationTypeDetector()
+            
+            # Determine filter
+            storage_filter = None
+            if storage:
+                if storage.lower() == "ui":
+                    storage_filter = StorageType.UI
+                elif storage.lower() == "file":
+                    storage_filter = StorageType.FILE
+                elif storage.lower() != "all":
+                    console.print(f"[red]Error:[/red] Invalid storage filter: {storage}. Use 'ui', 'file', or 'all'")
+                    sys.exit(EXIT_USAGE_ERROR)
+            
+            automations = await service.list_all()
+            
+            # Filter by storage type if requested
+            if storage_filter:
+                filtered = []
+                for automation in automations:
+                    if detector.detect_storage_type(automation) == storage_filter:
+                        filtered.append(automation)
+                automations = filtered
             
             if json_output:
-                data = await crud.list_automations(json_output=True)
+                data = [automation.to_json_dict() for automation in automations]
                 print(json.dumps(data, indent=2))
             else:
-                automations = await crud.list_automations()
-                
                 if not automations:
                     console.print("No automations found")
                     return
                 
                 # Create table
-                table = Table(title="Home Assistant Automations")
+                table = Table(title=f"Home Assistant Automations{f' ({storage})' if storage and storage != 'all' else ''}")
                 table.add_column("ID", style="cyan")
                 table.add_column("Alias", style="white")
                 table.add_column("Mode", style="yellow")
+                table.add_column("Storage", style="magenta")
                 table.add_column("Last Triggered", style="green")
+                
+                ui_count = 0
+                file_count = 0
                 
                 for automation in automations:
                     last_triggered = "Never"
                     if automation.last_triggered:
                         last_triggered = automation.last_triggered.strftime("%Y-%m-%d %H:%M:%S")
                     
+                    # Detect storage type
+                    storage_type = detector.detect_storage_type(automation)
+                    storage_display = "UI" if storage_type == StorageType.UI else "File"
+                    
+                    if storage_type == StorageType.UI:
+                        ui_count += 1
+                    else:
+                        file_count += 1
+                    
                     table.add_row(
                         automation.id or "N/A",
                         automation.alias,
                         automation.mode,
+                        storage_display,
                         last_triggered,
                     )
                 
                 console.print(table)
                 console.print(f"\nTotal: {len(automations)} automations")
+                if not storage_filter:
+                    console.print(f"  UI-style: {ui_count}")
+                    console.print(f"  File-based: {file_count}")
     
     asyncio.run(run_async_command(_list()))
 
@@ -178,6 +219,7 @@ def create(
     url: Annotated[Optional[str], typer.Option("--url", "-u", help="Home Assistant URL")] = None,
     token: Annotated[Optional[str], typer.Option("--token", "-t", help="Access token or env var name")] = None,
     timeout: Annotated[int, typer.Option("--timeout", help="Request timeout")] = 10,
+    storage: Annotated[Optional[str], typer.Option("--storage", help="Storage type: 'ui' or 'file' (auto-detect if not specified)")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be created without actually creating")] = False,
     debug: Annotated[bool, typer.Option("--debug", help="Enable debug logging")] = False,
 ) -> None:
@@ -191,6 +233,8 @@ def create(
     async def _create():
         # Load and validate the automation first
         from .models import Automation
+        from .storage.unified_automation_service import UnifiedAutomationService
+        from .storage.automation_type_detector import StorageType
         
         try:
             if file.suffix in [".yaml", ".yml"]:
@@ -204,6 +248,17 @@ def create(
             console.print(f"[red]Error:[/red] Failed to parse file: {e}")
             sys.exit(EXIT_USAGE_ERROR)
         
+        # Determine storage type
+        storage_type = None
+        if storage:
+            if storage.lower() == "ui":
+                storage_type = StorageType.UI
+            elif storage.lower() == "file":
+                storage_type = StorageType.FILE
+            else:
+                console.print(f"[red]Error:[/red] Invalid storage type: {storage}. Use 'ui' or 'file'")
+                sys.exit(EXIT_USAGE_ERROR)
+        
         if dry_run:
             console.print("[yellow]DRY RUN:[/yellow] Would create automation:")
             console.print(f"  Alias: {automation.alias}")
@@ -212,6 +267,10 @@ def create(
             console.print(f"  Actions: {len(automation.action)}")
             if automation.condition:
                 console.print(f"  Conditions: {len(automation.condition)}")
+            if storage_type:
+                console.print(f"  Storage: {storage_type.value}")
+            else:
+                console.print("  Storage: auto-detect")
             console.print("\n[dim]Full YAML:[/dim]")
             console.print(automation.to_yaml())
             return
@@ -219,8 +278,8 @@ def create(
         url_final, token_final = get_client_config(url, token)
         
         async with HAClient(url_final, token_final, timeout) as client:
-            crud = AutomationCRUD(client)
-            automation_id = await crud.create_automation(str(file))
+            service = UnifiedAutomationService(client)
+            automation_id = await service.create(automation, storage_type=storage_type)
             console.print(f"[green]✓[/green] Created automation with ID: {automation_id}")
     
     asyncio.run(run_async_command(_create()))
@@ -285,6 +344,7 @@ def update(
     async def _update():
         # Load and validate the automation first
         from .models import Automation
+        from .storage.unified_automation_service import UnifiedAutomationService
         
         try:
             if file.suffix in [".yaml", ".yml"]:
@@ -297,6 +357,9 @@ def update(
         except Exception as e:
             console.print(f"[red]Error:[/red] Failed to parse file: {e}")
             sys.exit(EXIT_USAGE_ERROR)
+        
+        # Set the ID for the update
+        automation.id = automation_id
         
         if dry_run:
             console.print(f"[yellow]DRY RUN:[/yellow] Would update automation {automation_id} with:")
@@ -313,8 +376,8 @@ def update(
         url_final, token_final = get_client_config(url, token)
         
         async with HAClient(url_final, token_final, timeout) as client:
-            crud = AutomationCRUD(client)
-            await crud.update_automation(automation_id, str(file))
+            service = UnifiedAutomationService(client)
+            await service.update(automation_id, automation)
             console.print(f"[green]✓[/green] Updated automation {automation_id}")
     
     asyncio.run(run_async_command(_update()))
@@ -334,16 +397,22 @@ def delete(
     setup_logging(debug)
     
     async def _delete():
+        from .storage.unified_automation_service import UnifiedAutomationService
+        from .storage.automation_type_detector import AutomationTypeDetector
+        
         if dry_run:
             console.print(f"[yellow]DRY RUN:[/yellow] Would delete automation {automation_id}")
             # Try to get automation details for better dry-run output
             try:
                 url_final, token_final = get_client_config(url, token)
                 async with HAClient(url_final, token_final, timeout) as client:
-                    crud = AutomationCRUD(client)
-                    automation = await crud.get_automation(automation_id)
+                    service = UnifiedAutomationService(client)
+                    detector = AutomationTypeDetector()
+                    automation = await service.read(automation_id)
+                    storage_type = detector.detect_storage_type(automation)
                     console.print(f"  Current alias: {automation.alias}")
                     console.print(f"  Current mode: {automation.mode}")
+                    console.print(f"  Storage type: {storage_type.value}")
                     console.print(f"  Components: {len(automation.trigger)} triggers, {len(automation.action)} actions")
             except Exception:
                 console.print(f"  (Could not fetch current details for {automation_id})")
@@ -358,8 +427,8 @@ def delete(
         url_final, token_final = get_client_config(url, token)
         
         async with HAClient(url_final, token_final, timeout) as client:
-            crud = AutomationCRUD(client)
-            await crud.delete_automation(automation_id)
+            service = UnifiedAutomationService(client)
+            await service.delete(automation_id)
             console.print(f"[yellow]✓[/yellow] Deleted automation {automation_id}")
     
     asyncio.run(run_async_command(_delete()))
@@ -651,6 +720,78 @@ def events(
                 console.print("\n[yellow]✓[/yellow] Stopped streaming events")
     
     asyncio.run(run_async_command(_events()))
+
+
+@app.command()
+def migrate(
+    automation_id: Annotated[str, typer.Argument(help="Automation ID to migrate")],
+    target: Annotated[str, typer.Argument(help="Target storage: 'ui' or 'file'")],
+    url: Annotated[Optional[str], typer.Option("--url", "-u", help="Home Assistant URL")] = None,
+    token: Annotated[Optional[str], typer.Option("--token", "-t", help="Access token or env var name")] = None,
+    timeout: Annotated[int, typer.Option("--timeout", help="Request timeout")] = 10,
+    force: Annotated[bool, typer.Option("--force", "-f", help="Skip confirmation")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be migrated without actually migrating")] = False,
+    debug: Annotated[bool, typer.Option("--debug", help="Enable debug logging")] = False,
+) -> None:
+    """Migrate automation between UI and file-based storage."""
+    setup_logging(debug)
+    
+    # Validate target
+    if target.lower() not in ["ui", "file"]:
+        console.print(f"[red]Error:[/red] Invalid target storage: {target}. Use 'ui' or 'file'")
+        sys.exit(EXIT_USAGE_ERROR)
+    
+    async def _migrate():
+        url_final, token_final = get_client_config(url, token)
+        
+        async with HAClient(url_final, token_final, timeout) as client:
+            from .storage.unified_automation_service import UnifiedAutomationService
+            from .storage.automation_type_detector import AutomationTypeDetector, StorageType
+            
+            service = UnifiedAutomationService(client)
+            detector = AutomationTypeDetector()
+            
+            # Get the automation
+            try:
+                automation = await service.read(automation_id)
+            except Exception as e:
+                console.print(f"[red]Error:[/red] Failed to read automation {automation_id}: {e}")
+                sys.exit(EXIT_HA_ERROR)
+            
+            # Detect current storage type
+            current_storage = detector.detect_storage_type(automation)
+            target_storage = StorageType.UI if target.lower() == "ui" else StorageType.FILE
+            
+            if current_storage == target_storage:
+                console.print(f"[yellow]Automation {automation_id} is already in {target} storage[/yellow]")
+                return
+            
+            if dry_run:
+                console.print("[yellow]DRY RUN:[/yellow] Would migrate automation:")
+                console.print(f"  ID: {automation.id}")
+                console.print(f"  Alias: {automation.alias}")
+                console.print(f"  Current storage: {current_storage.value}")
+                console.print(f"  Target storage: {target_storage.value}")
+                return
+            
+            if not force:
+                confirm = typer.confirm(
+                    f"Migrate '{automation.alias}' from {current_storage.value} to {target_storage.value} storage?"
+                )
+                if not confirm:
+                    console.print("Cancelled")
+                    return
+            
+            try:
+                new_id = await service.migrate(automation_id, target_storage)
+                console.print(f"[green]✓[/green] Migrated automation to {target} storage")
+                if new_id != automation_id:
+                    console.print(f"  New ID: {new_id}")
+            except Exception as e:
+                console.print(f"[red]Error:[/red] Failed to migrate automation: {e}")
+                sys.exit(EXIT_HA_ERROR)
+    
+    asyncio.run(run_async_command(_migrate()))
 
 
 @app.command()

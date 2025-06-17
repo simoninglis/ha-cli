@@ -1,6 +1,16 @@
-# ha-automation-cli
+# ha-cli (formerly ha-automation-cli)
 
-Command-line helper for managing Home Assistant automations over HTTP + WebSocket.
+Multi-domain command-line tool for managing Home Assistant configurations including automations, dashboards, and more.
+
+## Latest Updates (v0.3.2)
+
+- **🚀 Porcelain Mode**: New `--porcelain` flag provides structured JSON output optimized for Claude Code and automation tools
+- **🧠 Intelligent Analysis**: Automatic complexity analysis, entity dependency mapping, and performance optimization suggestions
+- **🔍 Advanced Issue Detection**: Proactive identification of automation antipatterns and configuration problems
+- **📊 Rich Metadata**: Enhanced output with Home Assistant health info, performance metrics, and actionable suggestions
+- **Automatic WebSocket Fallback**: When REST API is unavailable (`config` integration not enabled), automatically falls back to WebSocket for listing automations
+- **Force WebSocket Mode**: Use `--websocket` flag to force WebSocket mode for automation listing
+- **Improved Error Handling**: Better detection and handling of missing REST API endpoints
 
 ## Features
 
@@ -14,6 +24,13 @@ Command-line helper for managing Home Assistant automations over HTTP + WebSocke
 - **Reload** all automations
 - **Dry-run mode** to preview changes before applying
 
+### Dual Storage Support (NEW!)
+- **Auto-detect** UI-style vs file-based automations
+- **Create** automations in specific storage (UI or file)
+- **Migrate** automations between storage types
+- **Filter** listings by storage type
+- **Preserve** format and structure during operations
+
 ### Real-Time WebSocket Features (NEW!)
 - **Monitor** automation states and executions in real-time
 - **Test triggers** interactively with live feedback
@@ -22,12 +39,29 @@ Command-line helper for managing Home Assistant automations over HTTP + WebSocke
 - **Track execution metrics** and performance data
 - **Auto-reconnection** for reliable WebSocket connections
 
+### Dashboard Management (NEW!)
+- **List** all dashboards with their properties
+- **Read** dashboard configurations (storage or YAML mode)
+- **Backup** dashboards to YAML/JSON files
+- **Restore** dashboards from backup files
+- **Create/Delete** new dashboards
+- **Extract entities** referenced in dashboards
+- **Update entity references** for bulk renaming
+
+### Claude Code Integration (NEW!)
+- **Porcelain Mode**: Structured JSON output with `--porcelain` flag
+- **Intelligent Analysis**: Automation complexity scoring and entity dependency mapping
+- **Smart Suggestions**: Context-aware workflow recommendations and next steps
+- **Performance Metrics**: Dashboard analysis with optimization recommendations
+- **Issue Detection**: Automatic identification of antipatterns and problems
+- **Rich Metadata**: Home Assistant health, version info, and response times
+
 ### Developer Experience
 - Cross-platform support (Linux, macOS, Windows)
 - Async/await architecture for performance
 - Rich terminal output with colors and tables
 - Comprehensive error handling and recovery
-- Extensive test coverage
+- Extensive test coverage (301 tests)
 
 ## Installation
 
@@ -36,6 +70,11 @@ Command-line helper for managing Home Assistant automations over HTTP + WebSocke
 ```bash
 cd tools/ha-automation-cli
 poetry install
+
+# New multi-domain CLI
+poetry run ha-cli --help
+
+# Backward compatibility
 poetry run ha-automation --help
 ```
 
@@ -46,6 +85,26 @@ cd tools/ha-automation-cli
 pip install -e .
 ha-automation --help
 ```
+
+## Understanding Automation Storage
+
+Home Assistant supports two types of automation storage:
+
+### File-Based Automations (`automations.yaml`)
+- Traditional YAML-based automations
+- Can have custom IDs or no IDs
+- Uses singular format: `trigger`, `condition`, `action`
+- Directly editable in YAML files
+- Version control friendly
+
+### UI-Style Automations (`.storage/automations`)
+- Created/edited via Home Assistant UI
+- Must have 32-character hexadecimal IDs
+- Uses plural format: `triggers`, `conditions`, `actions`
+- Stored in JSON format in `.storage` directory
+- Not meant for direct editing
+
+The CLI tool automatically detects which type an automation is and handles it appropriately. You can also explicitly specify the storage type when creating or migrating automations.
 
 ## Configuration
 
@@ -90,6 +149,7 @@ All commands support these options:
 - `--token/-t` - Access token or environment variable name
 - `--timeout` - Request timeout in seconds (default: 10)
 - `--json` - JSON output (where applicable)
+- `--porcelain` - Structured output optimized for automation tools (NEW!)
 - `--debug` - Enable debug logging
 
 ### Commands
@@ -103,6 +163,14 @@ ha-automation list
 # Output as JSON
 ha-automation list --json
 
+# Output in porcelain format (structured for automation tools)
+ha-automation list --porcelain
+
+# Filter by storage type
+ha-automation list --storage ui      # Only UI-style automations
+ha-automation list --storage file    # Only file-based automations
+ha-automation list --storage all     # All automations (default)
+
 # With custom URL/token
 ha-automation list --url http://ha.local:8123 --token YOUR_TOKEN
 ```
@@ -110,8 +178,12 @@ ha-automation list --url http://ha.local:8123 --token YOUR_TOKEN
 #### Create Automation
 
 ```bash
-# Create from YAML file
+# Create from YAML file (auto-detects storage type)
 ha-automation create my-automation.yaml
+
+# Create in specific storage
+ha-automation create my-automation.yaml --storage ui    # Create as UI automation
+ha-automation create my-automation.yaml --storage file  # Create as file automation
 
 # Create from JSON file
 ha-automation create my-automation.json
@@ -142,6 +214,9 @@ ha-automation read automation_id
 
 # Output as JSON
 ha-automation read automation_id --json
+
+# Output in porcelain format with complexity analysis
+ha-automation read automation_id --porcelain
 
 # Show full YAML with debug
 ha-automation read automation_id --debug
@@ -187,13 +262,195 @@ ha-automation disable automation_id
 ha-automation reload
 ```
 
+#### Migrate Automation Storage
+
+```bash
+# Migrate from file-based to UI storage
+ha-automation migrate my_automation ui
+
+# Migrate from UI to file-based storage
+ha-automation migrate abc123def456 file
+
+# Skip confirmation prompt
+ha-automation migrate my_automation ui --force
+
+# Preview migration (dry-run)
+ha-automation migrate my_automation ui --dry-run
+```
+
 #### Show Version
 
 ```bash
 ha-automation version
 ```
 
-### WebSocket Real-Time Commands (NEW!)
+### Dashboard Commands (NEW!)
+
+The new multi-domain CLI provides comprehensive dashboard management:
+
+#### List Dashboards
+
+```bash
+# List all dashboards
+ha-cli dashboards list
+
+# Output as JSON
+ha-cli dashboards list --json
+
+# Output in porcelain format with metadata
+ha-cli dashboards list --porcelain
+```
+
+#### Read Dashboard Configuration
+
+```bash
+# Read default dashboard
+ha-cli dashboards read
+
+# Read specific dashboard by URL path
+ha-cli dashboards read mobile
+
+# Save to file
+ha-cli dashboards read mobile --output mobile-dashboard.yaml
+
+# Output as JSON
+ha-cli dashboards read --format json
+```
+
+#### Backup and Restore Dashboards
+
+```bash
+# Backup dashboard to file (auto-generated filename)
+ha-cli dashboards backup
+
+# Backup specific dashboard with custom filename
+ha-cli dashboards backup mobile --output mobile-backup.yaml
+
+# Restore dashboard from backup
+ha-cli dashboards restore mobile-backup.yaml
+
+# Restore to a different dashboard
+ha-cli dashboards restore mobile-backup.yaml --url-path tablet
+
+# Validate backup file without restoring
+ha-cli dashboards restore mobile-backup.yaml --validate-only
+```
+
+#### Create and Delete Dashboards
+
+```bash
+# Create new dashboard
+ha-cli dashboards create tablet-dash tablet "Tablet Dashboard"
+
+# Create with icon and options
+ha-cli dashboards create admin-dash admin "Admin Panel" \
+  --icon mdi:shield \
+  --require-admin \
+  --no-sidebar
+
+# Delete dashboard
+ha-cli dashboards delete tablet-dash
+
+# Delete without confirmation
+ha-cli dashboards delete tablet-dash --force
+```
+
+#### Entity Management
+
+```bash
+# List all entities referenced in a dashboard
+ha-cli dashboards entities
+
+# List entities in specific dashboard
+ha-cli dashboards entities mobile
+
+# Output as JSON for processing
+ha-cli dashboards entities --json > dashboard-entities.json
+
+# Output in porcelain format with performance analysis
+ha-cli dashboards entities mobile --porcelain
+```
+
+### Porcelain Mode (Claude Code Integration)
+
+Porcelain mode provides structured JSON output optimized for automation tools and Claude Code integration. It includes rich metadata, intelligent analysis, and actionable suggestions.
+
+#### Key Features
+
+- **Consistent Format**: Standardized JSON envelope across all commands
+- **Rich Metadata**: Home Assistant health, version info, performance metrics
+- **Smart Analysis**: Automation complexity scoring, entity dependency mapping
+- **Issue Detection**: Automatic identification of problems and antipatterns
+- **Actionable Suggestions**: Context-aware next steps and workflow recommendations
+
+#### Example Output
+
+```json
+{
+  "command": "automations read",
+  "timestamp": "2025-06-14T08:27:15.822406+00:00",
+  "status": "success",
+  "metadata": {
+    "automation_id": "goodnight_routine",
+    "configuration_size": {
+      "triggers": 2,
+      "conditions": 1,
+      "actions": 5
+    },
+    "complexity": {
+      "score": 18,
+      "level": "moderate",
+      "factors": ["Multiple triggers (2)", "Complex conditions (1)"],
+      "optimizations": ["Consider splitting into smaller automations"]
+    },
+    "entity_dependencies": {
+      "total_entities": 8,
+      "by_domain": {"light": 4, "sensor": 2, "switch": 2},
+      "by_section": {"triggers": 2, "conditions": 1, "actions": 5}
+    },
+    "home_assistant": {
+      "url": "http://10.0.20.35:8123",
+      "connection_method": "rest",
+      "health": {"status": "healthy", "entities": 423, "components": 47}
+    },
+    "response_time_ms": 42
+  },
+  "suggestions": {
+    "common_actions": [
+      "Test automation: Trigger manually in Home Assistant",
+      "Check related entities: Use MCP tools to verify entity states"
+    ],
+    "workflow_sequences": [
+      "Complex Automation Workflow: read → analyze → document → test → optimize"
+    ],
+    "best_practices": [
+      "Break complex automations into smaller, testable parts",
+      "Use meaningful variable names and add comments"
+    ],
+    "integration_opportunities": [
+      "Entity Renaming: Use ha-rename tool for consistent entity naming"
+    ]
+  }
+}
+```
+
+#### Usage Examples
+
+```bash
+# Get automation insights for Claude Code
+ha-cli automations list --porcelain | jq '.suggestions.common_actions[]'
+
+# Analyze dashboard performance
+ha-cli dashboards entities kitchen --porcelain | jq '.metadata.performance'
+
+# Find automation issues
+ha-cli automations read complex_auto --porcelain | jq '.suggestions.detected_issues[]'
+
+# Get workflow recommendations
+ha-cli automations list --porcelain | jq '.suggestions.workflow_sequences[]'
+```
+
+### WebSocket Real-Time Commands (Automations)
 
 #### Monitor Automations
 

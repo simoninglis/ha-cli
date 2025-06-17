@@ -109,21 +109,13 @@ def list(
                         domains[entity.domain].append(entity)
                     
                     # Convert entities to porcelain-friendly format
-                    def sanitize_string(value):
-                        """Sanitize string by removing control characters."""
-                        if not isinstance(value, str):
-                            return str(value) if value is not None else ""
-                        # Remove control characters (0x00-0x1F except tab, newline, carriage return)
-                        import re
-                        return re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', value)
-                    
                     data = []
                     for entity in entities:
                         entity_data = {
                             "entity_id": entity.entity_id,
-                            "friendly_name": sanitize_string(entity.friendly_name),
+                            "friendly_name": entity.friendly_name,
                             "domain": entity.domain,
-                            "state": sanitize_string(entity.state),
+                            "state": entity.state,
                             "last_changed": entity.last_changed.isoformat() if entity.last_changed else None,
                             "last_updated": entity.last_updated.isoformat() if entity.last_updated else None,
                         }
@@ -225,11 +217,18 @@ def list(
                         suggestions.setdefault("detected_issues", []).extend(advanced_issues)
                     
                     porcelain_output = formatter.success(data, metadata, suggestions)
-                    print(porcelain_output)
+                    import sys
+                    sys.stdout.write(porcelain_output)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
                     
                 elif json_output:
                     data = [entity.to_dict() for entity in entities]
-                    print(json.dumps(data, indent=2))
+                    json_str = json.dumps(data, indent=2)
+                    import sys
+                    sys.stdout.write(json_str)
+                    sys.stdout.write('\n')  # Add final newline
+                    sys.stdout.flush()
                     
                 else:
                     # Rich table output
