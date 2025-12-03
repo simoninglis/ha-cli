@@ -1,10 +1,20 @@
-"""Storage module for handling both UI and file-based automations."""
+"""Storage module for handling both UI and file-based automations.
 
-from .automation_type_detector import AutomationTypeDetector
-from .file_automation_manager import FileAutomationManager
-from .format_converter import FormatConverter
-from .ui_automation_manager import UIAutomationManager
-from .unified_automation_service import UnifiedAutomationService
+DEPRECATED: This module is a backward-compatibility shim.
+Import from ha_cli.domains.automations.storage instead.
+
+This module re-exports storage classes from ha_cli.domains.automations.storage
+for backward compatibility with existing code.
+"""
+
+# Re-export all classes from ha_cli.domains.automations.storage
+from ha_cli.domains.automations.storage import (  # noqa: F401
+    AutomationTypeDetector,
+    FileAutomationManager,
+    FormatConverter,
+    UIAutomationManager,
+    UnifiedAutomationService,
+)
 
 __all__ = [
     "AutomationTypeDetector",

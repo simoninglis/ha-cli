@@ -242,7 +242,7 @@ class TestCLI:
         assert result.exit_code == 3  # EXIT_HA_ERROR
         assert "Test error" in result.stdout
     
-    @patch("ha_automation.storage.file_automation_manager.Path.home")
+    @patch("ha_cli.domains.automations.storage.file_automation_manager.Path.home")
     def test_create_dry_run(self, mock_home, tmp_path):
         """Test create command with dry-run flag."""
         # Mock the home directory to use tmp_path
@@ -268,7 +268,7 @@ mode: single
         assert "Test Automation" in result.stdout
         assert "Full YAML:" in result.stdout
     
-    @patch("ha_automation.storage.file_automation_manager.Path.home")
+    @patch("ha_cli.domains.automations.storage.file_automation_manager.Path.home")
     def test_delete_dry_run(self, mock_home, tmp_path):
         """Test delete command with dry-run flag."""
         # Mock the home directory to use tmp_path

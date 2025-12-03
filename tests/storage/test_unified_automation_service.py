@@ -59,20 +59,20 @@ class TestUnifiedAutomationService:
     @pytest.mark.asyncio
     async def test_list_all(self, unified_service, mock_client, mock_file_manager):
         """Test listing all automations."""
-        # Mock WebSocket response
+        # Mock WebSocket response - returns dicts, not Automation objects
         mock_client.list_automations.return_value = [
-            Automation(
-                id="1234567890abcdef1234567890abcdef",
-                alias="UI Automation",
-                trigger=[],
-                action=[],
-            ),
-            Automation(
-                id="file_automation_1",
-                alias="File Automation 1",
-                trigger=[],
-                action=[],
-            ),
+            {
+                "id": "1234567890abcdef1234567890abcdef",
+                "alias": "UI Automation",
+                "trigger": [],
+                "action": [],
+            },
+            {
+                "id": "file_automation_1",
+                "alias": "File Automation 1",
+                "trigger": [],
+                "action": [],
+            },
         ]
         
         # Mock file manager response
@@ -328,10 +328,11 @@ class TestUnifiedAutomationService:
     @pytest.mark.asyncio
     async def test_analyze_storage(self, unified_service, mock_client, mock_file_manager):
         """Test analyzing storage distribution."""
+        # Mock returns dicts, not Automation objects
         mock_client.list_automations.return_value = [
-            Automation(id="1234567890abcdef1234567890abcdef", alias="UI 1", trigger=[], action=[]),
-            Automation(id="abcdefabcdefabcdefabcdefabcdefab", alias="UI 2", trigger=[], action=[]),
-            Automation(id="file_1", alias="File 1", trigger=[], action=[]),
+            {"id": "1234567890abcdef1234567890abcdef", "alias": "UI 1", "trigger": [], "action": []},
+            {"id": "abcdefabcdefabcdefabcdefabcdefab", "alias": "UI 2", "trigger": [], "action": []},
+            {"id": "file_1", "alias": "File 1", "trigger": [], "action": []},
         ]
         
         mock_file_manager.load_all.return_value = []
@@ -346,30 +347,31 @@ class TestUnifiedAutomationService:
     @pytest.mark.asyncio
     async def test_validate_all(self, unified_service, mock_client, mock_file_manager):
         """Test validating all automations."""
+        # Mock returns dicts, not Automation objects
         mock_client.list_automations.return_value = [
-            Automation(
-                id="1234567890abcdef1234567890abcdef",
-                alias="Valid UI",
-                trigger=[{"platform": "state"}],
-                action=[{"service": "test"}],
-            ),
-            Automation(
-                id="file_automation",
-                alias="Valid File",
-                trigger=[{"platform": "time"}],
-                action=[{"service": "notify"}],
-            ),
-            Automation(
-                id="ui_in_file",  # Wrong storage type
-                alias="Misplaced",
-                trigger=[],  # Empty trigger
-                action=[{"service": "test"}],
-            ),
-            Automation(
-                alias="No Action",
-                trigger=[{"platform": "state"}],
-                action=[],  # Empty action
-            ),
+            {
+                "id": "1234567890abcdef1234567890abcdef",
+                "alias": "Valid UI",
+                "trigger": [{"platform": "state"}],
+                "action": [{"service": "test"}],
+            },
+            {
+                "id": "file_automation",
+                "alias": "Valid File",
+                "trigger": [{"platform": "time"}],
+                "action": [{"service": "notify"}],
+            },
+            {
+                "id": "ui_in_file",  # Wrong storage type
+                "alias": "Misplaced",
+                "trigger": [],  # Empty trigger
+                "action": [{"service": "test"}],
+            },
+            {
+                "alias": "No Action",
+                "trigger": [{"platform": "state"}],
+                "action": [],  # Empty action
+            },
         ]
         
         mock_file_manager.load_all.return_value = []
