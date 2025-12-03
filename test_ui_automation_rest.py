@@ -16,9 +16,12 @@ from ha_automation.client import HAClient
 
 async def test_ui_automation_crud():
     """Test CRUD operations for UI-style automations."""
-    # Get connection details from environment or use defaults
+    # Get connection details from environment (required)
     url = os.environ.get("HA_URL", "http://10.0.20.35:8123")
-    token = os.environ.get("HA_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI1ZDk1YzEyMDkxNWM0ZTVlYmQ5ZTNjNTFhMWEyNjliZSIsImlhdCI6MTc0OTgzMTA2NCwiZXhwIjoyMDY1MTkxMDY0fQ.DzcpavvQW7OvUwjufRoK-8KWeoy0oTrx68M78tJB2K8")
+    token = os.environ.get("HA_TOKEN")
+    if not token:
+        print("Error: HA_TOKEN environment variable is required")
+        return
     
     print(f"Connecting to {url}...")
     
