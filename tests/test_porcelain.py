@@ -375,3 +375,437 @@ class TestPorcelainIntegration:
         assert response_data["data"]["empty_dict"] == {}
         assert response_data["data"]["unicode"] == "Test with unicode: 🏠"
         assert response_data["data"]["number"] == 42
+
+
+class TestCleanJSONEncoder:
+    """Tests for CleanJSONEncoder class."""
+
+    def test_removes_control_characters(self):
+        """Test that control characters are removed from strings."""
+        from ha_cli.common.porcelain import CleanJSONEncoder
+
+        encoder = CleanJSONEncoder()
+        # String with control characters (bell, backspace, etc.)
+        data = {"text": "hello\x00\x07\x08world"}
+
+        result = encoder.encode(data)
+        parsed = json.loads(result)
+
+        assert parsed["text"] == "helloworld"
+
+    def test_preserves_valid_whitespace(self):
+        """Test that tab, newline, carriage return are preserved."""
+        from ha_cli.common.porcelain import CleanJSONEncoder
+
+        encoder = CleanJSONEncoder()
+        data = {"text": "line1\nline2\tindented"}
+
+        result = encoder.encode(data)
+        parsed = json.loads(result)
+
+        assert "\n" in parsed["text"]
+        assert "\t" in parsed["text"]
+
+    def test_sanitizes_nested_structures(self):
+        """Test that nested structures are sanitized."""
+        from ha_cli.common.porcelain import CleanJSONEncoder
+
+        encoder = CleanJSONEncoder()
+        data = {
+            "outer": {
+                "inner": "text\x00with\x07control"
+            },
+            "list": ["item1\x00", "item2\x08"]
+        }
+
+        result = encoder.encode(data)
+        parsed = json.loads(result)
+
+        assert parsed["outer"]["inner"] == "textwithcontrol"
+        assert parsed["list"][0] == "item1"
+        assert parsed["list"][1] == "item2"
+
+
+class TestAnalyzeAutomationComplexity:
+    """Tests for analyze_automation_complexity function."""
+
+    def test_simple_automation(self):
+        """Test complexity analysis for simple automation."""
+        from ha_cli.common.porcelain import analyze_automation_complexity
+
+        automation = {
+            "trigger": [{"platform": "state"}],
+            "condition": [],
+            "action": [{"service": "light.turn_on"}]
+        }
+
+        result = analyze_automation_complexity(automation)
+
+        assert result["level"] == "simple"
+        assert result["score"] <= 5
+        assert len(result["factors"]) == 0
+
+    def test_complex_automation(self):
+        """Test complexity analysis for complex automation."""
+        from ha_cli.common.porcelain import analyze_automation_complexity
+
+        automation = {
+            "trigger": [{"platform": "state"}] * 5,
+            "condition": [{"condition": "state"}] * 4,
+            "action": [{"service": "light.turn_on"}] * 8
+        }
+
+        result = analyze_automation_complexity(automation)
+
+        assert result["level"] in ["complex", "very_complex"]
+        assert result["score"] > 15
+        assert len(result["factors"]) > 0
+
+    def test_complexity_factors_reported(self):
+        """Test that complexity factors are properly reported."""
+        from ha_cli.common.porcelain import analyze_automation_complexity
+
+        automation = {
+            "trigger": [{"platform": "state"}] * 5,
+            "condition": [{"condition": "state"}] * 3,
+            "action": [{"service": "light.turn_on"}] * 10
+        }
+
+        result = analyze_automation_complexity(automation)
+
+        factors_text = " ".join(result["factors"])
+        assert "triggers" in factors_text.lower() or "actions" in factors_text.lower()
+
+    def test_optimization_suggestions_for_complex(self):
+        """Test that complex automations get optimization suggestions."""
+        from ha_cli.common.porcelain import analyze_automation_complexity
+
+        automation = {
+            "trigger": [{"platform": "state"}] * 6,
+            "condition": [{"condition": "state"}] * 5,
+            "action": [{"service": "light.turn_on"}] * 10
+        }
+
+        result = analyze_automation_complexity(automation)
+
+        assert len(result["optimizations"]) > 0
+
+
+class TestExtractEntityReferences:
+    """Tests for extract_entity_references function."""
+
+    def test_extract_from_triggers(self):
+        """Test extracting entity IDs from triggers."""
+        from ha_cli.common.porcelain import extract_entity_references
+
+        automation = {
+            "trigger": [
+                {"platform": "state", "entity_id": "light.living_room"}
+            ],
+            "condition": [],
+            "action": []
+        }
+
+        result = extract_entity_references(automation)
+
+        assert "light.living_room" in result["referenced"]
+        assert "light.living_room" in result["triggers"]
+
+    def test_extract_from_actions(self):
+        """Test extracting entity IDs from actions."""
+        from ha_cli.common.porcelain import extract_entity_references
+
+        automation = {
+            "trigger": [],
+            "condition": [],
+            "action": [
+                {"service": "light.turn_on", "entity_id": "light.bedroom"}
+            ]
+        }
+
+        result = extract_entity_references(automation)
+
+        assert "light.bedroom" in result["referenced"]
+        assert "light.bedroom" in result["actions"]
+
+    def test_extract_entity_ids_list(self):
+        """Test extracting when entity_ids is a list."""
+        from ha_cli.common.porcelain import extract_entity_references
+
+        automation = {
+            "trigger": [],
+            "condition": [],
+            "action": [
+                {"service": "light.turn_on", "entity_ids": ["light.one", "light.two"]}
+            ]
+        }
+
+        result = extract_entity_references(automation)
+
+        assert "light.one" in result["referenced"]
+        assert "light.two" in result["referenced"]
+
+    def test_domain_breakdown(self):
+        """Test domain breakdown of extracted entities."""
+        from ha_cli.common.porcelain import extract_entity_references
+
+        automation = {
+            "trigger": [{"entity_id": "sensor.temperature"}],
+            "condition": [{"entity_id": "binary_sensor.door"}],
+            "action": [{"entity_id": "light.living_room"}]
+        }
+
+        result = extract_entity_references(automation)
+
+        assert "sensor" in result["by_domain"]
+        assert "binary_sensor" in result["by_domain"]
+        assert "light" in result["by_domain"]
+
+    def test_deduplicates_entities(self):
+        """Test that duplicate entities are deduplicated."""
+        from ha_cli.common.porcelain import extract_entity_references
+
+        automation = {
+            "trigger": [{"entity_id": "light.living_room"}],
+            "condition": [],
+            "action": [{"entity_id": "light.living_room"}]
+        }
+
+        result = extract_entity_references(automation)
+
+        # Should appear only once in referenced list
+        assert result["referenced"].count("light.living_room") == 1
+
+
+class TestAnalyzeDashboardPerformance:
+    """Tests for analyze_dashboard_performance function."""
+
+    def test_low_entity_count_high_score(self):
+        """Test that low entity count gives high performance score."""
+        from ha_cli.common.porcelain import analyze_dashboard_performance
+
+        result = analyze_dashboard_performance(10, {"light": 5, "switch": 5})
+
+        assert result["performance_score"] == 100
+        assert len(result["issues"]) == 0
+
+    def test_high_entity_count_reduces_score(self):
+        """Test that high entity count reduces performance score."""
+        from ha_cli.common.porcelain import analyze_dashboard_performance
+
+        result = analyze_dashboard_performance(120, {"light": 60, "sensor": 60})
+
+        assert result["performance_score"] < 100
+        assert any("entity count" in issue.lower() for issue in result["issues"])
+
+    def test_many_sensors_creates_warning(self):
+        """Test that many sensors create a warning."""
+        from ha_cli.common.porcelain import analyze_dashboard_performance
+
+        result = analyze_dashboard_performance(50, {"sensor": 40, "light": 10})
+
+        assert any("sensor" in issue.lower() for issue in result["issues"])
+
+    def test_cameras_impact_score(self):
+        """Test that multiple cameras impact performance score."""
+        from ha_cli.common.porcelain import analyze_dashboard_performance
+
+        result = analyze_dashboard_performance(20, {"camera": 6, "light": 14})
+
+        assert result["performance_score"] < 100
+        assert any("camera" in issue.lower() for issue in result["issues"])
+
+    def test_score_never_negative(self):
+        """Test that performance score never goes negative."""
+        from ha_cli.common.porcelain import analyze_dashboard_performance
+
+        # Extreme case
+        result = analyze_dashboard_performance(
+            500, {"sensor": 200, "camera": 50, "history_stats": 50}
+        )
+
+        assert result["performance_score"] >= 0
+
+
+class TestCreateWorkflowRecommendations:
+    """Tests for create_workflow_recommendations function."""
+
+    def test_automations_list_recommendations(self):
+        """Test recommendations for automations list command."""
+        from ha_cli.common.porcelain import create_workflow_recommendations
+
+        context = {
+            "total_count": 25,
+            "storage_breakdown": {"ui": 10, "file": 15}
+        }
+
+        result = create_workflow_recommendations("automations list", context)
+
+        assert len(result["next_steps"]) > 0
+        assert len(result["workflow_sequences"]) > 0
+
+    def test_automations_list_with_many_automations(self):
+        """Test recommendations when many automations exist."""
+        from ha_cli.common.porcelain import create_workflow_recommendations
+
+        context = {
+            "total_count": 75,
+            "storage_breakdown": {"ui": 25, "file": 50}
+        }
+
+        result = create_workflow_recommendations("automations list", context)
+
+        assert any("organiz" in tip.lower() for tip in result["best_practices"])
+
+    def test_dashboards_entities_recommendations(self):
+        """Test recommendations for dashboards entities command."""
+        from ha_cli.common.porcelain import create_workflow_recommendations
+
+        context = {
+            "total_entities": 30,
+            "domain_breakdown": {"sensor": 10, "light": 20}
+        }
+
+        result = create_workflow_recommendations("dashboards entities", context)
+
+        assert len(result["next_steps"]) > 0
+        assert len(result["integration_opportunities"]) > 0
+
+    def test_integration_opportunities_always_present(self):
+        """Test that integration opportunities are always suggested."""
+        from ha_cli.common.porcelain import create_workflow_recommendations
+
+        result = create_workflow_recommendations("automations list", {"total_count": 5})
+
+        assert len(result["integration_opportunities"]) > 0
+
+
+class TestDetectAdvancedIssues:
+    """Tests for detect_advanced_issues function."""
+
+    def test_slow_response_time_detected(self):
+        """Test that slow response times are detected."""
+        from ha_cli.common.porcelain import detect_advanced_issues
+
+        metadata = {"response_time_ms": 6000}
+
+        issues = detect_advanced_issues("test", {}, metadata)
+
+        assert any("response time" in issue.lower() for issue in issues)
+
+    def test_elevated_response_time_detected(self):
+        """Test that elevated response times are detected."""
+        from ha_cli.common.porcelain import detect_advanced_issues
+
+        metadata = {"response_time_ms": 3000}
+
+        issues = detect_advanced_issues("test", {}, metadata)
+
+        assert any("response time" in issue.lower() for issue in issues)
+
+    def test_normal_response_time_no_issue(self):
+        """Test that normal response times don't create issues."""
+        from ha_cli.common.porcelain import detect_advanced_issues
+
+        metadata = {"response_time_ms": 500}
+
+        issues = detect_advanced_issues("test", {}, metadata)
+
+        assert not any("response time" in issue.lower() for issue in issues)
+
+    def test_health_error_detected(self):
+        """Test that health errors are detected."""
+        from ha_cli.common.porcelain import detect_advanced_issues
+
+        health_info = {"status": "error"}
+
+        issues = detect_advanced_issues("test", {}, {}, health_info)
+
+        assert any("health" in issue.lower() for issue in issues)
+
+    def test_automation_antipattern_many_triggers_no_conditions(self):
+        """Test detection of many triggers without conditions."""
+        from ha_cli.common.porcelain import detect_advanced_issues
+
+        automation_data = {
+            "trigger": [{"platform": "state"}] * 5,
+            "condition": [],
+            "action": []
+        }
+
+        issues = detect_advanced_issues("automations read", automation_data, {})
+
+        assert any("condition" in issue.lower() for issue in issues)
+
+    def test_automation_antipattern_long_action_sequence(self):
+        """Test detection of very long action sequences."""
+        from ha_cli.common.porcelain import detect_advanced_issues
+
+        automation_data = {
+            "trigger": [{"platform": "state"}],
+            "condition": [],
+            "action": [{"service": "light.turn_on"}] * 20
+        }
+
+        issues = detect_advanced_issues("automations read", automation_data, {})
+
+        assert any("action" in issue.lower() for issue in issues)
+
+
+class TestHomeAssistantMetadataWithHealthInfo:
+    """Tests for create_home_assistant_metadata with health info."""
+
+    def test_metadata_with_health_info(self):
+        """Test metadata creation with health information."""
+        health_info = {
+            "status": "healthy",
+            "version": "2024.12.0",
+            "components": 50,
+            "entities": 200,
+            "time_zone": "Australia/Sydney",
+            "country": "AU",
+            "language": "en"
+        }
+
+        result = create_home_assistant_metadata(
+            "http://ha.local:8123",
+            "websocket",
+            health_info=health_info
+        )
+
+        assert result["version"] == "2024.12.0"
+        assert result["health"]["status"] == "healthy"
+        assert result["health"]["entities"] == 200
+        assert result["system"]["time_zone"] == "Australia/Sydney"
+
+    def test_metadata_with_supervisor_info(self):
+        """Test metadata includes supervisor info when available."""
+        health_info = {
+            "status": "healthy",
+            "version": "2024.12.0",
+            "supervisor_version": "2024.11.0",
+            "healthy": True,
+            "supported": True
+        }
+
+        result = create_home_assistant_metadata(
+            "http://ha.local:8123",
+            "websocket",
+            health_info=health_info
+        )
+
+        assert "supervisor" in result
+        assert result["supervisor"]["version"] == "2024.11.0"
+
+    def test_version_from_health_info_when_not_provided(self):
+        """Test that version is taken from health_info when not provided directly."""
+        health_info = {"version": "2024.12.0"}
+
+        result = create_home_assistant_metadata(
+            "http://ha.local:8123",
+            "rest",
+            version=None,
+            health_info=health_info
+        )
+
+        assert result["version"] == "2024.12.0"
