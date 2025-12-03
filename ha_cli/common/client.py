@@ -255,8 +255,8 @@ class HAClient:
         if self._ws:
             try:
                 await self._ws.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Error closing WebSocket during disconnect: {e}")
             self._ws = None
         
         # Start reconnection task if not already running
@@ -497,8 +497,8 @@ class HAClient:
                 self._ws_message_id += 1
                 try:
                     await self._ws.send(json.dumps(unsub_message))
-                except Exception:
-                    pass  # Ignore errors during cleanup
+                except Exception as e:
+                    logger.debug(f"Error unsubscribing from events during cleanup: {e}")
     
     async def subscribe_automation_events(self) -> AsyncIterator[dict[str, Any]]:
         """Subscribe to automation-related state changes.
@@ -579,9 +579,9 @@ class HAClient:
                 self._ws_message_id += 1
                 try:
                     await self._ws.send(json.dumps(unsub_message))
-                except Exception:
-                    pass
-    
+                except Exception as e:
+                    logger.debug(f"Error unsubscribing from state changes during cleanup: {e}")
+
     def _sanitize_value(self, value: Any) -> Any:
         """Recursively sanitize a value by removing control characters from strings."""
         import re

@@ -1,10 +1,13 @@
 """Configuration utilities for ha-cli."""
 
+import logging
 import os
 from pathlib import Path
 from typing import Optional, Tuple
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 from .utils import get_config_path, get_token_from_env, load_config, save_config
 
@@ -79,9 +82,9 @@ def get_client_config(
             
             return url, get_token_from_env(token)
             
-        except Exception:
-            # If typer is not available or prompt fails, raise error
-            pass
+        except Exception as e:
+            # If typer is not available or prompt fails, fall through to error
+            logger.debug(f"Interactive prompt failed: {e}")
     
     # If we get here, we couldn't find credentials
     missing = []

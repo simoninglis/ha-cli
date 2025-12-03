@@ -1,11 +1,14 @@
 """Utility functions for Home Assistant Automation CLI."""
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
 
 import ruamel.yaml
+
+logger = logging.getLogger(__name__)
 
 
 def load_config(config_path: Path) -> dict[str, Any]:
@@ -84,7 +87,8 @@ def format_timestamp(timestamp: str | None) -> str:
         from datetime import datetime
         dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
         return dt.strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to parse timestamp '{timestamp}': {e}")
         return timestamp
 
 

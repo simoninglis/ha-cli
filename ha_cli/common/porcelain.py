@@ -1,10 +1,13 @@
 """Porcelain mode utilities for structured JSON output optimized for Claude Code."""
 
 import json
+import logging
 import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
+
+logger = logging.getLogger(__name__)
 
 from pydantic import BaseModel, ConfigDict
 
@@ -314,8 +317,8 @@ async def get_home_assistant_health(client) -> Dict[str, Any]:
             states = await client.get("/api/states")
             if states:
                 health_info["entities"] = len(states)
-        except Exception:
-            pass  # Entity count is optional
+        except Exception as e:
+            logger.debug(f"Failed to get entity count (optional): {e}")
             
         # Try to get supervisor info (if available)
         try:
@@ -326,8 +329,8 @@ async def get_home_assistant_health(client) -> Dict[str, Any]:
                     "healthy": supervisor.get("data", {}).get("healthy", True),
                     "supported": supervisor.get("data", {}).get("supported", True)
                 })
-        except Exception:
-            pass  # Supervisor info is optional (not available in all installations)
+        except Exception as e:
+            logger.debug(f"Failed to get supervisor info (optional, not available in all installations): {e}")
             
     except Exception as e:
         health_info["status"] = "error"
