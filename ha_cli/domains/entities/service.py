@@ -10,6 +10,7 @@ import websockets
 
 from ...common.client import HAClient
 from ...common.exceptions import HAAutomationError
+from ...common.utils import compile_user_regex, RegexValidationError
 from .models import Entity, RenameOperation, RenamePreview, RenameResult, EntityImpactAnalysis
 
 
@@ -38,7 +39,7 @@ class EntityService:
             response = await self.client.get_states()
             
             entities = []
-            pattern = re.compile(search_pattern) if search_pattern else None
+            pattern = compile_user_regex(search_pattern, "search pattern") if search_pattern else None
             
             for state_data in response:
                 entity = Entity.from_ha_state(state_data)
@@ -95,7 +96,7 @@ class EntityService:
             RenamePreview with validation results
         """
         operations = []
-        pattern = re.compile(search_pattern)
+        pattern = compile_user_regex(search_pattern, "search pattern")
         
         for entity in entities:
             if pattern.search(entity.entity_id):

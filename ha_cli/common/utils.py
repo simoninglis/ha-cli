@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -289,3 +290,36 @@ def get_token_from_env(token_value: str) -> str:
     
     # Otherwise return as-is
     return token_value
+
+
+class RegexValidationError(ValueError):
+    """Raised when user-provided regex pattern is invalid."""
+
+    pass
+
+
+def compile_user_regex(pattern: str, description: str = "pattern") -> re.Pattern[str]:
+    """Compile a user-provided regex pattern with helpful error messages.
+
+    Args:
+        pattern: The regex pattern to compile
+        description: Description of what the pattern is for (for error messages)
+
+    Returns:
+        Compiled regex pattern
+
+    Raises:
+        RegexValidationError: If the pattern is invalid, with a user-friendly message
+    """
+    try:
+        return re.compile(pattern)
+    except re.error as e:
+        # Provide helpful context in error message
+        error_msg = f"Invalid regex {description} '{pattern}': {e.msg}"
+        if e.pos is not None:
+            # Show where the error occurred
+            error_msg += f" at position {e.pos}"
+            # Show the pattern with an indicator
+            if e.pos < len(pattern):
+                error_msg += f"\n  {pattern}\n  {' ' * e.pos}^"
+        raise RegexValidationError(error_msg) from e
