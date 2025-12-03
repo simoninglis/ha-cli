@@ -13,12 +13,11 @@ ha-automation = "ha_cli.__main__:automation_compat"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-httpx = "^0.27"
+httpx = "^0.27"  # Async HTTP client for all REST API operations
 websockets = "^12.0"
 pydantic = "^2.0"
 typer = ">=0.15.0"
 "ruamel.yaml" = "^0.18"
-aiohttp = "^3.12.12"
 python-dotenv = "^1.1.0"
 
 [tool.poetry.group.dev.dependencies]

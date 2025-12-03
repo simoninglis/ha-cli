@@ -484,13 +484,16 @@ class EntityService:
         return references
     
     async def _try_file_editor_api(self, entity_id: str) -> list[str]:
-        """Try to access automation files via File Editor API."""
+        """Try to access automation files via File Editor API.
+
+        Uses httpx for HTTP requests (consistent with rest of codebase).
+        """
         references = []
-        
+
         try:
-            import aiohttp
+            import httpx
             import yaml
-            
+
             # Try multiple access methods for File Editor
             access_methods = [
                 # Method 1: Direct access on port 3218 (if enabled)
@@ -500,68 +503,68 @@ class EntityService:
                 # Method 3: Try without authentication first (some configurations don't require it)
                 {"base_url": "http://10.0.20.35:3218", "headers": {"User-Agent": "ha-cli/1.0"}},
             ]
-            
+
             # Common automation file locations
             automation_files = [
                 "/config/automations.yaml",
-                "/config/automations/climate.yaml", 
+                "/config/automations/climate.yaml",
                 "/config/automations/master_bedroom.yaml",
                 "/config/automations/bedroom.yaml",
                 "/config/automations/office.yaml",
                 "/config/automations/general.yaml"
             ]
-            
+
             for method in access_methods:
                 base_url = method["base_url"]
                 headers = method["headers"]
-                
+
                 try:
-                    async with aiohttp.ClientSession() as session:
+                    async with httpx.AsyncClient(timeout=3.0) as client:
                         for file_path in automation_files:
                             try:
                                 url = f"{base_url}/api/file?filename={file_path}"
-                                
-                                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=3)) as response:
-                                    if response.status == 200:
-                                        content = await response.text()
-                                        
-                                        # Handle both single automation and list of automations
-                                        try:
-                                            automations_data = yaml.safe_load(content)
-                                            if not automations_data:
-                                                continue
-                                                
-                                            # If it's a single automation dict, wrap in list
-                                            if isinstance(automations_data, dict):
-                                                automations_data = [automations_data]
-                                            
-                                            for automation in automations_data:
-                                                if isinstance(automation, dict) and self._entity_in_automation_config(entity_id, automation):
-                                                    alias = automation.get('alias', automation.get('id', f'automation from {file_path}'))
-                                                    references.append(f"{alias} (confirmed)")
-                                                    
-                                        except yaml.YAMLError:
-                                            # Skip files with YAML errors
+
+                                response = await client.get(url, headers=headers)
+                                if response.status_code == 200:
+                                    content = response.text
+
+                                    # Handle both single automation and list of automations
+                                    try:
+                                        automations_data = yaml.safe_load(content)
+                                        if not automations_data:
                                             continue
-                                            
+
+                                        # If it's a single automation dict, wrap in list
+                                        if isinstance(automations_data, dict):
+                                            automations_data = [automations_data]
+
+                                        for automation in automations_data:
+                                            if isinstance(automation, dict) and self._entity_in_automation_config(entity_id, automation):
+                                                alias = automation.get('alias', automation.get('id', f'automation from {file_path}'))
+                                                references.append(f"{alias} (confirmed)")
+
+                                    except yaml.YAMLError:
+                                        # Skip files with YAML errors
+                                        continue
+
                             except Exception:
                                 # Skip inaccessible files
                                 continue
-                                
+
                     # If we found references with this method, return them
                     if references:
                         return references
-                        
+
                 except Exception:
                     # Try next access method
                     continue
-                        
+
         except ImportError:
-            # aiohttp not available, skip this method
+            # httpx not available (shouldn't happen as it's a core dependency)
             pass
         except Exception:
             pass
-            
+
         return references
     
     async def _try_python_script_analysis(self, entity_id: str) -> list[str]:
