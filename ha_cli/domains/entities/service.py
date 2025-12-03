@@ -2,16 +2,20 @@
 
 import asyncio
 import json
+import logging
 import re
 import ssl
-from typing import Dict, List, Optional, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 import websockets
 
 from ...common.client import HAClient
 from ...common.exceptions import HAAutomationError
-from ...common.utils import compile_user_regex, RegexValidationError
-from .models import Entity, RenameOperation, RenamePreview, RenameResult, EntityImpactAnalysis
+from ...common.utils import RegexValidationError, compile_user_regex
+from .models import Entity, EntityImpactAnalysis, RenameOperation, RenamePreview, RenameResult
+
+logger = logging.getLogger(__name__)
 
 
 class EntityService:
@@ -76,7 +80,8 @@ class EntityService:
                 if state_data["entity_id"] == entity_id:
                     return Entity.from_ha_state(state_data)
             return None
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to get entity %s: %s", entity_id, e)
             return None
     
     def preview_rename(
@@ -257,12 +262,13 @@ class EntityService:
                             for location in entity_locations[entity_id]:
                                 if location not in dashboard_refs:
                                     dashboard_refs.append(location)
-                    except Exception:
+                    except Exception as e:
                         # Skip this dashboard if we can't get its config
+                        logger.debug("Skipping dashboard %s: %s", dashboard.url_path, e)
                         continue
             except Exception as e:
                 # If dashboard service fails, continue with empty list
-                pass
+                logger.debug("Dashboard service failed for entity %s: %s", entity_id, e)
             
             return EntityImpactAnalysis.create(entity_id, automation_refs, dashboard_refs)
             
@@ -544,42 +550,37 @@ class EntityService:
                                                 alias = automation.get('alias', automation.get('id', f'automation from {file_path}'))
                                                 references.append(f"{alias} (confirmed)")
 
-                                    except yaml.YAMLError:
+                                    except yaml.YAMLError as e:
                                         # Skip files with YAML errors
+                                        logger.debug("YAML error in %s: %s", file_path, e)
                                         continue
 
-                            except Exception:
+                            except Exception as e:
                                 # Skip inaccessible files
+                                logger.debug("Cannot access file %s: %s", file_path, e)
                                 continue
 
                     # If we found references with this method, return them
                     if references:
                         return references
 
-                except Exception:
+                except Exception as e:
                     # Try next access method
+                    logger.debug("File Editor access method failed: %s", e)
                     continue
 
         except ImportError:
             # httpx not available (shouldn't happen as it's a core dependency)
-            pass
-        except Exception:
-            pass
+            logger.debug("httpx not available for File Editor API access")
+        except Exception as e:
+            logger.debug("File Editor API access failed: %s", e)
 
         return references
-    
+
     async def _try_python_script_analysis(self, entity_id: str) -> list[str]:
         """Try to use python scripts to analyze automation files."""
-        references = []
-        
-        try:
-            # This would require creating a custom python script
-            # For now, return empty list
-            pass
-            
-        except Exception:
-            pass
-            
+        # This would require creating a custom python script
+        # For now, return empty list - no try/except needed for stub
         return []
     
     async def _try_pattern_based_analysis(self, entity_id: str) -> list[str]:
