@@ -246,9 +246,29 @@ def format_automation_summary(automation: dict[str, Any]) -> str:
 
 
 def get_config_path() -> Path:
-    """Get path to configuration file."""
-    config_dir = Path.home() / ".config" / "ha-automation"
-    return config_dir / "config.json"
+    """Get path to configuration file.
+
+    Checks locations in order of preference:
+    1. ~/.config/home-assistant-cli/config.json (canonical)
+    2. ~/.config/ha-automation/config.json (legacy)
+
+    Returns the first existing location, or the canonical path if none exist.
+    """
+    # Canonical location
+    canonical_dir = Path.home() / ".config" / "home-assistant-cli"
+    canonical_path = canonical_dir / "config.json"
+
+    # Legacy location
+    legacy_dir = Path.home() / ".config" / "ha-automation"
+    legacy_path = legacy_dir / "config.json"
+
+    # Return first existing path, or canonical if none exist
+    if canonical_path.exists():
+        return canonical_path
+    if legacy_path.exists():
+        return legacy_path
+
+    return canonical_path
 
 
 def get_token_from_env(token_value: str) -> str:

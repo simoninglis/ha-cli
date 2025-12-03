@@ -19,11 +19,11 @@ def get_client_config(
     interactive: bool = True,
 ) -> Tuple[str, str]:
     """Get client configuration from args, env, config file, or prompt.
-    
+
     Configuration sources (in order of precedence):
     1. Command line arguments
     2. Environment variables (including .env file)
-    3. Config file (~/.ha-cli/config.json)
+    3. Config file (~/.config/home-assistant-cli/config.json)
     4. Interactive prompt (if interactive=True)
     
     Args:
