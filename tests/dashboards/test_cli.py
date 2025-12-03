@@ -238,7 +238,7 @@ class TestDashboardCLI:
     @patch("ha_cli.domains.dashboards.cli.DashboardService")
     def test_entities_command(self, mock_service_class, mock_client_class, runner):
         """Test list entities command."""
-        
+
         mock_service = AsyncMock()
         mock_service.get_entity_references.return_value = [
             "light.living_room",
@@ -247,8 +247,16 @@ class TestDashboardCLI:
             "switch.fan",
             "climate.thermostat",
         ]
+        # Also mock get_entity_references_with_location for non-JSON output path
+        mock_service.get_entity_references_with_location.return_value = {
+            "light.living_room": ["default/main"],
+            "light.bedroom": ["default/bedroom"],
+            "sensor.temperature": ["default/main"],
+            "switch.fan": ["default/main"],
+            "climate.thermostat": ["default/climate"],
+        }
         mock_service_class.return_value = mock_service
-        
+
         result = runner.invoke(cli.app, ["entities"])
         
         assert result.exit_code == 0
