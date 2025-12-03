@@ -6,6 +6,7 @@ import logging
 import re
 import ssl
 from datetime import datetime
+from json import JSONDecodeError
 from typing import Any, Dict, List, Optional
 
 import websockets
@@ -16,6 +17,59 @@ from ...common.utils import RegexValidationError, compile_user_regex
 from .models import Entity, EntityImpactAnalysis, RenameOperation, RenamePreview, RenameResult
 
 logger = logging.getLogger(__name__)
+
+# Default WebSocket timeout in seconds
+WS_RECV_TIMEOUT = 30
+
+
+async def recv_with_timeout(ws, timeout: float = WS_RECV_TIMEOUT) -> str:
+    """Receive a WebSocket message with timeout.
+
+    Args:
+        ws: WebSocket connection
+        timeout: Timeout in seconds (default: 30)
+
+    Returns:
+        Received message as string
+
+    Raises:
+        TimeoutError: If no message received within timeout
+    """
+    return await asyncio.wait_for(ws.recv(), timeout=timeout)
+
+
+def parse_ws_message(raw_message: str, context: str = "WebSocket") -> dict:
+    """Parse and validate a WebSocket message.
+
+    Args:
+        raw_message: Raw message string from WebSocket
+        context: Description for error messages
+
+    Returns:
+        Parsed JSON as dictionary
+
+    Raises:
+        HAAutomationError: If message is not valid JSON or not a dict
+    """
+    if not isinstance(raw_message, str):
+        raise HAAutomationError(
+            f"{context}: Expected string message, got {type(raw_message).__name__}"
+        )
+
+    try:
+        parsed = json.loads(raw_message)
+    except JSONDecodeError as e:
+        logger.warning(
+            "%s: Failed to parse JSON: %s (message: %.100s...)", context, e, raw_message
+        )
+        raise HAAutomationError(f"{context}: Invalid JSON response: {e}") from e
+
+    if not isinstance(parsed, dict):
+        raise HAAutomationError(
+            f"{context}: Expected dict message, got {type(parsed).__name__}"
+        )
+
+    return parsed
 
 
 class EntityService:
@@ -143,22 +197,37 @@ class EntityService:
         try:
             # Connect to WebSocket
             async with websockets.connect(ws_url, ssl=ssl_context) as websocket:
-                
-                # Wait for auth request
-                auth_req = await websocket.recv()
-                
+
+                # Wait for auth request (with timeout)
+                try:
+                    auth_req = await recv_with_timeout(websocket)
+                    logger.debug("Received auth request: %.100s...", auth_req)
+                except TimeoutError as e:
+                    raise HAAutomationError(
+                        "WebSocket auth request timeout after 30s"
+                    ) from e
+
                 # Authenticate
                 auth_msg = {
                     "type": "auth",
                     "access_token": self.client.token
                 }
                 await websocket.send(json.dumps(auth_msg))
-                
-                # Wait for auth result
-                auth_result = json.loads(await websocket.recv())
+
+                # Wait for auth result (with timeout and validation)
+                try:
+                    auth_raw = await recv_with_timeout(websocket)
+                    auth_result = parse_ws_message(auth_raw, "Auth response")
+                except TimeoutError as e:
+                    raise HAAutomationError(
+                        "WebSocket auth response timeout after 30s"
+                    ) from e
+
                 if auth_result.get("type") != "auth_ok":
-                    raise HAAutomationError(f"WebSocket authentication failed: {auth_result}")
-                
+                    raise HAAutomationError(
+                        f"WebSocket authentication failed: {auth_result}"
+                    )
+
                 # Execute rename operations
                 for i, operation in enumerate(operations, start=1):
                     try:
@@ -169,10 +238,28 @@ class EntityService:
                             "new_entity_id": operation.new_entity_id
                         }
                         await websocket.send(json.dumps(rename_msg))
-                        
-                        # Wait for response
-                        response = json.loads(await websocket.recv())
-                        
+
+                        # Wait for response (with timeout and validation)
+                        try:
+                            response_raw = await recv_with_timeout(websocket)
+                            response = parse_ws_message(
+                                response_raw,
+                                f"Rename response for {operation.old_entity_id}"
+                            )
+                        except TimeoutError:
+                            logger.warning(
+                                "Timeout waiting for rename response: %s",
+                                operation.old_entity_id
+                            )
+                            result = RenameResult(
+                                operation=operation,
+                                success=False,
+                                error_message="Timeout waiting for response after 30s",
+                                timestamp=datetime.now()
+                            )
+                            results.append(result)
+                            continue
+
                         if response.get("success", False):
                             result = RenameResult(
                                 operation=operation,
@@ -187,10 +274,11 @@ class EntityService:
                                 error_message=error_msg,
                                 timestamp=datetime.now()
                             )
-                        
+
                         results.append(result)
-                        
-                    except Exception as e:
+
+                    except HAAutomationError as e:
+                        # Re-raise HAAutomationError from parse_ws_message
                         result = RenameResult(
                             operation=operation,
                             success=False,
@@ -198,18 +286,55 @@ class EntityService:
                             timestamp=datetime.now()
                         )
                         results.append(result)
-                        
-        except Exception as e:
-            # If WebSocket fails, create failure results for all operations
+                    except Exception as e:
+                        logger.warning(
+                            "Unexpected error during rename of %s: %s",
+                            operation.old_entity_id, e
+                        )
+                        result = RenameResult(
+                            operation=operation,
+                            success=False,
+                            error_message=str(e),
+                            timestamp=datetime.now()
+                        )
+                        results.append(result)
+
+        except HAAutomationError:
+            # Re-raise HAAutomationError (auth failures, parse errors)
+            raise
+        except TimeoutError as e:
+            logger.error("WebSocket timeout during rename operations: %s", e)
+            # Create failure results for all remaining operations
             for operation in operations:
-                result = RenameResult(
-                    operation=operation,
-                    success=False,
-                    error_message=f"WebSocket connection failed: {e}",
-                    timestamp=datetime.now()
+                already_processed = any(
+                    r.operation.old_entity_id == operation.old_entity_id
+                    for r in results
                 )
-                results.append(result)
-        
+                if not already_processed:
+                    result = RenameResult(
+                        operation=operation,
+                        success=False,
+                        error_message=f"WebSocket timeout: {e}",
+                        timestamp=datetime.now()
+                    )
+                    results.append(result)
+        except Exception as e:
+            logger.error("WebSocket connection failed: %s", e)
+            # Create failure results for all remaining operations
+            for operation in operations:
+                already_processed = any(
+                    r.operation.old_entity_id == operation.old_entity_id
+                    for r in results
+                )
+                if not already_processed:
+                    result = RenameResult(
+                        operation=operation,
+                        success=False,
+                        error_message=f"WebSocket connection failed: {e}",
+                        timestamp=datetime.now()
+                    )
+                    results.append(result)
+
         return results
     
     async def analyze_entity_impact(self, entity_id: str) -> EntityImpactAnalysis:
@@ -679,22 +804,37 @@ class EntityService:
         try:
             # Connect to WebSocket
             async with websockets.connect(ws_url, ssl=ssl_context) as websocket:
-                
-                # Wait for auth request
-                auth_req = await websocket.recv()
-                
+
+                # Wait for auth request (with timeout)
+                try:
+                    auth_req = await recv_with_timeout(websocket)
+                    logger.debug("Received auth request: %.100s...", auth_req)
+                except TimeoutError as e:
+                    raise HAAutomationError(
+                        "WebSocket auth request timeout after 30s"
+                    ) from e
+
                 # Authenticate
                 auth_msg = {
                     "type": "auth",
                     "access_token": self.client.token
                 }
                 await websocket.send(json.dumps(auth_msg))
-                
-                # Wait for auth result
-                auth_result = json.loads(await websocket.recv())
+
+                # Wait for auth result (with timeout and validation)
+                try:
+                    auth_raw = await recv_with_timeout(websocket)
+                    auth_result = parse_ws_message(auth_raw, "Auth response")
+                except TimeoutError as e:
+                    raise HAAutomationError(
+                        "WebSocket auth response timeout after 30s"
+                    ) from e
+
                 if auth_result.get("type") != "auth_ok":
-                    raise HAAutomationError(f"WebSocket authentication failed: {auth_result}")
-                
+                    raise HAAutomationError(
+                        f"WebSocket authentication failed: {auth_result}"
+                    )
+
                 # Execute delete operations
                 for i, entity_id in enumerate(entity_ids, start=1):
                     try:
@@ -704,23 +844,57 @@ class EntityService:
                             "entity_id": entity_id
                         }
                         await websocket.send(json.dumps(delete_msg))
-                        
-                        # Wait for response
-                        response = json.loads(await websocket.recv())
-                        
+
+                        # Wait for response (with timeout and validation)
+                        try:
+                            response_raw = await recv_with_timeout(websocket)
+                            response = parse_ws_message(
+                                response_raw, f"Delete response for {entity_id}"
+                            )
+                        except TimeoutError:
+                            logger.warning(
+                                "Timeout waiting for delete response: %s", entity_id
+                            )
+                            results[entity_id] = {
+                                "success": False,
+                                "error": "Timeout waiting for response after 30s"
+                            }
+                            continue
+
                         if response.get("success", False):
                             results[entity_id] = {"success": True}
                         else:
-                            error_msg = response.get("error", {}).get("message", "Unknown error")
+                            error_msg = response.get("error", {}).get(
+                                "message", "Unknown error"
+                            )
                             results[entity_id] = {"success": False, "error": error_msg}
-                        
-                    except Exception as e:
+
+                    except HAAutomationError as e:
                         results[entity_id] = {"success": False, "error": str(e)}
-                        
-        except Exception as e:
-            # If WebSocket fails, create failure results for all entities
+                    except Exception as e:
+                        logger.warning(
+                            "Unexpected error during delete of %s: %s", entity_id, e
+                        )
+                        results[entity_id] = {"success": False, "error": str(e)}
+
+        except HAAutomationError:
+            # Re-raise HAAutomationError (auth failures, parse errors)
+            raise
+        except TimeoutError as e:
+            logger.error("WebSocket timeout during delete operations: %s", e)
+            # Create failure results for all remaining entities
             for entity_id in entity_ids:
                 if entity_id not in results:
-                    results[entity_id] = {"success": False, "error": f"WebSocket connection failed: {e}"}
-        
+                    results[entity_id] = {
+                        "success": False, "error": f"WebSocket timeout: {e}"
+                    }
+        except Exception as e:
+            logger.error("WebSocket connection failed: %s", e)
+            # Create failure results for all remaining entities
+            for entity_id in entity_ids:
+                if entity_id not in results:
+                    results[entity_id] = {
+                        "success": False, "error": f"WebSocket connection failed: {e}"
+                    }
+
         return results
