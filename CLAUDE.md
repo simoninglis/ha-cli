@@ -51,7 +51,7 @@ poetry run ha-automation --help  # backward compatibility
 export HA_URL="http://10.0.20.35:8123"
 export HA_TOKEN="<token from .mcp.json>"
 
-# List automations (if REST API available)
+# List automations (via WebSocket)
 poetry run ha-cli automations list
 
 # List dashboards
@@ -65,16 +65,16 @@ poetry run ha-cli dashboards entities mobile
 
 ### Automation Commands
 ```bash
-poetry run ha-cli automations list              # List all automations
-poetry run ha-cli automations read <id>         # Show automation details
-poetry run ha-cli automations create <file>     # Create from YAML file
-poetry run ha-cli automations update <id> <file> # Update automation
-poetry run ha-cli automations delete <id>       # Delete automation
+poetry run ha-cli automations list              # List all automations (WebSocket)
+poetry run ha-cli automations read <id>         # Show automation details (WebSocket)
 poetry run ha-cli automations enable <id>       # Enable automation
 poetry run ha-cli automations disable <id>      # Disable automation
 poetry run ha-cli automations reload            # Reload all automations
 poetry run ha-cli automations monitor           # Monitor automation events
 ```
+
+**Note**: Create/update/delete operations are not available via the API.
+Use the Home Assistant UI or edit `automations.yaml` directly.
 
 ### Dashboard Commands  
 ```bash
@@ -126,11 +126,12 @@ poetry run ha-cli automations list
 poetry run ha-cli automations list --storage ui     # UI-created only
 poetry run ha-cli automations list --storage file   # File-based only
 
-# Create new automation from file
-poetry run ha-cli automations create my-automation.yaml
+# Read full automation details
+poetry run ha-cli automations read kitchen_motion_activated_light
 
-# Migrate automation between storage types
-poetry run ha-cli automations migrate motion_sensor_lights ui
+# Enable/disable automations
+poetry run ha-cli automations enable motion_sensor_lights
+poetry run ha-cli automations disable motion_sensor_lights
 ```
 
 ### Working with Dashboards
@@ -151,12 +152,19 @@ poetry run ha-cli dashboards restore mobile-backup.yaml
 
 ## Troubleshooting
 
-### 404 Error on Automation Commands
-If you get "Resource not found: /api/config/automation/config":
-- The REST API requires the `config` integration to be enabled
-- The tool will automatically fall back to WebSocket mode (with limited info)
-- Force WebSocket mode with: `poetry run ha-cli automations list --websocket`
-- Note: WebSocket mode only provides basic info (ID, name, state, last triggered)
+### Automation API Limitations
+The tool uses WebSocket API exclusively for automations because the REST API
+(`/api/config/automation/config`) is undocumented and requires the `config`
+integration to be enabled (which most installations don't have).
+
+**What works via WebSocket:**
+- List automations (basic info: ID, name, mode, state, last triggered)
+- Read automation details (full configuration)
+- Enable/disable automations
+- Reload automations
+
+**What requires manual action:**
+- Create/update/delete automations - use HA UI or edit `automations.yaml`
 
 ### Connection Issues
 - Verify credentials match those in `.mcp.json`
@@ -195,6 +203,41 @@ See ha-rename documentation for full usage.
 - For tool development, see `../CLAUDE.md`
 
 ## Technical Documentation
+
+### Code Architecture
+
+The ha-cli codebase follows a domain-driven structure with shared utilities:
+
+```
+ha_cli/
+├── common/                    # Shared infrastructure
+│   ├── cli_utils.py          # Shared CLI utilities (setup_logging, run_async_command)
+│   ├── client.py             # WebSocket/REST client with connection constants
+│   ├── config.py             # Configuration management with security checks
+│   ├── exceptions.py         # Custom exceptions with docstrings
+│   ├── porcelain.py          # Structured JSON output for automation
+│   └── utils.py              # General utilities (YAML, config file ops)
+├── domains/                   # Domain-specific code
+│   ├── automations/          # Automation management
+│   ├── dashboards/           # Dashboard management
+│   └── entities/             # Entity management
+└── __main__.py               # CLI entry point
+```
+
+### Key Constants
+
+WebSocket connection constants are defined in `ha_cli/common/client.py`:
+- `WS_RECONNECT_BACKOFF = [1, 2, 4]` - Seconds between reconnection attempts
+- `WS_HEARTBEAT_INTERVAL = 30` - Seconds between heartbeat pings
+- `WS_PING_TIMEOUT = 10` - Seconds to wait for pong response
+- `WS_MAX_MESSAGE_SIZE = 10MB` - Maximum WebSocket message size
+
+### Security Features
+
+Config files containing tokens are protected:
+- **Permission checking**: Warns if config file readable by group/others
+- **Auto-secure**: New config files created with mode 0600 (owner read/write only)
+- **Actionable warnings**: Suggests `chmod 600` command when insecure
 
 ### Home Assistant Integration
 For detailed technical information about Home Assistant API constraints, data quality issues, and integration patterns, see:

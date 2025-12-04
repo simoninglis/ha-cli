@@ -22,6 +22,46 @@ logger = logging.getLogger(__name__)
 WS_RECV_TIMEOUT = 30
 
 
+def _search_dict_for_entity(obj: Any, entity_id: str) -> bool:
+    """Recursively search for entity references in dict/list structures.
+
+    Args:
+        obj: The object to search (dict, list, or other)
+        entity_id: The entity ID to search for
+
+    Returns:
+        True if the entity_id is found, False otherwise
+    """
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            # Direct entity_id references
+            if key in ['entity_id', 'entity_ids']:
+                if isinstance(value, str) and value == entity_id:
+                    return True
+                elif isinstance(value, list) and entity_id in value:
+                    return True
+            # Service call targets (target.entity_id, target.entity_ids)
+            elif key == 'target' and isinstance(value, dict):
+                for target_key, target_value in value.items():
+                    if target_key in ['entity_id', 'entity_ids']:
+                        if isinstance(target_value, str) and target_value == entity_id:
+                            return True
+                        elif isinstance(target_value, list) and entity_id in target_value:
+                            return True
+            # Device/area targets that might contain entities - skip these
+            elif key in ['device_id', 'device_ids', 'area_id', 'area_ids']:
+                continue
+            # Check nested structures
+            elif isinstance(value, (dict, list)):
+                if _search_dict_for_entity(value, entity_id):
+                    return True
+    elif isinstance(obj, list):
+        for item in obj:
+            if _search_dict_for_entity(item, entity_id):
+                return True
+    return False
+
+
 async def recv_with_timeout(ws, timeout: float = WS_RECV_TIMEOUT) -> str:
     """Receive a WebSocket message with timeout.
 
@@ -403,43 +443,11 @@ class EntityService:
     
     def _entity_referenced_in_automation(self, entity_id: str, automation) -> bool:
         """Check if an entity is referenced in an automation configuration."""
-        def search_dict(obj):
-            """Recursively search for entity references in dict/list structures."""
-            if isinstance(obj, dict):
-                for key, value in obj.items():
-                    # Direct entity_id references
-                    if key in ['entity_id', 'entity_ids']:
-                        if isinstance(value, str) and value == entity_id:
-                            return True
-                        elif isinstance(value, list) and entity_id in value:
-                            return True
-                    # Service call targets (target.entity_id, target.entity_ids)
-                    elif key == 'target' and isinstance(value, dict):
-                        for target_key, target_value in value.items():
-                            if target_key in ['entity_id', 'entity_ids']:
-                                if isinstance(target_value, str) and target_value == entity_id:
-                                    return True
-                                elif isinstance(target_value, list) and entity_id in target_value:
-                                    return True
-                    # Device/area targets that might contain entities
-                    elif key in ['device_id', 'device_ids', 'area_id', 'area_ids']:
-                        # Skip device/area IDs as they don't directly reference entities
-                        continue
-                    # Check nested structures
-                    elif isinstance(value, (dict, list)):
-                        if search_dict(value):
-                            return True
-            elif isinstance(obj, list):
-                for item in obj:
-                    if search_dict(item):
-                        return True
-            return False
-        
-        # Check triggers, conditions, and actions
+        # Check triggers, conditions, and actions using consolidated helper
         for section in [automation.trigger, automation.condition, automation.action]:
-            if section and search_dict(section):
+            if section and _search_dict_for_entity(section, entity_id):
                 return True
-        
+
         return False
     
     def _entity_referenced_in_dashboard(self, entity_id: str, dashboard_config) -> bool:
@@ -742,39 +750,11 @@ class EntityService:
     
     def _entity_in_automation_config(self, entity_id: str, automation_config: dict) -> bool:
         """Check if an entity is referenced in a full automation configuration."""
-        def search_dict(obj):
-            """Recursively search for entity references in dict/list structures."""
-            if isinstance(obj, dict):
-                for key, value in obj.items():
-                    # Direct entity_id references
-                    if key in ['entity_id', 'entity_ids']:
-                        if isinstance(value, str) and value == entity_id:
-                            return True
-                        elif isinstance(value, list) and entity_id in value:
-                            return True
-                    # Service call targets (target.entity_id, target.entity_ids)
-                    elif key == 'target' and isinstance(value, dict):
-                        for target_key, target_value in value.items():
-                            if target_key in ['entity_id', 'entity_ids']:
-                                if isinstance(target_value, str) and target_value == entity_id:
-                                    return True
-                                elif isinstance(target_value, list) and entity_id in target_value:
-                                    return True
-                    # Check nested structures
-                    elif isinstance(value, (dict, list)):
-                        if search_dict(value):
-                            return True
-            elif isinstance(obj, list):
-                for item in obj:
-                    if search_dict(item):
-                        return True
-            return False
-        
-        # Check triggers, conditions, and actions
+        # Check triggers, conditions, and actions using consolidated helper
         for section in ['trigger', 'condition', 'action']:
-            if section in automation_config and search_dict(automation_config[section]):
+            if section in automation_config and _search_dict_for_entity(automation_config[section], entity_id):
                 return True
-                
+
         return False
     
     async def delete_entities(self, entity_ids: List[str]) -> Dict[str, Dict[str, Any]]:

@@ -16,9 +16,8 @@ from rich.syntax import Syntax
 
 from ...common.client import HAClient
 from ...common.config import get_client_config
+from ...common.cli_utils import run_async_command, setup_logging
 from ...common.exceptions import (
-    EXIT_HA_ERROR,
-    EXIT_NETWORK_ERROR,
     EXIT_USAGE_ERROR,
     HAAutomationError,
 )
@@ -45,31 +44,6 @@ console = Console()
 
 # Logging setup
 logger = logging.getLogger(__name__)
-
-
-def setup_logging(debug: bool = False) -> None:
-    """Configure logging."""
-    level = logging.DEBUG if debug else logging.WARNING
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-
-
-
-async def run_async_command(coro):
-    """Run async command and handle exceptions."""
-    try:
-        return await coro
-    except HAAutomationError as e:
-        console.print(f"[red]Error:[/red] {e.message}")
-        if e.details:
-            logger.debug(f"Error details: {e.details}")
-        sys.exit(EXIT_HA_ERROR)
-    except Exception as e:
-        console.print(f"[red]Unexpected error:[/red] {e}")
-        logger.exception("Unexpected error")
-        sys.exit(EXIT_NETWORK_ERROR)
 
 
 @app.command()

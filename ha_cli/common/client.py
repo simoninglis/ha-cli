@@ -24,6 +24,12 @@ from .exceptions import (
 
 logger = logging.getLogger(__name__)
 
+# Connection and timeout constants
+WS_RECONNECT_BACKOFF = [1, 2, 4]  # Seconds between reconnection attempts
+WS_HEARTBEAT_INTERVAL = 30  # Seconds between WebSocket heartbeat pings
+WS_PING_TIMEOUT = 10  # Seconds to wait for pong response
+WS_MAX_MESSAGE_SIZE = 10 * 1024 * 1024  # 10MB max message size
+
 
 class HAClient:
     """Home Assistant client with REST and WebSocket support."""
@@ -171,7 +177,7 @@ class HAClient:
             
             # Connect with retry logic
             retry_count = 0
-            backoff = [1, 2, 4]  # seconds
+            backoff = WS_RECONNECT_BACKOFF
             
             while retry_count < 3:
                 try:
@@ -179,7 +185,7 @@ class HAClient:
                     self._ws = await websockets.connect(
                         self.ws_url,
                         ssl=self.verify_ssl if self.ws_url.startswith("wss") else None,
-                        max_size=10 * 1024 * 1024,  # 10MB for large responses
+                        max_size=WS_MAX_MESSAGE_SIZE,
                     )
                     
                     # Wait for auth required message
@@ -228,13 +234,12 @@ class HAClient:
         """Send periodic heartbeat to keep connection alive."""
         try:
             while self._ws and not self._ws.closed:
-                # Send ping every 30 seconds
-                await asyncio.sleep(30)
+                await asyncio.sleep(WS_HEARTBEAT_INTERVAL)
                 if self._ws and not self._ws.closed:
                     try:
                         pong_waiter = await self._ws.ping()
-                        await asyncio.wait_for(pong_waiter, timeout=10)
-                        self._ws_last_heartbeat = asyncio.get_event_loop().time()
+                        await asyncio.wait_for(pong_waiter, timeout=WS_PING_TIMEOUT)
+                        self._ws_last_heartbeat = asyncio.get_running_loop().time()
                     except Exception as e:
                         logger.warning(f"WebSocket heartbeat failed: {e}")
                         # Trigger reconnection

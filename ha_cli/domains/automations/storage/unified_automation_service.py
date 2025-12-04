@@ -32,43 +32,33 @@ class UnifiedAutomationService:
     
     async def list_all(self, use_websocket: bool = False) -> list[Automation]:
         """List all automations from both UI and file storage.
-        
+
         Args:
-            use_websocket: Force WebSocket mode (for when REST API unavailable)
-        
+            use_websocket: Ignored (always uses WebSocket)
+
         Returns:
             Combined list of all automations
         """
-        # Get automations via REST API or WebSocket fallback
-        try:
-            if use_websocket:
-                raise NotFoundError("Forcing WebSocket mode")
-            raw_automations = await self.client.list_automations()
-            ws_automations = [Automation(**a) for a in raw_automations]
-        except Exception as e:
-            if "404" in str(e) or "not found" in str(e).lower() or use_websocket:
-                # Use WebSocket fallback
-                logger.warning("Using WebSocket to list automations (limited info)")
-                states = await self.client.get_automation_states()
-                ws_automations = []
-                for state in states:
-                    entity_id = state.get("entity_id", "")
-                    automation_id = entity_id.replace("automation.", "")
-                    attributes = state.get("attributes", {})
-                    
-                    # Create minimal automation object
-                    automation = Automation(
-                        id=automation_id,
-                        alias=attributes.get("friendly_name", automation_id),
-                        mode=attributes.get("mode", "single"),
-                        enabled=state.get("state") == "on",
-                        description="Full configuration not available via WebSocket",
-                        trigger=[],
-                        action=[]
-                    )
-                    ws_automations.append(automation)
-            else:
-                raise
+        # Get automations via WebSocket (REST API is undocumented and unreliable)
+        logger.warning("Using WebSocket to list automations (limited info)")
+        states = await self.client.get_automation_states()
+        ws_automations = []
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            automation_id = entity_id.replace("automation.", "")
+            attributes = state.get("attributes", {})
+
+            # Create minimal automation object
+            automation = Automation(
+                id=automation_id,
+                alias=attributes.get("friendly_name", automation_id),
+                mode=attributes.get("mode", "single"),
+                enabled=state.get("state") == "on",
+                description="Full configuration not available via WebSocket",
+                trigger=[],
+                action=[]
+            )
+            ws_automations.append(automation)
         
         # Also load file automations directly to ensure consistency
         file_automations = await self.file_manager.load_all()

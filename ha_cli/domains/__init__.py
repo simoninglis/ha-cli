@@ -1,1 +1,1 @@
-"""Home Assistant domains (automations, dashboards, etc.)."""
+"""Home Assistant domains (audit, automations, dashboards, entities)."""

@@ -18,11 +18,13 @@ def version() -> None:
 
 
 # Import subcommands
+from .domains.audit import cli as audit_cli
 from .domains.automations import cli as automations_cli
 from .domains.dashboards import cli as dashboards_cli
 from .domains.entities import cli as entities_cli
 
 # Add subcommands
+app.add_typer(audit_cli.app, name="audit")
 app.add_typer(automations_cli.app, name="automations")
 app.add_typer(dashboards_cli.app, name="dashboards")
 app.add_typer(entities_cli.app, name="entities")

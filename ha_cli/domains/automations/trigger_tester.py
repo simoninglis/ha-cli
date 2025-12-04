@@ -267,7 +267,7 @@ class TriggerTester:
         if test_id in self._active_tests:
             raise ValueError(f"Test {test_id} is already running")
         
-        async def run_test():
+        async def run_test() -> None:
             """Run the test in background."""
             try:
                 async for event in self.test_trigger_interactive(trigger_config, callback):

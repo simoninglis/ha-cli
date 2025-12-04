@@ -316,7 +316,7 @@ class DashboardService:
         """Extract entity IDs from a card configuration."""
         entities = set()
         
-        def extract_from_dict(d: dict):
+        def extract_from_dict(d: dict) -> None:
             """Recursively extract entity IDs from dictionary."""
             for key, value in d.items():
                 if key in ['entity', 'entity_id'] and isinstance(value, str):

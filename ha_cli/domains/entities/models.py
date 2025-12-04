@@ -21,7 +21,7 @@ class Entity(BaseModel):
     # Keeping minimal sanitization for actual problematic cases
     
     @validator('entity_id', pre=True)
-    def validate_entity_id(cls, v):
+    def validate_entity_id(cls, v: Any) -> str:
         """Ensure entity_id is valid."""
         if isinstance(v, str):
             # Only remove NULL characters which are never valid

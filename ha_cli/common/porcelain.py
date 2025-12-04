@@ -17,7 +17,7 @@ from .exceptions import HAAutomationError
 class CleanJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder that removes control characters from strings."""
     
-    def encode(self, obj):
+    def encode(self, obj: Any) -> str:
         """Encode object with control character sanitization."""
         return super().encode(self._sanitize_recursive(obj))
     
@@ -446,7 +446,7 @@ def extract_entity_references(automation_data: Dict[str, Any]) -> Dict[str, Any]
         "actions": []
     }
     
-    def extract_from_dict(data, section):
+    def extract_from_dict(data: Any, section: str) -> None:
         """Recursively extract entity IDs from configuration dict."""
         if isinstance(data, dict):
             for key, value in data.items():

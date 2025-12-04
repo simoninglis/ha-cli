@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -11,34 +12,81 @@ import ruamel.yaml
 
 logger = logging.getLogger(__name__)
 
+# Secure file permission: owner read/write only (0600)
+SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
+
+
+def check_config_file_permissions(config_path: Path) -> None:
+    """Check if config file has secure permissions and warn if not.
+
+    Config files may contain sensitive tokens and should be readable
+    only by the owner (mode 0600).
+
+    Args:
+        config_path: Path to configuration file
+    """
+    if not config_path.exists():
+        return
+
+    try:
+        file_stat = config_path.stat()
+        mode = file_stat.st_mode & 0o777  # Get permission bits only
+
+        # Check if file is readable by group or others
+        if mode & (stat.S_IRGRP | stat.S_IROTH | stat.S_IWGRP | stat.S_IWOTH):
+            logger.warning(
+                f"Config file {config_path} has insecure permissions (mode {oct(mode)}). "
+                f"This file may contain sensitive tokens. "
+                f"Consider running: chmod 600 {config_path}"
+            )
+    except OSError as e:
+        logger.debug(f"Could not check config file permissions: {e}")
+
 
 def load_config(config_path: Path) -> dict[str, Any]:
     """Load configuration from JSON file.
-    
+
     Args:
         config_path: Path to configuration file
-        
+
     Returns:
         Configuration dictionary
+
+    Note:
+        This function will warn if the config file has insecure permissions,
+        as it may contain sensitive access tokens.
     """
     if not config_path.exists():
         return {}
-    
+
+    # Check permissions before loading
+    check_config_file_permissions(config_path)
+
     with open(config_path) as f:
         return json.load(f)
 
 
 def save_config(config_path: Path, config: dict[str, Any]) -> None:
-    """Save configuration to JSON file.
-    
+    """Save configuration to JSON file with secure permissions.
+
     Args:
         config_path: Path to configuration file
         config: Configuration dictionary
+
+    Note:
+        The config file is created with mode 0600 (owner read/write only)
+        to protect sensitive access tokens.
     """
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
+
+    # Set secure permissions (owner read/write only)
+    try:
+        config_path.chmod(SECURE_FILE_MODE)
+    except OSError as e:
+        logger.debug(f"Could not set secure permissions on config file: {e}")
 
 
 def load_yaml_file(file_path: str) -> dict[str, Any]:
