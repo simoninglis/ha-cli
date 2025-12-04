@@ -4,51 +4,106 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from ...common.client import HAClient
-from ...common.exceptions import (
-    AutomationNotFoundError,
-    ValidationError,
-)
+from ...common.exceptions import AutomationNotFoundError, NotFoundError, ValidationError
 from .models import Automation, AutomationListResponse
 
 logger = logging.getLogger(__name__)
 
 
 class AutomationCRUD:
-    """Service for CRUD operations on automations."""
-    
+    """Service for CRUD operations on automations.
+
+    This service provides automation management with REST API support for
+    create/update/delete operations. The REST API requires the 'config'
+    integration to be enabled in Home Assistant.
+
+    The service automatically detects REST API availability and falls back
+    to graceful error handling when unavailable.
+    """
+
     def __init__(self, client: HAClient) -> None:
         """Initialize service with HAClient."""
         self.client = client
+        self._rest_api_available: bool | None = None
+
+    async def _check_rest_api(self) -> bool:
+        """Check if REST API is available (cached).
+
+        Returns:
+            True if REST API is available
+        """
+        if self._rest_api_available is None:
+            self._rest_api_available = await self.client.probe_automation_rest_api()
+            if self._rest_api_available:
+                logger.info("REST API available for automation CRUD operations")
+            else:
+                logger.warning(
+                    "REST API not available. Create/update/delete operations require "
+                    "the 'config' integration to be enabled in Home Assistant."
+                )
+        return self._rest_api_available
+
+    def _load_automation_file(self, file_path: str) -> dict[str, Any]:
+        """Load automation configuration from a YAML or JSON file.
+
+        Args:
+            file_path: Path to the configuration file
+
+        Returns:
+            Automation configuration dictionary
+
+        Raises:
+            ValidationError: If file cannot be read or parsed
+        """
+        path = Path(file_path)
+        if not path.exists():
+            raise ValidationError(f"File not found: {file_path}")
+
+        try:
+            with open(path) as f:
+                content = f.read()
+
+            if path.suffix.lower() in (".yaml", ".yml"):
+                config = yaml.safe_load(content)
+            elif path.suffix.lower() == ".json":
+                import json
+                config = json.loads(content)
+            else:
+                # Try YAML first, then JSON
+                try:
+                    config = yaml.safe_load(content)
+                except yaml.YAMLError:
+                    import json
+                    config = json.loads(content)
+
+            if not isinstance(config, dict):
+                raise ValidationError(f"Invalid automation config: expected dict, got {type(config).__name__}")
+
+            return config
+        except (yaml.YAMLError, ValueError) as e:
+            raise ValidationError(f"Failed to parse {file_path}: {e}")
+        except OSError as e:
+            raise ValidationError(f"Failed to read {file_path}: {e}")
     
     async def list_automations(self, json_output: bool = False, use_websocket: bool = False) -> list[Automation] | list[dict[str, Any]]:
-        """List all automations.
-        
+        """List all automations via WebSocket.
+
         Args:
             json_output: Return raw JSON instead of Automation objects
-            use_websocket: Force WebSocket mode (for when REST API unavailable)
-            
+            use_websocket: Ignored (always uses WebSocket)
+
         Returns:
             List of automations
         """
-        if use_websocket:
-            # Use WebSocket fallback
-            raw_data = await self._list_automations_websocket()
-        else:
-            try:
-                # Try REST API first
-                raw_data = await self.client.list_automations()
-            except Exception as e:
-                if "404" in str(e) or "not found" in str(e).lower():
-                    # Fallback to WebSocket if REST API not available
-                    logger.warning("REST API not available, falling back to WebSocket")
-                    raw_data = await self._list_automations_websocket()
-                else:
-                    raise
-        
+        # Always use WebSocket - REST API is undocumented and unreliable
+        raw_data = await self._list_automations_websocket()
+
         if json_output:
             return raw_data
-        
+
         # Parse response
         response = AutomationListResponse(result=raw_data)
         return response.to_automations()
@@ -83,13 +138,13 @@ class AutomationCRUD:
     
     async def get_automation(self, automation_id: str) -> Automation:
         """Get single automation by ID.
-        
+
         Args:
             automation_id: Automation ID
-            
+
         Returns:
             Automation object
-            
+
         Raises:
             AutomationNotFoundError: If not found
         """
@@ -97,100 +152,128 @@ class AutomationCRUD:
             data = await self.client.get_automation(automation_id)
             return Automation(**data)
         except Exception as e:
-            if "404" in str(e):
+            if "not_found" in str(e).lower() or "not found" in str(e).lower():
                 raise AutomationNotFoundError(automation_id)
             raise
     
-    async def create_automation(self, file_path: str) -> str:
+    async def create_automation(self, file_path: str, dry_run: bool = False) -> str:
         """Create automation from file.
-        
+
+        Requires the 'config' integration to be enabled in Home Assistant.
+
         Args:
-            file_path: Path to YAML/JSON file
-            
+            file_path: Path to YAML/JSON file with automation configuration
+            dry_run: If True, validate but don't create
+
         Returns:
-            New automation ID
-        """
-        path = Path(file_path)
-        if not path.exists():
-            raise ValidationError(f"File not found: {file_path}")
-        
-        # Load automation from file
-        if path.suffix in [".yaml", ".yml"]:
-            automation = Automation.from_yaml_file(str(path))
-        elif path.suffix == ".json":
-            import json
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-            automation = Automation(**data)
-        else:
-            raise ValidationError("File must be YAML or JSON")
-        
-        # Validate
-        self._validate_automation(automation)
-        
-        # Create via API
-        result = await self.client.create_automation(automation.to_json_dict())
-        
-        # Extract ID from result
-        return result.get("id", "unknown")
-    
-    async def update_automation(self, automation_id: str, file_path: str) -> None:
-        """Update automation from file.
-        
-        Args:
-            automation_id: Automation ID
-            file_path: Path to YAML/JSON file
-        """
-        path = Path(file_path)
-        if not path.exists():
-            raise ValidationError(f"File not found: {file_path}")
-        
-        # Load automation from file
-        if path.suffix in [".yaml", ".yml"]:
-            automation = Automation.from_yaml_file(str(path))
-        elif path.suffix == ".json":
-            import json
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-            automation = Automation(**data)
-        else:
-            raise ValidationError("File must be YAML or JSON")
-        
-        # Validate
-        self._validate_automation(automation)
-        
-        # Update via API
-        await self.client.update_automation(automation_id, automation.to_json_dict())
-    
-    async def delete_automation(self, automation_id: str) -> None:
-        """Delete automation.
-        
-        Args:
-            automation_id: Automation ID
-        """
-        await self.client.delete_automation(automation_id)
-    
-    def _validate_automation(self, automation: Automation) -> None:
-        """Validate automation before create/update.
-        
-        Args:
-            automation: Automation to validate
-            
+            The numeric ID of the created automation
+
         Raises:
-            ValidationError: If invalid
+            ValidationError: If file is invalid or REST API unavailable
         """
-        if not automation.alias:
-            raise ValidationError("Automation must have an alias")
-        
-        if not automation.trigger:
-            raise ValidationError("Automation must have at least one trigger")
-        
-        if not automation.action:
-            raise ValidationError("Automation must have at least one action")
-        
-        # Validate max for queued/parallel modes
-        if automation.mode in ["queued", "parallel"] and automation.max is None:
-            raise ValidationError(f"Mode '{automation.mode}' requires 'max' to be set")
+        # Check REST API availability
+        if not await self._check_rest_api():
+            raise ValidationError(
+                "REST API not available. Creating automations requires the 'config' "
+                "integration to be enabled in Home Assistant's configuration.yaml. "
+                "Add 'config:' to your configuration and restart Home Assistant."
+            )
+
+        # Load and validate the configuration
+        config = self._load_automation_file(file_path)
+
+        # Basic validation
+        if "trigger" not in config and "triggers" not in config:
+            raise ValidationError("Automation must have 'trigger' or 'triggers'")
+        if "action" not in config and "actions" not in config:
+            raise ValidationError("Automation must have 'action' or 'actions'")
+
+        if dry_run:
+            logger.info(f"Dry run: would create automation with alias '{config.get('alias', 'unnamed')}'")
+            return "DRY_RUN"
+
+        # Create the automation
+        numeric_id = await self.client.create_automation_rest(config)
+        logger.info(f"Created automation with ID: {numeric_id}")
+        return numeric_id
+
+    async def update_automation(self, automation_id: str, file_path: str, dry_run: bool = False) -> None:
+        """Update automation from file.
+
+        Requires the 'config' integration to be enabled in Home Assistant.
+
+        Args:
+            automation_id: Automation ID (entity ID or numeric ID)
+            file_path: Path to YAML/JSON file with updated configuration
+            dry_run: If True, validate but don't update
+
+        Raises:
+            ValidationError: If file is invalid or REST API unavailable
+            AutomationNotFoundError: If automation not found
+        """
+        # Check REST API availability
+        if not await self._check_rest_api():
+            raise ValidationError(
+                "REST API not available. Updating automations requires the 'config' "
+                "integration to be enabled in Home Assistant's configuration.yaml."
+            )
+
+        # Resolve to numeric ID if needed
+        if not automation_id.isdigit():
+            numeric_id = await self.client.get_automation_numeric_id(automation_id)
+            if not numeric_id:
+                raise AutomationNotFoundError(automation_id)
+            logger.debug(f"Resolved {automation_id} to numeric ID {numeric_id}")
+        else:
+            numeric_id = automation_id
+
+        # Load and validate the configuration
+        config = self._load_automation_file(file_path)
+
+        if dry_run:
+            logger.info(f"Dry run: would update automation {automation_id}")
+            return
+
+        # Update the automation
+        await self.client.update_automation_rest(numeric_id, config)
+        logger.info(f"Updated automation {automation_id} (numeric ID: {numeric_id})")
+
+    async def delete_automation(self, automation_id: str, dry_run: bool = False) -> None:
+        """Delete automation.
+
+        Requires the 'config' integration to be enabled in Home Assistant.
+
+        Args:
+            automation_id: Automation ID (entity ID or numeric ID)
+            dry_run: If True, validate but don't delete
+
+        Raises:
+            ValidationError: If REST API unavailable
+            AutomationNotFoundError: If automation not found
+        """
+        # Check REST API availability
+        if not await self._check_rest_api():
+            raise ValidationError(
+                "REST API not available. Deleting automations requires the 'config' "
+                "integration to be enabled in Home Assistant's configuration.yaml."
+            )
+
+        # Resolve to numeric ID if needed
+        if not automation_id.isdigit():
+            numeric_id = await self.client.get_automation_numeric_id(automation_id)
+            if not numeric_id:
+                raise AutomationNotFoundError(automation_id)
+            logger.debug(f"Resolved {automation_id} to numeric ID {numeric_id}")
+        else:
+            numeric_id = automation_id
+
+        if dry_run:
+            logger.info(f"Dry run: would delete automation {automation_id}")
+            return
+
+        # Delete the automation
+        await self.client.delete_automation_rest(numeric_id)
+        logger.info(f"Deleted automation {automation_id} (numeric ID: {numeric_id})")
 
 
 class AutomationWS:

@@ -358,44 +358,160 @@ class HAClient:
             await self._handle_ws_disconnect()
             raise WebSocketError("Connection lost during WebSocket call")
     
-    # REST API methods
-    
-    async def list_automations(self) -> list[dict[str, Any]]:
-        """List all automations via REST API."""
-        return await self._rest("GET", "/api/config/automation/config")
-    
+    # Automation methods
+    # Note: The REST API /api/config/automation/config requires the 'config'
+    # integration to be enabled. We probe for availability and fall back gracefully.
+
+    async def probe_automation_rest_api(self) -> bool:
+        """Check if the automation REST API is available.
+
+        The REST API requires the 'config' integration to be enabled in
+        Home Assistant's configuration.yaml.
+
+        Returns:
+            True if REST API is available, False otherwise
+        """
+        try:
+            # Try to fetch a known automation config via REST
+            # We use a HEAD-like approach by trying to access the base config endpoint
+            # This will 404 if config integration is not enabled
+            await self._rest("GET", "/api/config/core/check_config")
+            return True
+        except NotFoundError:
+            return False
+        except Exception as e:
+            logger.debug(f"REST API probe failed: {e}")
+            return False
+
+    async def get_automation_numeric_id(self, automation_id: str) -> str | None:
+        """Get the numeric ID for an automation from its entity ID.
+
+        The REST API uses numeric IDs (timestamps) while the WebSocket uses
+        entity-based IDs. This method resolves the mapping.
+
+        Args:
+            automation_id: Automation ID (without 'automation.' prefix)
+
+        Returns:
+            Numeric ID string, or None if not found
+        """
+        try:
+            # Get automation config via WebSocket - this includes the numeric ID
+            entity_id = f"automation.{automation_id}" if not automation_id.startswith("automation.") else automation_id
+            result = await self._ws_call("automation/config", entity_id=entity_id)
+
+            # The config contains an 'id' field with the numeric ID
+            if isinstance(result, dict):
+                config = result.get("config", result)
+                return config.get("id")
+            return None
+        except Exception as e:
+            logger.debug(f"Failed to get numeric ID for {automation_id}: {e}")
+            return None
+
+    async def create_automation_rest(self, automation_config: dict[str, Any]) -> str:
+        """Create a new automation via REST API.
+
+        Args:
+            automation_config: Automation configuration dictionary
+
+        Returns:
+            The numeric ID of the created automation
+
+        Raises:
+            NotFoundError: If REST API is not available (config integration disabled)
+            ValidationError: If configuration is invalid
+        """
+        import time
+
+        # Generate a numeric ID (timestamp-based, matching HA's pattern)
+        numeric_id = str(int(time.time() * 1000))
+
+        # Ensure the config has the ID set
+        config = automation_config.copy()
+        config["id"] = numeric_id
+
+        endpoint = f"/api/config/automation/config/{numeric_id}"
+        await self._rest("POST", endpoint, json_data=config)
+
+        # Reload automations to apply the change
+        await self.reload_automations()
+
+        return numeric_id
+
+    async def update_automation_rest(self, numeric_id: str, automation_config: dict[str, Any]) -> None:
+        """Update an existing automation via REST API.
+
+        Args:
+            numeric_id: The numeric ID of the automation (not entity ID)
+            automation_config: Updated automation configuration
+
+        Raises:
+            NotFoundError: If automation not found or REST API unavailable
+            ValidationError: If configuration is invalid
+        """
+        # Ensure the config has the correct ID
+        config = automation_config.copy()
+        config["id"] = numeric_id
+
+        endpoint = f"/api/config/automation/config/{numeric_id}"
+        await self._rest("POST", endpoint, json_data=config)
+
+        # Reload automations to apply the change
+        await self.reload_automations()
+
+    async def delete_automation_rest(self, numeric_id: str) -> None:
+        """Delete an automation via REST API.
+
+        Args:
+            numeric_id: The numeric ID of the automation (not entity ID)
+
+        Raises:
+            NotFoundError: If automation not found or REST API unavailable
+        """
+        endpoint = f"/api/config/automation/config/{numeric_id}"
+        await self._rest("DELETE", endpoint)
+
+        # Reload automations to apply the change
+        await self.reload_automations()
+
+    async def get_automation_rest(self, numeric_id: str) -> dict[str, Any]:
+        """Get automation configuration via REST API.
+
+        Args:
+            numeric_id: The numeric ID of the automation
+
+        Returns:
+            Automation configuration dictionary
+
+        Raises:
+            NotFoundError: If automation not found or REST API unavailable
+        """
+        endpoint = f"/api/config/automation/config/{numeric_id}"
+        return await self._rest("GET", endpoint)
+
     async def get_automation_states(self) -> list[dict[str, Any]]:
         """Get all automation entities via WebSocket.
-        
+
         Returns:
             List of automation entity states
         """
         states = await self.get_states()
         return [s for s in states if s.get("entity_id", "").startswith("automation.")]
-    
-    async def create_automation(self, automation: dict[str, Any]) -> dict[str, Any]:
-        """Create new automation via REST API."""
-        result = await self._rest("POST", "/api/config/automation/config", json_data=automation)
-        # Reload after create
-        await self.reload_automations()
-        return result
-    
+
     async def get_automation(self, automation_id: str) -> dict[str, Any]:
-        """Get automation by ID via REST API."""
-        return await self._rest("GET", f"/api/config/automation/config/{automation_id}")
-    
-    async def update_automation(self, automation_id: str, automation: dict[str, Any]) -> dict[str, Any]:
-        """Update automation via REST API."""
-        result = await self._rest("POST", f"/api/config/automation/config/{automation_id}", json_data=automation)
-        # Reload after update
-        await self.reload_automations()
-        return result
-    
-    async def delete_automation(self, automation_id: str) -> None:
-        """Delete automation via REST API."""
-        await self._rest("DELETE", f"/api/config/automation/config/{automation_id}")
-        # Reload after delete
-        await self.reload_automations()
+        """Get automation configuration by ID via WebSocket.
+
+        Args:
+            automation_id: Automation ID (with or without 'automation.' prefix)
+
+        Returns:
+            Automation configuration dict
+
+        Raises:
+            NotFoundError: If automation not found
+        """
+        return await self.get_automation_config(automation_id)
     
     # WebSocket methods
     
@@ -658,21 +774,31 @@ class HAClient:
     
     async def get_automation_config(self, automation_id: str) -> dict[str, Any]:
         """Get automation configuration via WebSocket.
-        
+
         Args:
-            automation_id: ID of automation to get
-            
+            automation_id: ID of automation to get (without 'automation.' prefix)
+
         Returns:
             Automation configuration
-            
+
         Raises:
             NotFoundError: If automation not found
         """
+        # The WebSocket API expects entity_id format
+        entity_id = f"automation.{automation_id}" if not automation_id.startswith("automation.") else automation_id
+
         try:
             result = await self._ws_call(
                 "automation/config",
-                automation_id=automation_id,
+                entity_id=entity_id,
             )
+            # The result contains a 'config' key with the actual configuration
+            if isinstance(result, dict) and "config" in result:
+                config = result["config"]
+                # Add the ID to the config if not present
+                if "id" not in config:
+                    config["id"] = automation_id.replace("automation.", "")
+                return config
             return result
         except WebSocketError as e:
             if "not_found" in str(e).lower():

@@ -13,6 +13,21 @@ from ha_automation.models import Automation
 from ha_automation.service import AutomationCRUD, AutomationWS
 
 
+# Sample automation YAML for testing
+SAMPLE_AUTOMATION_YAML = """
+alias: Test Automation
+description: A test automation
+trigger:
+  - platform: time
+    at: "10:00:00"
+action:
+  - service: light.turn_on
+    target:
+      entity_id: light.living_room
+mode: single
+"""
+
+
 class TestAutomationCRUDIntegration:
     """Integration tests for AutomationCRUD service."""
     
@@ -28,46 +43,36 @@ class TestAutomationCRUDIntegration:
     
     @pytest.mark.asyncio
     async def test_list_automations_json_output(self, crud_service, mock_client):
-        """Test list automations with JSON output."""
-        mock_data = [
-            {"id": "test1", "alias": "Test 1", "trigger": [], "action": []},
-            {"id": "test2", "alias": "Test 2", "trigger": [], "action": []}
+        """Test list automations with JSON output (uses WebSocket)."""
+        # WebSocket returns entity states format
+        mock_states = [
+            {"entity_id": "automation.test1", "state": "on", "attributes": {"friendly_name": "Test 1", "mode": "single"}},
+            {"entity_id": "automation.test2", "state": "on", "attributes": {"friendly_name": "Test 2", "mode": "single"}}
         ]
-        mock_client.list_automations.return_value = mock_data
-        
+        mock_client.get_automation_states.return_value = mock_states
+
         result = await crud_service.list_automations(json_output=True)
-        
-        assert result == mock_data
-        mock_client.list_automations.assert_called_once()
-    
+
+        assert len(result) == 2
+        mock_client.get_automation_states.assert_called_once()
+
     @pytest.mark.asyncio
     async def test_list_automations_object_output(self, crud_service, mock_client):
-        """Test list automations with Automation objects."""
-        mock_data = [
-            {
-                "id": "test1", 
-                "alias": "Test 1", 
-                "trigger": [{"platform": "time"}], 
-                "action": [{"service": "test"}],
-                "mode": "single"
-            },
-            {
-                "id": "test2", 
-                "alias": "Test 2", 
-                "trigger": [{"platform": "state"}], 
-                "action": [{"service": "test2"}],
-                "mode": "restart"
-            }
+        """Test list automations with Automation objects (uses WebSocket)."""
+        # WebSocket returns entity states format
+        mock_states = [
+            {"entity_id": "automation.test1", "state": "on", "attributes": {"friendly_name": "Test 1", "mode": "single"}},
+            {"entity_id": "automation.test2", "state": "on", "attributes": {"friendly_name": "Test 2", "mode": "restart"}}
         ]
-        mock_client.list_automations.return_value = mock_data
-        
+        mock_client.get_automation_states.return_value = mock_states
+
         result = await crud_service.list_automations(json_output=False)
-        
+
         assert len(result) == 2
         assert all(isinstance(item, Automation) for item in result)
         assert result[0].id == "test1"
         assert result[0].alias == "Test 1"
-        assert result[1].id == "test2" 
+        assert result[1].id == "test2"
         assert result[1].alias == "Test 2"
     
     @pytest.mark.asyncio
@@ -98,199 +103,163 @@ class TestAutomationCRUDIntegration:
             await crud_service.get_automation("nonexistent")
     
     @pytest.mark.asyncio
-    async def test_create_automation_from_yaml(self, crud_service, mock_client):
-        """Test create automation from YAML file."""
+    async def test_create_automation_rest_api_unavailable(self, crud_service, mock_client):
+        """Test create automation fails gracefully when REST API unavailable."""
+        mock_client.probe_automation_rest_api.return_value = False
+
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-            f.write("""
-alias: "Test Automation"
-trigger:
-  - platform: time
-    at: "10:00:00"
-action:
-  - service: light.turn_on
-    entity_id: light.test
-mode: single
-""")
+            f.write(SAMPLE_AUTOMATION_YAML)
             f.flush()
-            
-            mock_client.create_automation.return_value = {"id": "new_automation"}
-            
-            result = await crud_service.create_automation(f.name)
-            
-            assert result == "new_automation"
-            mock_client.create_automation.assert_called_once()
-            
-            # Verify the automation data passed to client
-            call_args = mock_client.create_automation.call_args[0][0]
-            assert call_args["alias"] == "Test Automation"
-            assert len(call_args["trigger"]) == 1
-            assert len(call_args["action"]) == 1
-        
-        Path(f.name).unlink()  # Clean up
-    
+
+            with pytest.raises(ValidationError, match="REST API not available"):
+                await crud_service.create_automation(f.name)
+
     @pytest.mark.asyncio
-    async def test_create_automation_from_json(self, crud_service, mock_client):
-        """Test create automation from JSON file."""
-        automation_data = {
-            "alias": "JSON Test Automation",
-            "trigger": [{"platform": "state", "entity_id": "sensor.test"}],
-            "action": [{"service": "notify.test"}],
-            "mode": "single"
-        }
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(automation_data, f)
+    async def test_create_automation_success(self, crud_service, mock_client):
+        """Test create automation with REST API available."""
+        mock_client.probe_automation_rest_api.return_value = True
+        mock_client.create_automation_rest.return_value = "1234567890123"
+        mock_client.reload_automations.return_value = None
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(SAMPLE_AUTOMATION_YAML)
             f.flush()
-            
-            mock_client.create_automation.return_value = {"id": "json_automation"}
-            
+
             result = await crud_service.create_automation(f.name)
-            
-            assert result == "json_automation"
-            mock_client.create_automation.assert_called_once()
-        
-        Path(f.name).unlink()  # Clean up
-    
+
+            assert result == "1234567890123"
+            mock_client.create_automation_rest.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_automation_dry_run(self, crud_service, mock_client):
+        """Test create automation dry run mode."""
+        mock_client.probe_automation_rest_api.return_value = True
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(SAMPLE_AUTOMATION_YAML)
+            f.flush()
+
+            result = await crud_service.create_automation(f.name, dry_run=True)
+
+            assert result == "DRY_RUN"
+            mock_client.create_automation_rest.assert_not_called()
+
     @pytest.mark.asyncio
     async def test_create_automation_file_not_found(self, crud_service, mock_client):
         """Test create automation with non-existent file."""
+        mock_client.probe_automation_rest_api.return_value = True
+
         with pytest.raises(ValidationError, match="File not found"):
             await crud_service.create_automation("/nonexistent/file.yaml")
-    
+
     @pytest.mark.asyncio
-    async def test_create_automation_invalid_extension(self, crud_service, mock_client):
-        """Test create automation with invalid file extension."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            f.write("some content")
-            f.flush()
-            
-            with pytest.raises(ValidationError, match="File must be YAML or JSON"):
-                await crud_service.create_automation(f.name)
-        
-        Path(f.name).unlink()  # Clean up
-    
-    @pytest.mark.asyncio
-    async def test_create_automation_validation_error(self, crud_service, mock_client):
-        """Test create automation with invalid automation data."""
+    async def test_create_automation_invalid_config(self, crud_service, mock_client):
+        """Test create automation with invalid config (no trigger/action)."""
+        mock_client.probe_automation_rest_api.return_value = True
+
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-            f.write("""
-alias: "Invalid Automation"
-# Missing required trigger and action
-mode: single
-""")
+            f.write("alias: Invalid Automation\nmode: single\n")
             f.flush()
-            
-            # Should raise ValidationError from Pydantic (wrapped in ValidationError)
-            with pytest.raises(Exception):  # Pydantic ValidationError or our ValidationError
+
+            with pytest.raises(ValidationError, match="must have 'trigger'"):
                 await crud_service.create_automation(f.name)
-        
-        Path(f.name).unlink()  # Clean up
-    
+
     @pytest.mark.asyncio
-    async def test_update_automation_success(self, crud_service, mock_client):
-        """Test successful update automation."""
+    async def test_update_automation_rest_api_unavailable(self, crud_service, mock_client):
+        """Test update automation fails gracefully when REST API unavailable."""
+        mock_client.probe_automation_rest_api.return_value = False
+
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-            f.write("""
-alias: "Updated Automation"
-trigger:
-  - platform: time
-    at: "11:00:00"
-action:
-  - service: light.turn_off
-    entity_id: light.test
-mode: restart
-""")
+            f.write(SAMPLE_AUTOMATION_YAML)
             f.flush()
-            
+
+            with pytest.raises(ValidationError, match="REST API not available"):
+                await crud_service.update_automation("test_automation", f.name)
+
+    @pytest.mark.asyncio
+    async def test_update_automation_success_with_entity_id(self, crud_service, mock_client):
+        """Test update automation with entity ID (resolved to numeric ID)."""
+        mock_client.probe_automation_rest_api.return_value = True
+        mock_client.get_automation_numeric_id.return_value = "1234567890123"
+        mock_client.update_automation_rest.return_value = None
+        mock_client.reload_automations.return_value = None
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(SAMPLE_AUTOMATION_YAML)
+            f.flush()
+
             await crud_service.update_automation("test_automation", f.name)
-            
-            mock_client.update_automation.assert_called_once()
-            call_args = mock_client.update_automation.call_args[0]
-            assert call_args[0] == "test_automation"  # automation_id
-            
-            automation_data = call_args[1]  # automation data dict
-            assert automation_data["alias"] == "Updated Automation"
-            assert automation_data["mode"] == "restart"
-        
-        Path(f.name).unlink()  # Clean up
-    
+
+            mock_client.get_automation_numeric_id.assert_called_once_with("test_automation")
+            mock_client.update_automation_rest.assert_called_once()
+
     @pytest.mark.asyncio
-    async def test_delete_automation(self, crud_service, mock_client):
-        """Test delete automation."""
+    async def test_update_automation_success_with_numeric_id(self, crud_service, mock_client):
+        """Test update automation with numeric ID (no resolution needed)."""
+        mock_client.probe_automation_rest_api.return_value = True
+        mock_client.update_automation_rest.return_value = None
+        mock_client.reload_automations.return_value = None
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(SAMPLE_AUTOMATION_YAML)
+            f.flush()
+
+            await crud_service.update_automation("1234567890123", f.name)
+
+            mock_client.get_automation_numeric_id.assert_not_called()
+            mock_client.update_automation_rest.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_update_automation_not_found(self, crud_service, mock_client):
+        """Test update automation when automation not found."""
+        mock_client.probe_automation_rest_api.return_value = True
+        mock_client.get_automation_numeric_id.return_value = None
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(SAMPLE_AUTOMATION_YAML)
+            f.flush()
+
+            with pytest.raises(AutomationNotFoundError):
+                await crud_service.update_automation("nonexistent", f.name)
+
+    @pytest.mark.asyncio
+    async def test_delete_automation_rest_api_unavailable(self, crud_service, mock_client):
+        """Test delete automation fails gracefully when REST API unavailable."""
+        mock_client.probe_automation_rest_api.return_value = False
+
+        with pytest.raises(ValidationError, match="REST API not available"):
+            await crud_service.delete_automation("test_automation")
+
+    @pytest.mark.asyncio
+    async def test_delete_automation_success(self, crud_service, mock_client):
+        """Test delete automation with REST API available."""
+        mock_client.probe_automation_rest_api.return_value = True
+        mock_client.get_automation_numeric_id.return_value = "1234567890123"
+        mock_client.delete_automation_rest.return_value = None
+        mock_client.reload_automations.return_value = None
+
         await crud_service.delete_automation("test_automation")
-        
-        mock_client.delete_automation.assert_called_once_with("test_automation")
-    
-    def test_validate_automation_success(self, crud_service):
-        """Test successful automation validation."""
-        automation = Automation(
-            alias="Valid Automation",
-            trigger=[{"platform": "time", "at": "10:00"}],
-            action=[{"service": "light.turn_on"}],
-            mode="single"
-        )
-        
-        # Should not raise any exception
-        crud_service._validate_automation(automation)
-    
-    def test_validate_automation_no_alias(self, crud_service):
-        """Test validation fails with no alias."""
-        automation = Automation(
-            alias="",  # Empty alias
-            trigger=[{"platform": "time"}],
-            action=[{"service": "test"}]
-        )
-        
-        with pytest.raises(ValidationError, match="must have an alias"):
-            crud_service._validate_automation(automation)
-    
-    def test_validate_automation_no_triggers(self, crud_service):
-        """Test validation fails with no triggers."""
-        automation = Automation(
-            alias="Test",
-            trigger=[],  # Empty triggers
-            action=[{"service": "test"}]
-        )
-        
-        with pytest.raises(ValidationError, match="must have at least one trigger"):
-            crud_service._validate_automation(automation)
-    
-    def test_validate_automation_no_actions(self, crud_service):
-        """Test validation fails with no actions."""
-        automation = Automation(
-            alias="Test",
-            trigger=[{"platform": "time"}],
-            action=[]  # Empty actions
-        )
-        
-        with pytest.raises(ValidationError, match="must have at least one action"):
-            crud_service._validate_automation(automation)
-    
-    def test_validate_automation_queued_mode_no_max(self, crud_service):
-        """Test validation fails for queued mode without max."""
-        automation = Automation(
-            alias="Test",
-            trigger=[{"platform": "time"}],
-            action=[{"service": "test"}],
-            mode="queued",
-            max=None  # Required for queued mode
-        )
-        
-        with pytest.raises(ValidationError, match="requires 'max' to be set"):
-            crud_service._validate_automation(automation)
-    
-    def test_validate_automation_parallel_mode_no_max(self, crud_service):
-        """Test validation fails for parallel mode without max."""
-        automation = Automation(
-            alias="Test",
-            trigger=[{"platform": "time"}],
-            action=[{"service": "test"}],
-            mode="parallel",
-            max=None  # Required for parallel mode
-        )
-        
-        with pytest.raises(ValidationError, match="requires 'max' to be set"):
-            crud_service._validate_automation(automation)
+
+        mock_client.delete_automation_rest.assert_called_once_with("1234567890123")
+
+    @pytest.mark.asyncio
+    async def test_delete_automation_dry_run(self, crud_service, mock_client):
+        """Test delete automation dry run mode."""
+        mock_client.probe_automation_rest_api.return_value = True
+        mock_client.get_automation_numeric_id.return_value = "1234567890123"
+
+        await crud_service.delete_automation("test_automation", dry_run=True)
+
+        mock_client.delete_automation_rest.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_automation_not_found(self, crud_service, mock_client):
+        """Test delete automation when automation not found."""
+        mock_client.probe_automation_rest_api.return_value = True
+        mock_client.get_automation_numeric_id.return_value = None
+
+        with pytest.raises(AutomationNotFoundError):
+            await crud_service.delete_automation("nonexistent")
 
 
 class TestAutomationWSIntegration:
@@ -347,96 +316,45 @@ class TestServiceIntegrationWorkflow:
         return AutomationWS(mock_client)
     
     @pytest.mark.asyncio
-    async def test_complete_automation_lifecycle(self, crud_service, ws_service, mock_client):
-        """Test complete automation lifecycle: create, enable, update, disable, delete."""
-        
-        # Create automation
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-            f.write("""
-alias: "Lifecycle Test"
-trigger:
-  - platform: time
-    at: "10:00:00"
-action:
-  - service: light.turn_on
-    entity_id: light.test
-mode: single
-""")
-            f.flush()
-            
-            mock_client.create_automation.return_value = {"id": "lifecycle_test"}
-            automation_id = await crud_service.create_automation(f.name)
-            assert automation_id == "lifecycle_test"
-        
-        Path(f.name).unlink()
-        
+    async def test_automation_lifecycle_read_only(self, crud_service, ws_service, mock_client):
+        """Test automation lifecycle with read-only operations (WebSocket-based)."""
+        automation_id = "lifecycle_test"
+
+        # Read automation
+        mock_client.get_automation.return_value = {
+            "id": automation_id,
+            "alias": "Lifecycle Test",
+            "trigger": [{"platform": "time"}],
+            "action": [{"service": "light.turn_on"}],
+            "mode": "single"
+        }
+        automation = await crud_service.get_automation(automation_id)
+        assert automation.alias == "Lifecycle Test"
+
         # Enable automation
         await ws_service.enable_automation(automation_id)
         mock_client.enable_automation.assert_called_with(automation_id)
-        
-        # Update automation
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-            f.write("""
-alias: "Updated Lifecycle Test"
-trigger:
-  - platform: time
-    at: "11:00:00"
-action:
-  - service: light.turn_off
-    entity_id: light.test
-mode: restart
-""")
-            f.flush()
-            
-            await crud_service.update_automation(automation_id, f.name)
-            mock_client.update_automation.assert_called()
-        
-        Path(f.name).unlink()
-        
+
         # Disable automation
         await ws_service.disable_automation(automation_id)
         mock_client.disable_automation.assert_called_with(automation_id)
-        
-        # Delete automation
-        await crud_service.delete_automation(automation_id)
-        mock_client.delete_automation.assert_called_with(automation_id)
-        
-        # Reload automations (called multiple times during the lifecycle)
+
+        # Reload automations
         await ws_service.reload_automations()
         mock_client.reload_automations.assert_called()
-    
+
     @pytest.mark.asyncio
     async def test_error_handling_workflow(self, crud_service, ws_service, mock_client):
         """Test error handling in various workflow scenarios."""
-        
-        # Test create with client error
-        mock_client.create_automation.side_effect = Exception("API Error")
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-            f.write("""
-alias: "Error Test"
-trigger:
-  - platform: time
-    at: "10:00:00"
-action:
-  - service: light.turn_on
-mode: single
-""")
-            f.flush()
-            
-            with pytest.raises(Exception, match="API Error"):
-                await crud_service.create_automation(f.name)
-        
-        Path(f.name).unlink()
-        
+
         # Test enable with client error
         mock_client.enable_automation.side_effect = Exception("WebSocket Error")
-        
+
         with pytest.raises(Exception, match="WebSocket Error"):
             await ws_service.enable_automation("test_automation")
-        
-        # Test get automation with 404 error
-        mock_client.get_automation.side_effect = Exception("404")
-        
+
+        # Test get automation with not found error
+        mock_client.get_automation.side_effect = Exception("not_found")
+
         with pytest.raises(AutomationNotFoundError):
             await crud_service.get_automation("nonexistent")

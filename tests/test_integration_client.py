@@ -237,85 +237,34 @@ class TestHAClientIntegration:
     @pytest.mark.asyncio
     async def test_list_automations(self, client):
         """Test list_automations method."""
-        expected_data = [
-            {"id": "test1", "alias": "Test 1"},
-            {"id": "test2", "alias": "Test 2"}
+        # WebSocket returns entity states format
+        expected_states = [
+            {"entity_id": "automation.test1", "state": "on", "attributes": {"friendly_name": "Test 1", "mode": "single"}},
+            {"entity_id": "automation.test2", "state": "on", "attributes": {"friendly_name": "Test 2", "mode": "single"}}
         ]
-        
-        with patch.object(client, '_rest', return_value=expected_data) as mock_rest:
+
+        with patch.object(client, 'get_states', return_value=expected_states) as mock_get_states:
             async with client:
-                result = await client.list_automations()
-                
-                assert result == expected_data
-                mock_rest.assert_called_once_with("GET", "/api/config/automation/config")
-    
-    @pytest.mark.asyncio
-    async def test_create_automation(self, client):
-        """Test create_automation method."""
-        automation_data = {"alias": "Test", "trigger": [], "action": []}
-        expected_result = {"id": "new_automation"}
-        
-        with patch.object(client, '_rest', return_value=expected_result) as mock_rest, \
-             patch.object(client, 'reload_automations') as mock_reload:
-            
-            async with client:
-                result = await client.create_automation(automation_data)
-                
-                assert result == expected_result
-                mock_rest.assert_called_once_with(
-                    "POST", 
-                    "/api/config/automation/config", 
-                    json_data=automation_data
-                )
-                mock_reload.assert_called_once()
-    
+                result = await client.get_automation_states()
+
+                assert len(result) == 2
+                mock_get_states.assert_called_once()
+
     @pytest.mark.asyncio
     async def test_get_automation(self, client):
-        """Test get_automation method."""
+        """Test get_automation method (uses WebSocket via get_automation_config)."""
         automation_id = "test_automation"
-        expected_data = {"id": automation_id, "alias": "Test"}
-        
-        with patch.object(client, '_rest', return_value=expected_data) as mock_rest:
+        expected_data = {"config": {"id": automation_id, "alias": "Test", "trigger": [], "action": []}}
+
+        with patch.object(client, '_ws_call', return_value=expected_data) as mock_ws_call:
             async with client:
                 result = await client.get_automation(automation_id)
-                
-                assert result == expected_data
-                mock_rest.assert_called_once_with("GET", f"/api/config/automation/config/{automation_id}")
-    
-    @pytest.mark.asyncio
-    async def test_update_automation(self, client):
-        """Test update_automation method."""
-        automation_id = "test_automation"
-        automation_data = {"alias": "Updated Test", "trigger": [], "action": []}
-        expected_result = {"id": automation_id}
-        
-        with patch.object(client, '_rest', return_value=expected_result) as mock_rest, \
-             patch.object(client, 'reload_automations') as mock_reload:
-            
-            async with client:
-                result = await client.update_automation(automation_id, automation_data)
-                
-                assert result == expected_result
-                mock_rest.assert_called_once_with(
-                    "POST", 
-                    f"/api/config/automation/config/{automation_id}", 
-                    json_data=automation_data
+
+                assert result["id"] == automation_id
+                mock_ws_call.assert_called_once_with(
+                    "automation/config",
+                    entity_id=f"automation.{automation_id}"
                 )
-                mock_reload.assert_called_once()
-    
-    @pytest.mark.asyncio
-    async def test_delete_automation(self, client):
-        """Test delete_automation method."""
-        automation_id = "test_automation"
-        
-        with patch.object(client, '_rest', return_value=None) as mock_rest, \
-             patch.object(client, 'reload_automations') as mock_reload:
-            
-            async with client:
-                await client.delete_automation(automation_id)
-                
-                mock_rest.assert_called_once_with("DELETE", f"/api/config/automation/config/{automation_id}")
-                mock_reload.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_enable_automation(self, client):
@@ -397,10 +346,181 @@ class TestHAClientIntegration:
             websockets.exceptions.ConnectionClosed(None, None),
             websockets.exceptions.ConnectionClosed(None, None)
         ]
-        
+
         with patch('websockets.connect', new_callable=AsyncMock, side_effect=connect_side_effects), \
              patch('asyncio.sleep'):
-            
+
             async with client:
                 with pytest.raises(WebSocketError, match="Failed to connect after 3 retries"):
                     await client._ensure_ws_connected()
+
+    # REST API CRUD methods tests
+
+    @pytest.mark.asyncio
+    async def test_probe_automation_rest_api_available(self, client):
+        """Test REST API probe when available."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b'{}'
+        mock_response.json.return_value = {}
+
+        with patch('httpx.AsyncClient') as mock_httpx:
+            mock_client = AsyncMock()
+            mock_client.request.return_value = mock_response
+            mock_httpx.return_value = mock_client
+
+            async with client:
+                result = await client.probe_automation_rest_api()
+                assert result is True
+
+    @pytest.mark.asyncio
+    async def test_probe_automation_rest_api_unavailable(self, client):
+        """Test REST API probe when unavailable (404)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+
+        with patch('httpx.AsyncClient') as mock_httpx:
+            mock_client = AsyncMock()
+            mock_client.request.return_value = mock_response
+            mock_httpx.return_value = mock_client
+
+            async with client:
+                result = await client.probe_automation_rest_api()
+                assert result is False
+
+    @pytest.mark.asyncio
+    async def test_get_automation_numeric_id(self, client):
+        """Test getting numeric ID for an automation."""
+        expected_result = {
+            "config": {
+                "id": "1634454808159",
+                "alias": "Test Automation",
+                "trigger": [],
+                "action": []
+            }
+        }
+
+        with patch.object(client, '_ws_call', return_value=expected_result) as mock_ws_call:
+            async with client:
+                result = await client.get_automation_numeric_id("test_automation")
+
+                assert result == "1634454808159"
+                mock_ws_call.assert_called_once_with(
+                    "automation/config",
+                    entity_id="automation.test_automation"
+                )
+
+    @pytest.mark.asyncio
+    async def test_get_automation_numeric_id_not_found(self, client):
+        """Test getting numeric ID when automation not found."""
+        with patch.object(client, '_ws_call', side_effect=WebSocketError("not_found")):
+            async with client:
+                result = await client.get_automation_numeric_id("nonexistent")
+                assert result is None
+
+    @pytest.mark.asyncio
+    async def test_create_automation_rest(self, client):
+        """Test creating automation via REST API."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b'{}'
+        mock_response.json.return_value = {}
+
+        with patch('httpx.AsyncClient') as mock_httpx, \
+             patch.object(client, 'reload_automations') as mock_reload:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.request.return_value = mock_response
+            mock_httpx.return_value = mock_client_instance
+
+            async with client:
+                config = {
+                    "alias": "Test Automation",
+                    "trigger": [{"platform": "time"}],
+                    "action": [{"service": "light.turn_on"}]
+                }
+                result = await client.create_automation_rest(config)
+
+                # Should return a numeric ID
+                assert result.isdigit()
+                # Should have made REST call
+                mock_client_instance.request.assert_called()
+                # Should have reloaded automations
+                mock_reload.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_update_automation_rest(self, client):
+        """Test updating automation via REST API."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b'{}'
+        mock_response.json.return_value = {}
+
+        with patch('httpx.AsyncClient') as mock_httpx, \
+             patch.object(client, 'reload_automations') as mock_reload:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.request.return_value = mock_response
+            mock_httpx.return_value = mock_client_instance
+
+            async with client:
+                config = {
+                    "alias": "Updated Automation",
+                    "trigger": [{"platform": "time"}],
+                    "action": [{"service": "light.turn_off"}]
+                }
+                await client.update_automation_rest("1234567890123", config)
+
+                # Should have made REST call to correct endpoint
+                call_args = mock_client_instance.request.call_args
+                assert "/api/config/automation/config/1234567890123" in str(call_args)
+                # Should have reloaded automations
+                mock_reload.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_automation_rest(self, client):
+        """Test deleting automation via REST API."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b''
+
+        with patch('httpx.AsyncClient') as mock_httpx, \
+             patch.object(client, 'reload_automations') as mock_reload:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.request.return_value = mock_response
+            mock_httpx.return_value = mock_client_instance
+
+            async with client:
+                await client.delete_automation_rest("1234567890123")
+
+                # Should have made DELETE request
+                call_args = mock_client_instance.request.call_args
+                assert call_args[1]["method"] == "DELETE"
+                assert "/api/config/automation/config/1234567890123" in str(call_args)
+                # Should have reloaded automations
+                mock_reload.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_automation_rest(self, client):
+        """Test getting automation config via REST API."""
+        expected_config = {
+            "id": "1234567890123",
+            "alias": "Test Automation",
+            "trigger": [{"platform": "time"}],
+            "action": [{"service": "light.turn_on"}]
+        }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = json.dumps(expected_config).encode()
+        mock_response.json.return_value = expected_config
+
+        with patch('httpx.AsyncClient') as mock_httpx:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.request.return_value = mock_response
+            mock_httpx.return_value = mock_client_instance
+
+            async with client:
+                result = await client.get_automation_rest("1234567890123")
+
+                assert result == expected_config
+                call_args = mock_client_instance.request.call_args
+                assert call_args[1]["method"] == "GET"
+                assert "/api/config/automation/config/1234567890123" in str(call_args)

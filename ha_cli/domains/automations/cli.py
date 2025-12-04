@@ -527,5 +527,455 @@ def version() -> None:
     console.print(f"ha-cli automations version {__version__}")
 
 
-# For now, just implement the most essential commands
-# More commands can be added by importing and adapting from the original CLI
+@app.command()
+def enable(
+    automation_id: str = typer.Argument(..., help="Automation ID to enable"),
+    url: Optional[str] = typer.Option(None, "--url", "-u"),
+    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    timeout: int = typer.Option(10, "--timeout"),
+    porcelain: bool = typer.Option(False, "--porcelain"),
+    debug: bool = typer.Option(False, "--debug"),
+) -> None:
+    """Enable an automation."""
+    setup_logging(debug)
+
+    async def _enable():
+        formatter = PorcelainFormatter("automations enable") if porcelain else None
+
+        try:
+            url_final, token_final = get_client_config(url, token)
+
+            async with HAClient(url_final, token_final, timeout) as client:
+                service = AutomationWS(client)
+                await service.enable_automation(automation_id)
+
+                if porcelain:
+                    porcelain_output = formatter.success(
+                        {"automation_id": automation_id, "state": "enabled"},
+                        {"action": "enable", "automation_id": automation_id},
+                        {"common_actions": [
+                            f"Disable: ha-cli automations disable {automation_id}",
+                            f"Read: ha-cli automations read {automation_id}",
+                        ]}
+                    )
+                    sys.stdout.write(porcelain_output)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
+                else:
+                    console.print(f"[green]✓[/green] Automation '{automation_id}' enabled")
+
+        except Exception as e:
+            if porcelain and formatter:
+                error_output = formatter.error(e)
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                sys.exit(EXIT_HA_ERROR)
+            else:
+                raise
+
+    asyncio.run(run_async_command(_enable()))
+
+
+@app.command()
+def disable(
+    automation_id: str = typer.Argument(..., help="Automation ID to disable"),
+    url: Optional[str] = typer.Option(None, "--url", "-u"),
+    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    timeout: int = typer.Option(10, "--timeout"),
+    porcelain: bool = typer.Option(False, "--porcelain"),
+    debug: bool = typer.Option(False, "--debug"),
+) -> None:
+    """Disable an automation."""
+    setup_logging(debug)
+
+    async def _disable():
+        formatter = PorcelainFormatter("automations disable") if porcelain else None
+
+        try:
+            url_final, token_final = get_client_config(url, token)
+
+            async with HAClient(url_final, token_final, timeout) as client:
+                service = AutomationWS(client)
+                await service.disable_automation(automation_id)
+
+                if porcelain:
+                    porcelain_output = formatter.success(
+                        {"automation_id": automation_id, "state": "disabled"},
+                        {"action": "disable", "automation_id": automation_id},
+                        {"common_actions": [
+                            f"Enable: ha-cli automations enable {automation_id}",
+                            f"Read: ha-cli automations read {automation_id}",
+                        ]}
+                    )
+                    sys.stdout.write(porcelain_output)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
+                else:
+                    console.print(f"[yellow]○[/yellow] Automation '{automation_id}' disabled")
+
+        except Exception as e:
+            if porcelain and formatter:
+                error_output = formatter.error(e)
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                sys.exit(EXIT_HA_ERROR)
+            else:
+                raise
+
+    asyncio.run(run_async_command(_disable()))
+
+
+@app.command()
+def reload(
+    url: Optional[str] = typer.Option(None, "--url", "-u"),
+    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    timeout: int = typer.Option(10, "--timeout"),
+    porcelain: bool = typer.Option(False, "--porcelain"),
+    debug: bool = typer.Option(False, "--debug"),
+) -> None:
+    """Reload all automations from configuration."""
+    setup_logging(debug)
+
+    async def _reload():
+        formatter = PorcelainFormatter("automations reload") if porcelain else None
+
+        try:
+            url_final, token_final = get_client_config(url, token)
+
+            async with HAClient(url_final, token_final, timeout) as client:
+                service = AutomationWS(client)
+                await service.reload_automations()
+
+                if porcelain:
+                    porcelain_output = formatter.success(
+                        {"reloaded": True},
+                        {"action": "reload"},
+                        {"common_actions": [
+                            "ha-cli automations list --porcelain",
+                        ]}
+                    )
+                    sys.stdout.write(porcelain_output)
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
+                else:
+                    console.print("[green]✓[/green] All automations reloaded")
+
+        except Exception as e:
+            if porcelain and formatter:
+                error_output = formatter.error(e)
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                sys.exit(EXIT_HA_ERROR)
+            else:
+                raise
+
+    asyncio.run(run_async_command(_reload()))
+
+
+@app.command()
+def create(
+    file_path: str = typer.Argument(..., help="Path to YAML/JSON automation file"),
+    url: Optional[str] = typer.Option(None, "--url", "-u"),
+    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    timeout: int = typer.Option(10, "--timeout"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without creating"),
+    porcelain: bool = typer.Option(False, "--porcelain"),
+    debug: bool = typer.Option(False, "--debug"),
+) -> None:
+    """Create a new automation from a YAML or JSON file.
+
+    Requires the 'config' integration to be enabled in Home Assistant.
+    """
+    setup_logging(debug)
+
+    async def _create():
+        formatter = PorcelainFormatter("automations create") if porcelain else None
+
+        try:
+            url_final, token_final = get_client_config(url, token)
+
+            async with HAClient(url_final, token_final, timeout) as client:
+                service = AutomationCRUD(client)
+
+                try:
+                    numeric_id = await service.create_automation(file_path, dry_run=dry_run)
+
+                    if porcelain:
+                        result_data = {
+                            "created": not dry_run,
+                            "dry_run": dry_run,
+                            "file_path": file_path,
+                        }
+                        if not dry_run:
+                            result_data["numeric_id"] = numeric_id
+                            result_data["entity_id"] = f"automation.{numeric_id}"
+
+                        porcelain_output = formatter.success(
+                            result_data,
+                            {"action": "create", "file_path": file_path, "dry_run": dry_run},
+                            {"common_actions": [
+                                f"Read: ha-cli automations read {numeric_id}" if not dry_run else "Run without --dry-run to create",
+                                "ha-cli automations list --porcelain",
+                            ]}
+                        )
+                        sys.stdout.write(porcelain_output)
+                        sys.stdout.write('\n')
+                        sys.stdout.flush()
+                    else:
+                        if dry_run:
+                            console.print(f"[yellow]Dry run:[/yellow] Would create automation from {file_path}")
+                        else:
+                            console.print(f"[green]✓[/green] Created automation with ID: {numeric_id}")
+
+                except Exception as e:
+                    error_msg = str(e)
+                    if "REST API not available" in error_msg:
+                        if porcelain:
+                            error_output = formatter.error(
+                                error_msg,
+                                error_code="REST_API_UNAVAILABLE",
+                                suggestions={
+                                    "troubleshooting": [
+                                        "Add 'config:' to your Home Assistant configuration.yaml",
+                                        "Restart Home Assistant after adding the config integration",
+                                        "Alternatively, create automations via the Home Assistant UI",
+                                    ]
+                                }
+                            )
+                            sys.stdout.write(error_output)
+                            sys.stdout.write('\n')
+                            sys.stdout.flush()
+                        else:
+                            console.print(f"[red]Error:[/red] {error_msg}")
+                        sys.exit(EXIT_HA_ERROR)
+                    raise
+
+        except Exception as e:
+            if porcelain and formatter:
+                error_output = formatter.error(e)
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                sys.exit(EXIT_HA_ERROR)
+            else:
+                raise
+
+    asyncio.run(run_async_command(_create()))
+
+
+@app.command()
+def update(
+    automation_id: str = typer.Argument(..., help="Automation ID to update"),
+    file_path: str = typer.Argument(..., help="Path to YAML/JSON automation file"),
+    url: Optional[str] = typer.Option(None, "--url", "-u"),
+    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    timeout: int = typer.Option(10, "--timeout"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without updating"),
+    porcelain: bool = typer.Option(False, "--porcelain"),
+    debug: bool = typer.Option(False, "--debug"),
+) -> None:
+    """Update an existing automation from a YAML or JSON file.
+
+    Requires the 'config' integration to be enabled in Home Assistant.
+    """
+    setup_logging(debug)
+
+    async def _update():
+        formatter = PorcelainFormatter("automations update") if porcelain else None
+
+        try:
+            url_final, token_final = get_client_config(url, token)
+
+            async with HAClient(url_final, token_final, timeout) as client:
+                service = AutomationCRUD(client)
+
+                try:
+                    await service.update_automation(automation_id, file_path, dry_run=dry_run)
+
+                    if porcelain:
+                        porcelain_output = formatter.success(
+                            {
+                                "updated": not dry_run,
+                                "dry_run": dry_run,
+                                "automation_id": automation_id,
+                                "file_path": file_path,
+                            },
+                            {"action": "update", "automation_id": automation_id, "dry_run": dry_run},
+                            {"common_actions": [
+                                f"Read: ha-cli automations read {automation_id}",
+                                "ha-cli automations list --porcelain",
+                            ]}
+                        )
+                        sys.stdout.write(porcelain_output)
+                        sys.stdout.write('\n')
+                        sys.stdout.flush()
+                    else:
+                        if dry_run:
+                            console.print(f"[yellow]Dry run:[/yellow] Would update automation '{automation_id}' from {file_path}")
+                        else:
+                            console.print(f"[green]✓[/green] Updated automation '{automation_id}'")
+
+                except Exception as e:
+                    error_msg = str(e)
+                    if "REST API not available" in error_msg:
+                        if porcelain:
+                            error_output = formatter.error(
+                                error_msg,
+                                error_code="REST_API_UNAVAILABLE",
+                                suggestions={
+                                    "troubleshooting": [
+                                        "Add 'config:' to your Home Assistant configuration.yaml",
+                                        "Restart Home Assistant after adding the config integration",
+                                    ]
+                                }
+                            )
+                            sys.stdout.write(error_output)
+                            sys.stdout.write('\n')
+                            sys.stdout.flush()
+                        else:
+                            console.print(f"[red]Error:[/red] {error_msg}")
+                        sys.exit(EXIT_HA_ERROR)
+                    elif "not found" in error_msg.lower():
+                        if porcelain:
+                            error_output = formatter.error(
+                                f"Automation '{automation_id}' not found",
+                                error_code="NOT_FOUND",
+                                suggestions={
+                                    "troubleshooting": [
+                                        "Use 'ha-cli automations list' to verify automation exists",
+                                        f"Check if '{automation_id}' is the correct ID",
+                                    ]
+                                }
+                            )
+                            sys.stdout.write(error_output)
+                            sys.stdout.write('\n')
+                            sys.stdout.flush()
+                        else:
+                            console.print(f"[red]Error:[/red] Automation '{automation_id}' not found")
+                        sys.exit(EXIT_HA_ERROR)
+                    raise
+
+        except Exception as e:
+            if porcelain and formatter:
+                error_output = formatter.error(e)
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                sys.exit(EXIT_HA_ERROR)
+            else:
+                raise
+
+    asyncio.run(run_async_command(_update()))
+
+
+@app.command()
+def delete(
+    automation_id: str = typer.Argument(..., help="Automation ID to delete"),
+    url: Optional[str] = typer.Option(None, "--url", "-u"),
+    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    timeout: int = typer.Option(10, "--timeout"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without deleting"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+    porcelain: bool = typer.Option(False, "--porcelain"),
+    debug: bool = typer.Option(False, "--debug"),
+) -> None:
+    """Delete an automation.
+
+    Requires the 'config' integration to be enabled in Home Assistant.
+    """
+    setup_logging(debug)
+
+    async def _delete():
+        formatter = PorcelainFormatter("automations delete") if porcelain else None
+
+        try:
+            url_final, token_final = get_client_config(url, token)
+
+            # Confirmation prompt (unless --force or --porcelain or --dry-run)
+            if not force and not porcelain and not dry_run:
+                confirm = typer.confirm(f"Delete automation '{automation_id}'?")
+                if not confirm:
+                    console.print("[yellow]Cancelled[/yellow]")
+                    return
+
+            async with HAClient(url_final, token_final, timeout) as client:
+                service = AutomationCRUD(client)
+
+                try:
+                    await service.delete_automation(automation_id, dry_run=dry_run)
+
+                    if porcelain:
+                        porcelain_output = formatter.success(
+                            {
+                                "deleted": not dry_run,
+                                "dry_run": dry_run,
+                                "automation_id": automation_id,
+                            },
+                            {"action": "delete", "automation_id": automation_id, "dry_run": dry_run},
+                            {"common_actions": [
+                                "ha-cli automations list --porcelain",
+                            ]}
+                        )
+                        sys.stdout.write(porcelain_output)
+                        sys.stdout.write('\n')
+                        sys.stdout.flush()
+                    else:
+                        if dry_run:
+                            console.print(f"[yellow]Dry run:[/yellow] Would delete automation '{automation_id}'")
+                        else:
+                            console.print(f"[green]✓[/green] Deleted automation '{automation_id}'")
+
+                except Exception as e:
+                    error_msg = str(e)
+                    if "REST API not available" in error_msg:
+                        if porcelain:
+                            error_output = formatter.error(
+                                error_msg,
+                                error_code="REST_API_UNAVAILABLE",
+                                suggestions={
+                                    "troubleshooting": [
+                                        "Add 'config:' to your Home Assistant configuration.yaml",
+                                        "Restart Home Assistant after adding the config integration",
+                                    ]
+                                }
+                            )
+                            sys.stdout.write(error_output)
+                            sys.stdout.write('\n')
+                            sys.stdout.flush()
+                        else:
+                            console.print(f"[red]Error:[/red] {error_msg}")
+                        sys.exit(EXIT_HA_ERROR)
+                    elif "not found" in error_msg.lower():
+                        if porcelain:
+                            error_output = formatter.error(
+                                f"Automation '{automation_id}' not found",
+                                error_code="NOT_FOUND",
+                                suggestions={
+                                    "troubleshooting": [
+                                        "Use 'ha-cli automations list' to verify automation exists",
+                                        f"Check if '{automation_id}' is the correct ID",
+                                    ]
+                                }
+                            )
+                            sys.stdout.write(error_output)
+                            sys.stdout.write('\n')
+                            sys.stdout.flush()
+                        else:
+                            console.print(f"[red]Error:[/red] Automation '{automation_id}' not found")
+                        sys.exit(EXIT_HA_ERROR)
+                    raise
+
+        except Exception as e:
+            if porcelain and formatter:
+                error_output = formatter.error(e)
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                sys.exit(EXIT_HA_ERROR)
+            else:
+                raise
+
+    asyncio.run(run_async_command(_delete()))
