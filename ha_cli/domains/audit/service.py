@@ -81,7 +81,7 @@ class AuditService:
 
         try:
             # Get all entities
-            entities = await self._entity_service.list_entities(domain=domain)
+            entities = await self._entity_service.list_entities(domain_filter=domain)
 
             # Compile ignore patterns
             ignore_regexes = []

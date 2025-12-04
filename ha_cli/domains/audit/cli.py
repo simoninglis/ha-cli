@@ -1,5 +1,6 @@
 """Audit CLI commands for ha-cli."""
 
+import asyncio
 import logging
 import sys
 from typing import Optional, List
@@ -78,12 +79,14 @@ def _output_result(
                 f"Review {result.warning_count} warnings - these may indicate issues"
             )
 
-        formatter.output_success(
+        porcelain_output = formatter.success(
             data=result.to_dict(),
             metadata=metadata,
-            summary=result.summary,
             suggestions=suggestions,
         )
+        sys.stdout.write(porcelain_output)
+        sys.stdout.write('\n')
+        sys.stdout.flush()
     else:
         # Rich table output
         if result.error:
@@ -161,12 +164,15 @@ def dead_entities(
 
         except Exception as e:
             if formatter:
-                formatter.output_error(str(e))
+                error_output = formatter.error(str(e))
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = run_async_command(_check())
+    exit_code = asyncio.run(run_async_command(_check()))
     sys.exit(exit_code)
 
 
@@ -200,12 +206,15 @@ def duplicates(
 
         except Exception as e:
             if formatter:
-                formatter.output_error(str(e))
+                error_output = formatter.error(str(e))
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = run_async_command(_check())
+    exit_code = asyncio.run(run_async_command(_check()))
     sys.exit(exit_code)
 
 
@@ -237,12 +246,15 @@ def broken_automations(
 
         except Exception as e:
             if formatter:
-                formatter.output_error(str(e))
+                error_output = formatter.error(str(e))
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = run_async_command(_check())
+    exit_code = asyncio.run(run_async_command(_check()))
     sys.exit(exit_code)
 
 
@@ -274,12 +286,15 @@ def fragile_automations(
 
         except Exception as e:
             if formatter:
-                formatter.output_error(str(e))
+                error_output = formatter.error(str(e))
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = run_async_command(_check())
+    exit_code = asyncio.run(run_async_command(_check()))
     sys.exit(exit_code)
 
 
@@ -313,12 +328,15 @@ def unused_automations(
 
         except Exception as e:
             if formatter:
-                formatter.output_error(str(e))
+                error_output = formatter.error(str(e))
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = run_async_command(_check())
+    exit_code = asyncio.run(run_async_command(_check()))
     sys.exit(exit_code)
 
 
@@ -352,12 +370,15 @@ def trigger_stats(
 
         except Exception as e:
             if formatter:
-                formatter.output_error(str(e))
+                error_output = formatter.error(str(e))
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = run_async_command(_check())
+    exit_code = asyncio.run(run_async_command(_check()))
     sys.exit(exit_code)
 
 
@@ -430,12 +451,15 @@ def integrations(
 
         except Exception as e:
             if formatter:
-                formatter.output_error(str(e))
+                error_output = formatter.error(str(e))
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = run_async_command(_check())
+    exit_code = asyncio.run(run_async_command(_check()))
     sys.exit(exit_code)
 
 
@@ -542,10 +566,13 @@ def all_checks(
 
         except Exception as e:
             if formatter:
-                formatter.output_error(str(e))
+                error_output = formatter.error(str(e))
+                sys.stdout.write(error_output)
+                sys.stdout.write('\n')
+                sys.stdout.flush()
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = run_async_command(_check())
+    exit_code = asyncio.run(run_async_command(_check()))
     sys.exit(exit_code)
