@@ -18,6 +18,7 @@ from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.cli_utils import run_async_command, setup_logging
 from ...common.exceptions import (
+    EXIT_HA_ERROR,
     EXIT_USAGE_ERROR,
     HAAutomationError,
 )
