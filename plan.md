@@ -1,356 +1,262 @@
-# ha-cli: Multi-Domain Home Assistant Management Tool
+# ha-cli Implementation Plan v5
 
-## Feature: Transform ha-automation-cli to Multi-Domain ha-cli
-**Status**: Mostly Complete  
-**Started**: 2025-01-14  
-**Updated**: 2025-01-15
+**Created:** 2025-12-05
+**Status:** Active Development
+**Source:** Fresh Codex review 2025-12-05
 
-## Summary of Current State
+---
 
-The transformation to ha-cli is **mostly complete**! All three domains have been implemented:
+## Executive Summary
 
-1. **Automations**: Basic operations (list, read) + porcelain mode
-2. **Dashboards**: Full CRUD operations + entity extraction + porcelain mode
-3. **Entities**: Complete suite including rename, analyze, import/export + porcelain mode
+This plan addresses security vulnerabilities, code quality issues, and new feature development identified during a comprehensive codebase review. Priority is given to fixing a YAML injection vulnerability and duplicate method definitions before proceeding with the new areas domain feature.
 
-### What's Still Missing
+---
 
-Based on the original plan, these automation commands haven't been implemented yet:
-- `create` - Create new automation from YAML file
-- `update` - Update existing automation
-- `delete` - Delete automation
-- `enable/disable` - Enable/disable automation
-- `reload` - Reload all automations
-- `monitor` - Monitor automation events in real-time
-- `migrate` - Migrate automation between storage types (UI ↔ file)
+## Issue Summary
 
-### Additional Features Implemented (Not in Original Plan)
+| # | Priority | Issue | File(s) | Effort |
+|---|----------|-------|---------|--------|
+| 31 | CRITICAL | Unsafe YAML Loading | utils.py, service.py, models.py + 4 more | Low |
+| 32 | CRITICAL | Duplicate `get_automation_states()` | client.py | Low |
+| 33 | IMPORTANT | Missing Exception Context Chains | client.py | Medium |
+| 35 | IMPORTANT | Silent Exception Handlers | entities/service.py | Low |
+| 37 | IMPORTANT | Undefined `EXIT_HA_ERROR` | Multiple files | Low |
+| 36 | IMPORTANT | CLI Modules Lack Test Coverage | cli.py, audit/cli.py, automations/cli.py | High |
+| 30 | IMPORTANT | Add `ha-cli areas` Domain | New domain | High |
+| 34 | NICE-TO-HAVE | Ruff Configuration Deprecated Keys | pyproject.toml | Low |
 
-1. **Porcelain Mode**: All commands support `--porcelain` for structured JSON output
-2. **Entity Analysis**: Cross-domain usage analysis
-3. **Bulk Operations**: CSV import/export for entity operations
-4. **Dashboard Views**: List views within dashboards
-5. **Comprehensive Error Handling**: With helpful suggestions  
-**Priority**: High
+---
 
-## Background
+## Phase 1: Critical Security & Bug Fixes
 
-Following the successful implementation of dual storage support for automations, we need to extend our tooling to handle entity renaming across all Home Assistant subsystems. The goal is to support migration to consistent naming conventions by updating entity references in dashboards, scripts, scenes, and other subsystems when entities are renamed.
+### Issue 31: Unsafe YAML Loading - Code Injection Vulnerability
 
-Research shows that dashboards follow the same dual storage pattern as automations:
-- **Storage mode**: JSON in `.storage/`, WebSocket API management
-- **YAML mode**: Direct file editing
+**References:** docs/ISSUES.md #31
 
-This architectural similarity makes it natural to extend our existing tool rather than create separate tools for each subsystem.
+**Problem:**
+Multiple files use `yaml.load()` instead of `yaml.safe_load()`, allowing arbitrary code execution when loading untrusted YAML.
 
-## Goals
+**Solution:**
+Replace all `yaml.load()` with `yaml.safe_load()`. For ruamel.yaml, ensure safe loading mode.
 
-1. **Unified Tool**: Single CLI for all Home Assistant management tasks
-2. **Entity Migration**: Support bulk entity renaming across all subsystems
-3. **Code Reuse**: Leverage existing WebSocket client and storage patterns
-4. **Extensibility**: Easy to add new domains (scripts, scenes, etc.)
-5. **Backward Compatibility**: Existing `ha-automation` commands continue working
+**Acceptance Criteria:**
+- [ ] All `yaml.load()` replaced with `yaml.safe_load()`
+- [ ] ruamel.yaml instances use safe loading
+- [ ] Tests pass after changes
+- [ ] No YAML injection vectors remain
 
-## Architecture Overview
+**Implementation:**
+1. Update `ha_cli/common/utils.py:105`
+2. Update `ha_cli/domains/dashboards/service.py:241`
+3. Update `ha_cli/domains/automations/models.py:79`
+4. Verify ruamel.yaml usage in `file_automation_manager.py` is safe
+5. Update `ha_automation/cli.py:615`
+6. Update test files
+7. Run full test suite
 
-```
-ha-cli
-├── automations         # Existing automation management
-│   ├── list
-│   ├── create
-│   ├── update
-│   ├── delete
-│   ├── monitor
-│   └── migrate
-│
-├── dashboards          # New dashboard management
-│   ├── list
-│   ├── read
-│   ├── backup
-│   ├── restore
-│   └── rename-entities
-│
-└── entities (future)   # Cross-domain entity operations
-    ├── rename
-    ├── find-usage
-    └── validate
-```
+---
 
-## Implementation Phases
+### Issue 32: Duplicate `get_automation_states()` Method Definition
 
-### Phase 1: Refactor to Multi-Domain Architecture ✅
-**Duration**: 1-2 days  
-**Status**: Complete
+**References:** docs/ISSUES.md #32
 
-#### 1.1 Project Restructure
-- [x] Create new directory structure:
-  ```
-  ha_cli/
-  ├── __init__.py
-  ├── __main__.py
-  ├── cli.py              # Root CLI definition
-  ├── common/
-  │   ├── __init__.py
-  │   ├── client.py       # Move HAClient here
-  │   ├── config.py       # Move config utilities here
-  │   ├── exceptions.py   # Move exceptions here
-  │   └── storage/        # Move storage patterns here
-  ├── domains/
-  │   ├── __init__.py
-  │   ├── automations/    # Move automation code here
-  │   └── dashboards/     # New dashboard code
-  └── utils.py
-  ```
+**Problem:**
+Method defined twice in `client.py` at lines 498 and 742, causing shadowing.
 
-#### 1.2 Update Project Metadata
-- [x] Update `pyproject.toml`:
-  - Change name to `ha-cli`
-  - Add `ha-cli` script entry point
-  - Keep `ha-automation` as compatibility alias
-  - Update description and documentation
+**Solution:**
+Remove the duplicate definition and consolidate logic.
 
-#### 1.3 Implement Root CLI
-- [x] Create root `cli.py` with Typer subcommands
-- [x] Add `automations` subcommand routing to existing code
-- [x] Add `dashboards` subcommand (fully implemented)
-- [x] Implement backward compatibility for `ha-automation`
+**Acceptance Criteria:**
+- [ ] Single `get_automation_states()` method exists
+- [ ] Method functionality preserved
+- [ ] All callers work correctly
+- [ ] Tests pass
 
-#### 1.4 Move and Refactor Common Code
-- [x] Extract shared client code to `common/client.py`
-- [x] Move config management to common modules
-- [x] Create base storage classes for automations
-- [x] Update imports throughout codebase
-- [x] Add porcelain mode support in `common/porcelain.py`
+**Implementation:**
+1. Read both implementations to understand differences
+2. Determine which implementation is correct/complete
+3. Remove duplicate definition
+4. Update any callers if needed
+5. Run tests to verify
 
-### Phase 2: Implement Dashboard Support ✅
-**Duration**: 3-4 days  
-**Status**: Complete
+---
 
-#### 2.1 Dashboard Models
-- [x] Create `domains/dashboards/models.py`:
-  ```python
-  @dataclass
-  class Card:
-      type: str
-      entity: Optional[str]
-      entities: Optional[List[str]]
-      # ... other card properties
-  
-  @dataclass
-  class View:
-      title: str
-      path: Optional[str]
-      cards: List[Card]
-      # ... sections support
-  
-  @dataclass
-  class Dashboard:
-      title: Optional[str]
-      views: List[View]
-  ```
+## Phase 2: Important Code Quality
 
-#### 2.2 WebSocket Integration
-- [x] Add dashboard methods to HAClient:
-  - [x] `list_dashboards()` - WebSocket `lovelace/dashboards`
-  - [x] `get_dashboard_config(url_path=None)` - WebSocket `lovelace/config`
-  - [x] `save_dashboard_config(config, url_path=None)` - WebSocket `lovelace/config/save`
-  - [x] `delete_dashboard(url_path)` - WebSocket `lovelace/config/delete`
+### Issue 33: Missing Exception Context Chains (PEP 3134)
 
-#### 2.3 Dashboard Storage Managers
-- [x] **DashboardService**: Unified service handling all dashboard types
-  - [x] Load via WebSocket
-  - [x] Save via WebSocket
-  - [x] Handle all dashboard operations
-  - [x] Support both storage and YAML modes
+**References:** docs/ISSUES.md #33
 
-#### 2.4 Dashboard CLI Commands
-- [x] `ha-cli dashboards list` - List all dashboards
-- [x] `ha-cli dashboards read <url_path>` - Show dashboard config
-- [x] `ha-cli dashboards backup <url_path>` - Export to file
-- [x] `ha-cli dashboards restore <file>` - Import from file
-- [x] `ha-cli dashboards entities <url_path>` - Extract entity references
-- [x] `ha-cli dashboards create <id> <url> <title>` - Create new dashboard
-- [x] `ha-cli dashboards delete <id>` - Delete dashboard
-- [x] `ha-cli dashboards views <url_path>` - List views in dashboard
+**Problem:**
+15+ exception handlers in `client.py` raise new exceptions without `from err`, losing debugging context.
 
-### Phase 3: Entity Renaming Features ✅
-**Duration**: 2-3 days  
-**Status**: Complete (Exceeded Plan)
+**Solution:**
+Add `from err` to all exception raises in except blocks.
 
-#### 3.1 Entity Scanner
-- [x] Create entity scanning functionality:
-  - [x] Walk dashboard JSON/YAML structure
-  - [x] Find entity references in:
-    - Card `entity` fields
-    - Card `entities` arrays
-    - Action configurations
-    - Template strings
-  - [x] Build entity usage map
-  - [x] Cross-domain analysis (automations + dashboards)
+**Acceptance Criteria:**
+- [ ] All `raise` statements in `except` blocks use `from err` or `from None`
+- [ ] Original exception context preserved
+- [ ] ruff B904 violations resolved
 
-#### 3.2 Entity Renamer
-- [x] Create entity renaming functionality:
-  - [x] Accept regex patterns for search/replace
-  - [x] Walk and replace all references
-  - [x] Preserve structure and formatting
-  - [x] Generate change report
-  - [x] Dry-run mode support
+**Implementation:**
+1. Run `ruff check --select B904 ha_cli/common/client.py`
+2. Fix each violation by adding `from err`
+3. Verify with `ruff check`
 
-#### 3.3 Rename CLI Command
-- [x] Implemented as `ha-cli entities` domain:
-  ```bash
-  # Regex-based rename
-  ha-cli entities rename \
-    --search "^climate\.(.*)(?<!_ac)$" \
-    --replace "climate.\1_ac" \
-    --dry-run
-  
-  # Import bulk operations from CSV
-  ha-cli entities import-operations operations.csv
-  
-  # Analyze entity usage across domains
-  ha-cli entities analyze climate.master_bedroom
-  ```
+---
 
-#### 3.4 Cross-Domain Integration
-- [x] Implemented full `ha-cli entities` domain
-- [x] Integrated entity operations across automations and dashboards
-- [x] Replaced ha-rename tool functionality
+### Issue 35: Silent Exception Handlers in Entity Service
 
-### Phase 4: Testing & Documentation
-**Duration**: 1-2 days  
-**Status**: Partially Complete
+**References:** docs/ISSUES.md #35
 
-#### 4.1 Test Suite
-- [ ] **Unit Tests**:
-  - [ ] Dashboard model parsing/serialization
-  - [ ] Entity scanner accuracy
-  - [ ] Storage manager operations
-- [ ] **Integration Tests**:
-  - [ ] WebSocket dashboard operations
-  - [ ] Entity renaming scenarios
-  - [ ] YAML preservation
-- [ ] **End-to-End Tests**:
-  - [ ] Full rename workflow
-  - [ ] Backup/restore cycle
+**Problem:**
+Bare `except: pass` blocks at lines 620 and 745 silently swallow exceptions.
 
-#### 4.2 Documentation Updates
-- [ ] Update README.md:
-  - [ ] New project name and description
-  - [ ] Dashboard commands
-  - [ ] Entity renaming guide
-  - [ ] Migration from ha-automation
-- [ ] Create DASHBOARDS.md with:
-  - [ ] Storage types explanation
-  - [ ] Entity reference locations
-  - [ ] Best practices
-- [ ] Update CLAUDE.md with learnings
+**Solution:**
+Add logging to exception handlers.
 
-#### 4.3 Migration Support
-- [ ] Create migration guide
-- [ ] Add deprecation notices to ha-automation
-- [ ] Update shell completions
-- [ ] Test backward compatibility
+**Acceptance Criteria:**
+- [ ] No bare `except: pass` blocks remain
+- [ ] Exceptions logged at debug level
+- [ ] ruff S110 violations resolved
 
-## Technical Considerations
+**Implementation:**
+1. Add `logger.debug()` calls to both locations
+2. Consider using specific exception types
+3. Verify with `ruff check --select S110`
 
-### Entity Reference Patterns
+---
 
-Dashboards contain entity references in many locations:
+### Issue 37: Undefined Name `EXIT_HA_ERROR`
 
-```yaml
-# Direct entity reference
-- type: entity
-  entity: sensor.temperature
+**References:** docs/ISSUES.md #37
 
-# Entity arrays
-- type: entities
-  entities:
-    - sensor.temperature
-    - sensor.humidity
+**Problem:**
+6 instances of undefined name causing potential runtime errors.
 
-# In actions
-- type: button
-  tap_action:
-    action: call-service
-    service: light.turn_on
-    target:
-      entity_id: light.bedroom
+**Solution:**
+Define constant in common module or replace with actual value.
 
-# In templates
-- type: markdown
-  content: "Temperature: {{ states('sensor.temperature') }}"
-```
+**Acceptance Criteria:**
+- [ ] All `EXIT_HA_ERROR` references resolved
+- [ ] Constant defined centrally if needed
+- [ ] No F821 ruff errors
 
-### Storage Detection
+**Implementation:**
+1. Run `ruff check --select F821` to find all occurrences
+2. Determine appropriate value (likely `2` based on CLI conventions)
+3. Define in `ha_cli/common/cli_utils.py` or replace inline
+4. Update all references
+5. Verify with ruff
 
-Like automations, dashboards have two storage modes:
-1. **Storage mode**: Check WebSocket for available dashboards
-2. **YAML mode**: Check `configuration.yaml` for `lovelace: mode: yaml`
+---
 
-### Change Safety
+### Issue 36: CLI Modules Lack Test Coverage
 
-1. **Backup First**: Always create backup before modifications
-2. **Validation**: Check entities exist before renaming
-3. **Dry Run**: Show changes before applying
-4. **Atomic Operations**: All-or-nothing updates
+**References:** docs/ISSUES.md #36
 
-## Success Metrics
+**Problem:**
+CLI entry points have 0% test coverage, risking undetected bugs.
 
-- [ ] All existing automation commands work unchanged
-- [ ] Dashboard CRUD operations work for both storage types
-- [ ] Entity renaming correctly updates all references
-- [ ] Performance: Process 100KB dashboard in < 1 second
-- [ ] Zero data loss during operations
+**Solution:**
+Add integration tests using typer's CliRunner.
 
-## Dependencies
+**Acceptance Criteria:**
+- [ ] CLI tests added for main entry points
+- [ ] Tests cover happy path and error cases
+- [ ] Coverage for CLI modules > 50%
 
-- Existing ha-automation-cli codebase
-- Home Assistant WebSocket API
-- Python 3.11+ (consistent with current requirements)
+**Implementation:**
+1. Create `tests/test_cli.py` for main CLI
+2. Create `tests/audit/test_cli.py` for audit commands
+3. Create `tests/automations/test_cli.py` for automation commands
+4. Use `CliRunner` to invoke commands
+5. Mock external dependencies (HAClient)
+6. Test error handling paths
 
-## Risks and Mitigations
+---
 
-| Risk | Mitigation |
-|------|------------|
-| Breaking existing users | Keep ha-automation command working |
-| Dashboard format changes | Version detection and compatibility |
-| Large dashboards (>1MB) | Streaming JSON parser if needed |
-| Missing entity references | Comprehensive scanner with tests |
-| YAML formatting loss | Use ruamel.yaml preservation |
+## Phase 3: New Features
 
-## Next Steps
+### Issue 30: Add `ha-cli areas` Domain for Area and Registry Metadata
 
-### Priority 1: Complete Automation Commands
-The following commands exist in `ha_automation/cli.py` but need to be migrated to `ha_cli/domains/automations/cli.py`:
-- [ ] `create` - Create new automation from YAML file
-- [ ] `update` - Update existing automation
-- [ ] `delete` - Delete automation
-- [ ] `enable` - Enable automation
-- [ ] `disable` - Disable automation
-- [ ] `reload` - Reload all automations
-- [ ] `monitor` - Monitor automation events in real-time
-- [ ] `migrate` - Migrate automation between storage types (UI ↔ file)
-- [ ] `test_trigger` - Test automation triggers
-- [ ] `events` - Monitor events
-- [ ] `control` - Control automations
+**References:** docs/ISSUES.md #30
 
-### Priority 2: Testing & Documentation
-- [ ] Complete unit tests for all domains
-- [ ] Add integration tests
-- [ ] Update all documentation
-- [ ] Create migration guide from ha-automation to ha-cli
+**Problem:**
+No way to query or audit Home Assistant area/registry metadata. 99.3% of entities lack area assignments.
 
-### Priority 3: Future Domains
-Once the automation commands are complete:
+**Solution:**
+Implement new `areas` domain with list, show, and audit capabilities.
 
-1. **Scripts Domain**: `ha-cli scripts`
-2. **Scenes Domain**: `ha-cli scenes`  
-3. **Areas Domain**: `ha-cli areas`
-4. **Devices Domain**: `ha-cli devices`
+**Acceptance Criteria:**
+- [ ] `ha-cli areas list` shows all areas with entity/device counts
+- [ ] `ha-cli areas show` displays full area details
+- [ ] `ha-cli audit areas` identifies naming issues and empty areas
+- [ ] All commands support `--porcelain` for structured JSON output
+- [ ] Unit tests for new functionality
+
+**Implementation:**
+1. Create `ha_cli/domains/areas/` directory structure
+2. Implement models (`Area`, `Device`, `Floor`, `Label`)
+3. Implement service with WebSocket calls to registry APIs
+4. Implement CLI commands (list, show)
+5. Add `audit areas` subcommand to audit domain
+6. Add porcelain output support
+7. Write unit tests
+8. Update documentation
+
+---
+
+## Phase 4: Nice-to-Haves
+
+### Issue 34: Ruff Configuration Uses Deprecated Top-Level Keys
+
+**References:** docs/ISSUES.md #34
+
+**Problem:**
+Deprecation warnings on every ruff run due to outdated config format.
+
+**Solution:**
+Move config to `[tool.ruff.lint]` section.
+
+**Acceptance Criteria:**
+- [ ] No deprecation warnings from ruff
+- [ ] Linting behavior unchanged
+
+**Implementation:**
+1. Edit `pyproject.toml`
+2. Move `select`, `ignore`, `per-file-ignores` to `[tool.ruff.lint]`
+3. Verify no warnings with `ruff check`
+
+---
+
+## Quality Gates
+
+Before marking plan complete:
+1. Tests pass: `poetry run pytest`
+2. Linting clean: `poetry run ruff check ha_cli/`
+3. No critical ruff errors: `poetry run ruff check --select F821,B904,S110`
+4. Coverage maintained: `poetry run pytest --cov=ha_cli`
+
+---
+
+## Execution Order
+
+Implementation sequence considering dependencies:
+
+1. ⏳ **Issue 31** - Fix YAML security vulnerability (Phase 1) - CRITICAL
+2. **Issue 32** - Remove duplicate method (Phase 1) - CRITICAL
+3. **Issue 37** - Fix undefined EXIT_HA_ERROR (Phase 2) - blocks other work
+4. **Issue 35** - Fix silent exception handlers (Phase 2)
+5. **Issue 33** - Add exception context chains (Phase 2)
+6. **Issue 34** - Update ruff config (Phase 4) - quick win
+7. **Issue 36** - Add CLI test coverage (Phase 2)
+8. **Issue 30** - Implement areas domain (Phase 3) - largest effort
+
+---
 
 ## References
 
-- [ADR-0001: Transform to Multi-Domain CLI](docs/adr/ADR-0001-transform-to-multi-domain-cli.md)
-- [Dashboard WebSocket Research](../../../CLAUDE.md)
-- [Existing ha-automation-cli v2 plan](plan-automation-v2.md.bak)
+- docs/ISSUES.md - Canonical issue tracker
+- archive/ - Previous plan versions
+- docs/entity-naming-conventions.md - Naming standards for area audit
