@@ -738,19 +738,7 @@ class HAClient:
         if isinstance(result, list):
             return result
         return []
-    
-    async def get_automation_states(self) -> list[dict[str, Any]]:
-        """Get all automation entity states.
-        
-        Returns:
-            List of automation states
-        """
-        all_states = await self.get_states()
-        return [
-            state for state in all_states 
-            if state.get("entity_id", "").startswith("automation.")
-        ]
-    
+
     async def call_automation_service(
         self,
         service: str,

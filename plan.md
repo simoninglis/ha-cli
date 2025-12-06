@@ -67,10 +67,10 @@ Method defined twice in `client.py` at lines 498 and 742, causing shadowing.
 Remove the duplicate definition and consolidate logic.
 
 **Acceptance Criteria:**
-- [ ] Single `get_automation_states()` method exists
-- [ ] Method functionality preserved
-- [ ] All callers work correctly
-- [ ] Tests pass
+- [x] Single `get_automation_states()` method exists
+- [x] Method functionality preserved
+- [x] All callers work correctly
+- [x] Tests pass
 
 **Implementation:**
 1. Read both implementations to understand differences
@@ -245,7 +245,7 @@ Before marking plan complete:
 Implementation sequence considering dependencies:
 
 1. ✅ **Issue 31** - Fix YAML security vulnerability (Phase 1) - CRITICAL
-2. ⏳ **Issue 32** - Remove duplicate method (Phase 1) - CRITICAL
+2. ✅ **Issue 32** - Remove duplicate method (Phase 1) - CRITICAL
 3. **Issue 37** - Fix undefined EXIT_HA_ERROR (Phase 2) - blocks other work
 4. **Issue 35** - Fix silent exception handlers (Phase 2)
 5. **Issue 33** - Add exception context chains (Phase 2)
