@@ -245,7 +245,7 @@ Before marking plan complete:
 Implementation sequence considering dependencies:
 
 1. ✅ **Issue 31** - Fix YAML security vulnerability (Phase 1) - CRITICAL
-2. **Issue 32** - Remove duplicate method (Phase 1) - CRITICAL
+2. ⏳ **Issue 32** - Remove duplicate method (Phase 1) - CRITICAL
 3. **Issue 37** - Fix undefined EXIT_HA_ERROR (Phase 2) - blocks other work
 4. **Issue 35** - Fix silent exception handlers (Phase 2)
 5. **Issue 33** - Add exception context chains (Phase 2)
