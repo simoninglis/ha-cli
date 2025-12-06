@@ -236,7 +236,7 @@ class DashboardService:
             with open(path, "r", encoding="utf-8") as f:
                 config_data = json.load(f)
         else:  # yaml
-            yaml = ruamel.yaml.YAML()
+            yaml = ruamel.yaml.YAML(typ='safe')
             with open(path, "r", encoding="utf-8") as f:
                 config_data = yaml.load(f)
         

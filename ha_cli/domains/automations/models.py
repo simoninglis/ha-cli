@@ -75,7 +75,7 @@ class Automation(BaseModel):
     @classmethod
     def from_yaml(cls, yaml_str: str) -> "Automation":
         """Create Automation from YAML string."""
-        yaml = ruamel.yaml.YAML()
+        yaml = ruamel.yaml.YAML(typ='safe')
         data = yaml.load(yaml_str)
         return cls(**data)
     

@@ -31,6 +31,9 @@ class FileAutomationManager:
         """
         self.client = client
         self.automations_file = automations_file or Path.home() / "automations.yaml"
+        # Using round-trip (rt) YAML to preserve formatting, comments, and quote styles
+        # when editing automations.yaml. Note: ruamel.yaml's RoundTripConstructor is
+        # safe - it does not support arbitrary Python object instantiation.
         self._yaml = ruamel.yaml.YAML()
         self._yaml.preserve_quotes = True
         self._yaml.default_flow_style = False

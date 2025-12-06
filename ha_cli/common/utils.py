@@ -98,6 +98,9 @@ def load_yaml_file(file_path: str) -> dict[str, Any]:
     Returns:
         Parsed YAML data
     """
+    # Using round-trip (rt) type to preserve formatting, comments, and quote styles.
+    # Note: ruamel.yaml's RoundTripConstructor is safe - it does not support
+    # arbitrary Python object instantiation like PyYAML's unsafe Loader.
     yaml = ruamel.yaml.YAML()
     yaml.preserve_quotes = True
     yaml.default_flow_style = False

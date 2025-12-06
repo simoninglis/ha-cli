@@ -76,7 +76,7 @@ poetry run ha-cli automations monitor           # Monitor automation events
 **Note**: Create/update/delete operations are not available via the API.
 Use the Home Assistant UI or edit `automations.yaml` directly.
 
-### Dashboard Commands  
+### Dashboard Commands
 ```bash
 poetry run ha-cli dashboards list               # List all dashboards
 poetry run ha-cli dashboards read [url-path]    # Export dashboard config
@@ -86,6 +86,24 @@ poetry run ha-cli dashboards entities [url-path] # Extract entity references
 poetry run ha-cli dashboards create <id> <url> <title> # Create new dashboard
 poetry run ha-cli dashboards delete <id>        # Delete dashboard
 ```
+
+### Audit Commands (Tech Debt Detection)
+```bash
+poetry run ha-cli audit dead-entities           # Find unavailable/unknown entities
+poetry run ha-cli audit duplicates              # Find _2, _3, _4 suffix duplicates
+poetry run ha-cli audit broken-automations      # Automations with non-existent entity refs
+poetry run ha-cli audit fragile-automations     # Automations with unavailable entity refs
+poetry run ha-cli audit unused-automations      # Never triggered automations
+poetry run ha-cli audit unused-automations --days 90  # Not triggered in 90 days
+poetry run ha-cli audit trigger-stats           # Most/least triggered automations
+poetry run ha-cli audit integrations            # Per-integration health summary
+poetry run ha-cli audit all                     # Run all checks with combined summary
+```
+
+**Exit codes:**
+- `0` = No issues found
+- `1` = Issues found (warnings/errors)
+- `2` = Command error
 
 ### Porcelain Mode (NEW!)
 **All commands now support `--porcelain` for structured output optimized for Claude Code:**
@@ -219,6 +237,7 @@ ha_cli/
 │   └── utils.py              # General utilities (YAML, config file ops)
 ├── domains/                   # Domain-specific code
 │   ├── automations/          # Automation management
+│   ├── audit/                # Tech debt auditing (dead entities, unused automations, etc.)
 │   ├── dashboards/           # Dashboard management
 │   └── entities/             # Entity management
 └── __main__.py               # CLI entry point

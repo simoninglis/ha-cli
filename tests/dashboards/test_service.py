@@ -225,7 +225,7 @@ class TestDashboardService:
         assert Path(output_file).exists()
         
         # Verify content
-        yaml = ruamel.yaml.YAML()
+        yaml = ruamel.yaml.YAML(typ='safe')
         with open(output_file) as f:
             data = yaml.load(f)
         

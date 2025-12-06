@@ -39,7 +39,7 @@ Multi-domain command-line tool for managing Home Assistant configurations includ
 - **Track execution metrics** and performance data
 - **Auto-reconnection** for reliable WebSocket connections
 
-### Dashboard Management (NEW!)
+### Dashboard Management
 - **List** all dashboards with their properties
 - **Read** dashboard configurations (storage or YAML mode)
 - **Backup** dashboards to YAML/JSON files
@@ -47,6 +47,16 @@ Multi-domain command-line tool for managing Home Assistant configurations includ
 - **Create/Delete** new dashboards
 - **Extract entities** referenced in dashboards
 - **Update entity references** for bulk renaming
+
+### Tech Debt Audit (NEW!)
+- **dead-entities** - Find unavailable/unknown entities with integration grouping
+- **duplicates** - Find duplicate entities with _2, _3, _4 suffixes
+- **broken-automations** - Find automations referencing non-existent entities
+- **fragile-automations** - Find automations referencing unavailable entities
+- **unused-automations** - Find automations not triggered in N days
+- **trigger-stats** - Show automation trigger statistics (most/least triggered)
+- **integrations** - Show per-integration health summary
+- **all** - Run all audit checks with combined summary
 
 ### Claude Code Integration (NEW!)
 - **Porcelain Mode**: Structured JSON output with `--porcelain` flag
@@ -449,6 +459,107 @@ ha-cli automations read complex_auto --porcelain | jq '.suggestions.detected_iss
 # Get workflow recommendations
 ha-cli automations list --porcelain | jq '.suggestions.workflow_sequences[]'
 ```
+
+### Audit Commands (Tech Debt Detection)
+
+The audit subcommand helps identify and address tech debt in Home Assistant instances.
+
+#### Dead Entities
+
+Find entities that are unavailable or in unknown state:
+
+```bash
+# Find all dead entities
+ha-cli audit dead-entities
+
+# Output in porcelain format
+ha-cli audit dead-entities --porcelain
+```
+
+#### Duplicate Entities
+
+Find entities with _2, _3, _4 suffixes (typically from re-adding integrations):
+
+```bash
+# Find duplicate entities
+ha-cli audit duplicates
+
+# Porcelain output for processing
+ha-cli audit duplicates --porcelain
+```
+
+#### Broken Automations
+
+Find automations that reference non-existent entities:
+
+```bash
+# Find broken automations
+ha-cli audit broken-automations
+```
+
+#### Fragile Automations
+
+Find automations that reference unavailable (but existing) entities:
+
+```bash
+# Find fragile automations
+ha-cli audit fragile-automations
+```
+
+#### Unused Automations
+
+Find automations that have never been triggered or not triggered recently:
+
+```bash
+# Find automations never triggered (default)
+ha-cli audit unused-automations
+
+# Find automations not triggered in 90 days
+ha-cli audit unused-automations --days 90
+```
+
+#### Trigger Statistics
+
+Show automation trigger statistics - most and least triggered:
+
+```bash
+# Show trigger stats (top 20 by default)
+ha-cli audit trigger-stats
+
+# Show more results
+ha-cli audit trigger-stats --limit 50
+```
+
+#### Integration Health
+
+Show per-integration health summary with availability percentages:
+
+```bash
+# Show integration health
+ha-cli audit integrations
+
+# Porcelain output with detailed breakdown
+ha-cli audit integrations --porcelain
+```
+
+#### Run All Audits
+
+Run all audit checks and produce a combined summary:
+
+```bash
+# Run all audits
+ha-cli audit all
+
+# Output in porcelain format for automation
+ha-cli audit all --porcelain
+```
+
+#### Exit Codes
+
+Audit commands use meaningful exit codes:
+- `0` - No issues found
+- `1` - Issues found (warnings or errors)
+- `2` - Command execution error
 
 ### WebSocket Real-Time Commands (Automations)
 

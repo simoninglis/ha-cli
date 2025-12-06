@@ -117,7 +117,7 @@ class TestFileAutomationManager:
         await file_manager.save_all(automations)
         
         # Verify file contents
-        yaml = ruamel.yaml.YAML()
+        yaml = ruamel.yaml.YAML(typ='safe')
         with open(file_manager.automations_file, 'r') as f:
             data = yaml.load(f)
         

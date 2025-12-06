@@ -608,8 +608,8 @@ def test_trigger(
     async def _test_trigger():
         # Load trigger configuration
         import ruamel.yaml
-        yaml = ruamel.yaml.YAML()
-        
+        yaml = ruamel.yaml.YAML(typ='safe')
+
         try:
             with open(trigger_file, "r") as f:
                 trigger_config = yaml.load(f)
