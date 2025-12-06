@@ -619,10 +619,10 @@ class EntityService:
             
         except Exception as e:
             # If all methods fail, return empty list
-            pass
-            
+            logger.debug(f"Error getting entity references for {entity_id}: {e}")
+
         return references
-    
+
     async def _try_file_editor_api(self, entity_id: str) -> list[str]:
         """Try to access automation files via File Editor API.
 
@@ -744,10 +744,10 @@ class EntityService:
                     
         except Exception as e:
             # If all methods fail, return empty list with explanation
-            pass
-            
+            logger.debug(f"Error in pattern-based analysis for {entity_id}: {e}")
+
         return references
-    
+
     def _entity_in_automation_config(self, entity_id: str, automation_config: dict) -> bool:
         """Check if an entity is referenced in a full automation configuration."""
         # Check triggers, conditions, and actions using consolidated helper
