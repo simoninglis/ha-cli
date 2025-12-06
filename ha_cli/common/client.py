@@ -165,9 +165,9 @@ class HAClient:
             return None
             
         except httpx.TimeoutException as e:
-            raise TimeoutError(f"Request timed out: {e}")
+            raise TimeoutError(f"Request timed out: {e}") from e
         except httpx.ConnectError as e:
-            raise ConnectionError(f"Failed to connect: {e}")
+            raise ConnectionError(f"Failed to connect: {e}") from e
     
     async def _ensure_ws_connected(self) -> None:
         """Ensure WebSocket is connected and authenticated."""
@@ -224,7 +224,7 @@ class HAClient:
                 except (websockets.exceptions.WebSocketException, ConnectionError) as e:
                     retry_count += 1
                     if retry_count >= 3:
-                        raise WebSocketError(f"Failed to connect after 3 retries: {e}")
+                        raise WebSocketError(f"Failed to connect after 3 retries: {e}") from e
                     
                     wait_time = backoff[retry_count - 1]
                     logger.warning(f"WebSocket connection failed, retrying in {wait_time}s: {e}")
@@ -303,8 +303,8 @@ class HAClient:
         """
         try:
             await asyncio.wait_for(self._ws_connected.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError(f"WebSocket connection not established within {timeout}s")
+        except asyncio.TimeoutError as e:
+            raise TimeoutError(f"WebSocket connection not established within {timeout}s") from e
     
     async def _ws_call(
         self,
@@ -361,7 +361,7 @@ class HAClient:
         except (ConnectionClosed, ConnectionClosedError) as e:
             logger.error(f"WebSocket connection lost during call: {e}")
             await self._handle_ws_disconnect()
-            raise WebSocketError("Connection lost during WebSocket call")
+            raise WebSocketError("Connection lost during WebSocket call") from e
     
     # Automation methods
     # Note: The REST API /api/config/automation/config requires the 'config'
@@ -795,9 +795,9 @@ class HAClient:
             return result
         except WebSocketError as e:
             if "not_found" in str(e).lower():
-                raise NotFoundError(f"Automation not found: {automation_id}")
+                raise NotFoundError(f"Automation not found: {automation_id}") from e
             raise
-    
+
     # Dashboard WebSocket methods
     
     async def list_dashboards(self) -> list[dict[str, Any]]:
@@ -834,9 +834,9 @@ class HAClient:
             return result
         except WebSocketError as e:
             if "not_found" in str(e).lower():
-                raise NotFoundError(f"Dashboard not found: {url_path or 'default'}")
+                raise NotFoundError(f"Dashboard not found: {url_path or 'default'}") from e
             raise
-    
+
     async def save_dashboard_config(
         self, 
         config: dict[str, Any], 
@@ -868,11 +868,11 @@ class HAClient:
         except WebSocketError as e:
             error_msg = str(e).lower()
             if "not_found" in error_msg:
-                raise NotFoundError(f"Dashboard not found: {url_path or 'default'}")
+                raise NotFoundError(f"Dashboard not found: {url_path or 'default'}") from e
             elif "invalid" in error_msg or "validation" in error_msg:
-                raise ValidationError(f"Invalid dashboard configuration: {e}")
+                raise ValidationError(f"Invalid dashboard configuration: {e}") from e
             raise
-    
+
     async def delete_dashboard(self, dashboard_id: str) -> None:
         """Delete a dashboard via WebSocket.
         
@@ -891,11 +891,11 @@ class HAClient:
         except WebSocketError as e:
             error_msg = str(e).lower()
             if "not_found" in error_msg:
-                raise NotFoundError(f"Dashboard not found: {dashboard_id}")
+                raise NotFoundError(f"Dashboard not found: {dashboard_id}") from e
             elif "default" in error_msg:
-                raise ValidationError("Cannot delete the default dashboard")
+                raise ValidationError("Cannot delete the default dashboard") from e
             raise
-    
+
     async def create_dashboard(
         self,
         dashboard_id: str,
@@ -937,11 +937,11 @@ class HAClient:
         except WebSocketError as e:
             error_msg = str(e).lower()
             if "already exists" in error_msg or "duplicate" in error_msg:
-                raise ValidationError(f"Dashboard already exists: {dashboard_id}")
+                raise ValidationError(f"Dashboard already exists: {dashboard_id}") from e
             elif "invalid" in error_msg:
-                raise ValidationError(f"Invalid dashboard parameters: {e}")
+                raise ValidationError(f"Invalid dashboard parameters: {e}") from e
             raise
-    
+
     async def update_dashboard(
         self,
         dashboard_id: str,
@@ -986,7 +986,7 @@ class HAClient:
         except WebSocketError as e:
             error_msg = str(e).lower()
             if "not_found" in error_msg:
-                raise NotFoundError(f"Dashboard not found: {dashboard_id}")
+                raise NotFoundError(f"Dashboard not found: {dashboard_id}") from e
             elif "invalid" in error_msg:
-                raise ValidationError(f"Invalid dashboard parameters: {e}")
+                raise ValidationError(f"Invalid dashboard parameters: {e}") from e
             raise

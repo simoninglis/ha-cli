@@ -110,12 +110,12 @@ class UnifiedAutomationService:
             # Normalize to singular format
             config = FormatConverter.normalize_format(config, "singular")
             return Automation(**config)
-        except NotFoundError:
+        except NotFoundError as e:
             # If not found via WebSocket, try file manager
             automation = await self.file_manager.get_by_id(automation_id)
             if automation:
                 return automation
-            raise NotFoundError(f"Automation not found: {automation_id}")
+            raise NotFoundError(f"Automation not found: {automation_id}") from e
     
     async def create(
         self,

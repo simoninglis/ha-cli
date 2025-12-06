@@ -156,8 +156,8 @@ class EntityService:
             return sorted(entities, key=lambda e: e.entity_id)
             
         except Exception as e:
-            raise HAAutomationError(f"Failed to list entities: {e}")
-    
+            raise HAAutomationError(f"Failed to list entities: {e}") from e
+
     async def get_entity(self, entity_id: str) -> Optional[Entity]:
         """Get a specific entity by ID.
         

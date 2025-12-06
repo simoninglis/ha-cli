@@ -84,9 +84,9 @@ class AutomationCRUD:
 
             return config
         except (yaml.YAMLError, ValueError) as e:
-            raise ValidationError(f"Failed to parse {file_path}: {e}")
+            raise ValidationError(f"Failed to parse {file_path}: {e}") from e
         except OSError as e:
-            raise ValidationError(f"Failed to read {file_path}: {e}")
+            raise ValidationError(f"Failed to read {file_path}: {e}") from e
     
     async def list_automations(self, json_output: bool = False, use_websocket: bool = False) -> list[Automation] | list[dict[str, Any]]:
         """List all automations via WebSocket.
@@ -153,7 +153,7 @@ class AutomationCRUD:
             return Automation(**data)
         except Exception as e:
             if "not_found" in str(e).lower() or "not found" in str(e).lower():
-                raise AutomationNotFoundError(automation_id)
+                raise AutomationNotFoundError(automation_id) from e
             raise
     
     async def create_automation(self, file_path: str, dry_run: bool = False) -> str:
