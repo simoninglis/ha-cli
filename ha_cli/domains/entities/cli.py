@@ -3,33 +3,31 @@
 import asyncio
 import json
 import logging
-import os
 import sys
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, List
 
 import typer
 from rich import print
 from rich.console import Console
 from rich.table import Table
 
+from ...common.cli_utils import run_async_command, setup_logging
 from ...common.client import HAClient
 from ...common.config import get_client_config
-from ...common.cli_utils import run_async_command, setup_logging
 from ...common.exceptions import (
     EXIT_HA_ERROR,
     EXIT_USAGE_ERROR,
-    HAAutomationError,
 )
 from ...common.porcelain import (
     PorcelainFormatter,
     create_home_assistant_metadata,
-    get_home_assistant_health,
     create_workflow_recommendations,
     detect_advanced_issues,
+    get_home_assistant_health,
 )
-from .service import EntityService
 from .models import RenamePreview
+from .service import EntityService
 
 # Initialize Typer app
 app = typer.Typer(
@@ -47,11 +45,11 @@ logger = logging.getLogger(__name__)
 
 @app.command()
 def list(
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
-    search: Optional[str] = typer.Option(None, "--search", "-s", help="Search pattern (regex)"),
-    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Filter by domain"),
+    search: str | None = typer.Option(None, "--search", "-s", help="Search pattern (regex)"),
+    domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
@@ -78,14 +76,14 @@ def list(
                 if porcelain:
                     assert formatter is not None  # Type narrowing for mypy
                     # Group by domain for analysis
-                    domains_map: Dict[str, List[Any]] = {}
+                    domains_map: dict[str, List[Any]] = {}
                     for entity in entities:
                         if entity.domain not in domains_map:
                             domains_map[entity.domain] = []
                         domains_map[entity.domain].append(entity)
 
                     # Convert entities to porcelain-friendly format
-                    data: List[Dict[str, Any]] = []
+                    data: List[dict[str, Any]] = []
                     for entity in entities:
                         entity_data = {
                             "entity_id": entity.entity_id,
@@ -124,7 +122,7 @@ def list(
                     }
 
                     # Create suggestions
-                    suggestions: Dict[str, Any] = {
+                    suggestions: dict[str, Any] = {
                         "common_actions": [
                             "Export entities: ha-cli entities export entities.csv --porcelain",
                             "Backup entities: ha-cli entities backup --porcelain",
@@ -152,7 +150,8 @@ def list(
                         if domain_name == "sensor" and count > 50:
                             suggestions["optimization_recommendations"].append(f"Many sensors ({count}) - consider grouping or filtering")
                         elif domain_name == "light" and count > 20:
-                            suggestions["common_actions"].append(f"Rename lights: ha-cli entities rename --domain light --search pattern --replace new_pattern")
+                            rename_cmd = "ha-cli entities rename --domain light --search pattern --replace new_pattern"
+                            suggestions["common_actions"].append(f"Rename lights: {rename_cmd}")
                         elif domain_name == "climate" and count > 0:
                             suggestions["common_actions"].append("Check climate entities: ha-cli entities list --domain climate --porcelain")
 
@@ -171,8 +170,10 @@ def list(
                                 inconsistent_naming.append(domain_name)
                     
                     if inconsistent_naming:
-                        suggestions["detected_issues"].append(f"Inconsistent naming patterns in domains: {', '.join(inconsistent_naming)}")
-                        suggestions["common_actions"].append("Standardize naming: ha-cli entities rename --search pattern --replace standardized_pattern")
+                        msg = f"Inconsistent naming patterns in domains: {', '.join(inconsistent_naming)}"
+                        suggestions["detected_issues"].append(msg)
+                        rename_cmd = "ha-cli entities rename --search pattern --replace standardized_pattern"
+                        suggestions["common_actions"].append(f"Standardize naming: {rename_cmd}")
                     
                     # Add workflow recommendations
                     workflow_recommendations = create_workflow_recommendations(
@@ -213,7 +214,7 @@ def list(
                         return
 
                     # Group by domain for better organization
-                    domains: Dict[str, List[Any]] = {}
+                    domains: dict[str, List[Any]] = {}
                     for entity in entities:
                         if entity.domain not in domains:
                             domains[entity.domain] = []
@@ -266,11 +267,11 @@ def list(
 @app.command()
 def export(
     output: str = typer.Argument(..., help="Output CSV file path"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
-    search: Optional[str] = typer.Option(None, "--search", "-s", help="Search pattern (regex)"),
-    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Filter by domain"),
+    search: str | None = typer.Option(None, "--search", "-s", help="Search pattern (regex)"),
+    domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
     """Export entities to CSV file."""
@@ -289,7 +290,7 @@ def export(
             console.print(f"[green]✓ Exported {len(entities)} entities to {output}[/green]")
 
             # Show summary
-            domains: Dict[str, int] = {}
+            domains: dict[str, int] = {}
             for entity in entities:
                 domains[entity.domain] = domains.get(entity.domain, 0) + 1
 
@@ -302,9 +303,9 @@ def export(
 
 @app.command()
 def backup(
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output CSV file (auto-generated if omitted)"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    output: str | None = typer.Option(None, "--output", "-o", help="Output CSV file (auto-generated if omitted)"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -332,7 +333,7 @@ def backup(
             console.print(f"[green]✓ Backed up {len(entities)} entities to {output_file}[/green]")
 
             # Show summary
-            domains: Dict[str, int] = {}
+            domains: dict[str, int] = {}
             for entity in entities:
                 domains[entity.domain] = domains.get(entity.domain, 0) + 1
 
@@ -347,10 +348,10 @@ def backup(
 def rename(
     search: str = typer.Option(..., "--search", "-s", help="Search pattern (regex)"),
     replace: str = typer.Option(..., "--replace", "-r", help="Replace pattern (regex)"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
-    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Filter by domain"),
+    domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be renamed without doing it"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -438,7 +439,7 @@ def rename(
             console.print(table)
             
             # Show impact summary
-            console.print(f"\n[bold yellow]Impact Summary:[/bold yellow]")
+            console.print("\n[bold yellow]Impact Summary:[/bold yellow]")
             console.print(f"  Total automation references: {total_automation_refs}")
             console.print(f"  Total dashboard references: {total_dashboard_refs}")
             
@@ -473,7 +474,8 @@ def rename(
                 warning_msg = f"[yellow]CAUTION:[/yellow] {len(medium_impact_entities)} medium-impact entities detected. " + warning_msg
             
             if total_automation_refs > 0 or total_dashboard_refs > 0:
-                console.print(f"[yellow]⚠ This operation will affect {total_automation_refs} automations and {total_dashboard_refs} dashboards[/yellow]")
+                msg = f"⚠ This operation will affect {total_automation_refs} automations and {total_dashboard_refs} dashboards"
+                console.print(f"[yellow]{msg}[/yellow]")
                 console.print("[yellow]⚠ Manual updates to configurations may be required after renaming[/yellow]")
             
             confirm = typer.confirm(warning_msg)
@@ -507,8 +509,8 @@ def rename(
 @app.command()
 def import_operations(
     csv_file: str = typer.Argument(..., help="CSV file containing rename operations"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be renamed without doing it"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
@@ -605,12 +607,12 @@ def import_operations(
 
 @app.command()
 def analyze(
-    entity_id: Optional[str] = typer.Argument(None, help="Entity ID to analyze"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    entity_id: str | None = typer.Argument(None, help="Entity ID to analyze"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
-    search: Optional[str] = typer.Option(None, "--search", "-s", help="Search pattern for batch analysis"),
-    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Filter by domain for batch analysis"),
+    search: str | None = typer.Option(None, "--search", "-s", help="Search pattern for batch analysis"),
+    domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain for batch analysis"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -652,7 +654,7 @@ def analyze(
                     console.print(f"[bold]Domain:[/bold] {entity.domain}")
                     console.print(f"[bold]Current State:[/bold] {entity.state}")
                     
-                    console.print(f"\n[bold yellow]Impact Analysis:[/bold yellow]")
+                    console.print("\n[bold yellow]Impact Analysis:[/bold yellow]")
                     console.print(f"[bold]Impact Level:[/bold] {impact_analysis.impact_level}")
                     console.print(f"[bold]Total References:[/bold] {impact_analysis.total_references}")
                     
@@ -661,27 +663,27 @@ def analyze(
                         for ref in impact_analysis.automation_references:
                             console.print(f"  • {ref}")
                     else:
-                        console.print(f"\n[green]✓ No automation references found[/green]")
+                        console.print("\n[green]✓ No automation references found[/green]")
                     
                     if impact_analysis.dashboard_references:
                         console.print(f"\n[bold red]Dashboard References ({len(impact_analysis.dashboard_references)}):[/bold red]")
                         for ref in impact_analysis.dashboard_references:
                             console.print(f"  • {ref}")
                     else:
-                        console.print(f"\n[green]✓ No dashboard references found[/green]")
+                        console.print("\n[green]✓ No dashboard references found[/green]")
                     
                     if impact_analysis.recommendations:
-                        console.print(f"\n[bold blue]Recommendations:[/bold blue]")
+                        console.print("\n[bold blue]Recommendations:[/bold blue]")
                         for rec in impact_analysis.recommendations:
                             console.print(f"  • {rec}")
                     
                     # Safety assessment
                     if impact_analysis.impact_level == "low":
-                        console.print(f"\n[green]✓ Renaming this entity should be safe[/green]")
+                        console.print("\n[green]✓ Renaming this entity should be safe[/green]")
                     elif impact_analysis.impact_level == "medium":
-                        console.print(f"\n[yellow]⚠ Moderate impact - review references before renaming[/yellow]")
+                        console.print("\n[yellow]⚠ Moderate impact - review references before renaming[/yellow]")
                     else:
-                        console.print(f"\n[red]⚠ High impact - carefully plan rename operation[/red]")
+                        console.print("\n[red]⚠ High impact - carefully plan rename operation[/red]")
             
             else:
                 # Batch analysis - analyze multiple entities based on search/domain filters
@@ -757,7 +759,7 @@ def analyze(
                     # Rich console output for batch analysis
                     
                     # Summary table
-                    console.print(f"\n[bold yellow]Batch Analysis Summary:[/bold yellow]")
+                    console.print("\n[bold yellow]Batch Analysis Summary:[/bold yellow]")
                     console.print(f"  Analyzed entities: {len(entities)}")
                     console.print(f"  High impact: [red]{high_impact_count}[/red]")
                     console.print(f"  Medium impact: [yellow]{medium_impact_count}[/yellow]")
@@ -766,7 +768,7 @@ def analyze(
                     console.print(f"  Total dashboard references: {total_dashboard_refs}")
                     
                     # Detailed results table
-                    console.print(f"\n[cyan]Detailed Impact Analysis:[/cyan]")
+                    console.print("\n[cyan]Detailed Impact Analysis:[/cyan]")
                     table = Table()
                     table.add_column("Entity ID", style="cyan")
                     table.add_column("Friendly Name", style="white")
@@ -805,13 +807,16 @@ def analyze(
                         console.print(f"\n[bold red]High Impact Entities ({high_impact_count}):[/bold red]")
                         for entity, analysis in sorted_results:
                             if analysis.impact_level == "high":
-                                console.print(f"  • {entity.entity_id} ({entity.friendly_name or 'N/A'})")
-                                console.print(f"    Automations: {len(analysis.automation_references)}, Dashboards: {len(analysis.dashboard_references)}")
+                                name = entity.friendly_name or 'N/A'
+                                console.print(f"  • {entity.entity_id} ({name})")
+                                auto_refs = len(analysis.automation_references)
+                                dash_refs = len(analysis.dashboard_references)
+                                console.print(f"    Automations: {auto_refs}, Dashboards: {dash_refs}")
                                 if analysis.recommendations:
                                     console.print(f"    Recommendations: {', '.join(analysis.recommendations[:2])}")
                     
                     # Safety recommendations
-                    console.print(f"\n[bold blue]Batch Analysis Recommendations:[/bold blue]")
+                    console.print("\n[bold blue]Batch Analysis Recommendations:[/bold blue]")
                     if high_impact_count > 0:
                         console.print(f"  • [red]Caution:[/red] {high_impact_count} entities have high impact - carefully plan any changes")
                     if medium_impact_count > 0:
@@ -820,21 +825,21 @@ def analyze(
                         console.print(f"  • [green]Safe:[/green] {low_impact_count} entities appear safe to modify")
                     
                     if total_automation_refs > 0 or total_dashboard_refs > 0:
-                        console.print(f"  • Consider using 'ha-cli entities rename --dry-run' to preview changes before execution")
-                        console.print(f"  • Backup configurations before making changes: 'ha-cli entities backup'")
-                        console.print(f"  • Test automations after entity changes to ensure they still work correctly")
+                        console.print("  • Consider using 'ha-cli entities rename --dry-run' to preview changes before execution")
+                        console.print("  • Backup configurations before making changes: 'ha-cli entities backup'")
+                        console.print("  • Test automations after entity changes to ensure they still work correctly")
     
     asyncio.run(run_async_command(_analyze()))
 
 
 @app.command()
 def delete(
-    search: Optional[str] = typer.Option(None, "--search", "-s", help="Search pattern (regex) for entities to delete"),
-    entity_ids: Optional[List[str]] = typer.Option(None, "--entity-id", "-e", help="Specific entity IDs to delete"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    search: str | None = typer.Option(None, "--search", "-s", help="Search pattern (regex) for entities to delete"),
+    entity_ids: List[str] | None = typer.Option(None, "--entity-id", "-e", help="Specific entity IDs to delete"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
-    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Filter by domain"),
+    domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be deleted without doing it"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
@@ -910,7 +915,10 @@ def delete(
                 if porcelain:
                     assert formatter is not None  # Type narrowing for mypy
                     # Porcelain output for dry-run or pre-confirmation
-                    data: List[Dict[str, Optional[str]]] = [{"entity_id": e.entity_id, "friendly_name": e.friendly_name, "state": e.state} for e in entities_to_delete]
+                    data: List[dict[str, str | None]] = [
+                        {"entity_id": e.entity_id, "friendly_name": e.friendly_name, "state": e.state}
+                        for e in entities_to_delete
+                    ]
                     metadata = {
                         "total_entities": len(entities_to_delete),
                         "dry_run": dry_run,
@@ -1001,7 +1009,7 @@ def delete(
                 if porcelain:
                     assert formatter is not None  # Type narrowing for mypy
                     # Porcelain output for results
-                    results_data: List[Dict[str, Any]] = []
+                    results_data: List[dict[str, Any]] = []
                     for entity_id, result in results.items():
                         results_data.append({
                             "entity_id": entity_id,
@@ -1016,7 +1024,7 @@ def delete(
                         "home_assistant": create_home_assistant_metadata(url_final, "websocket")
                     }
 
-                    result_suggestions: Dict[str, List[str]] = {
+                    result_suggestions: dict[str, List[str]] = {
                         "common_actions": [],
                         "warnings": []
                     }

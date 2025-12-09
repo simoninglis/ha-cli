@@ -32,10 +32,7 @@ class AutomationTypeDetector:
             "ui" if UI-based automation, "file" if file-based
         """
         # Get automation data as dict
-        if isinstance(automation, Automation):
-            automation_id = automation.id
-        else:
-            automation_id = automation.get("id")
+        automation_id = automation.id if isinstance(automation, Automation) else automation.get("id")
         
         # Check if ID matches UI pattern
         if automation_id and cls.is_ui_id(automation_id):
@@ -118,10 +115,7 @@ class AutomationTypeDetector:
             automation_type = cls.detect_automation_type(automation)
             
             # Get ID
-            if isinstance(automation, Automation):
-                automation_id = automation.id
-            else:
-                automation_id = automation.get("id")
+            automation_id = automation.id if isinstance(automation, Automation) else automation.get("id")
             
             if automation_type == "ui":
                 ui_count += 1

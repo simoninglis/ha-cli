@@ -10,11 +10,9 @@ import ruamel.yaml
 
 from ...common.client import HAClient
 from ...common.exceptions import (
-    NotFoundError,
     ValidationError,
 )
 from .models import DashboardConfig, DashboardInfo
-
 
 logger = logging.getLogger(__name__)
 
@@ -233,11 +231,11 @@ class DashboardService:
         
         # Load configuration
         if path.suffix == ".json":
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 config_data = json.load(f)
         else:  # yaml
             yaml = ruamel.yaml.YAML(typ='safe')
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 config_data = yaml.load(f)
         
         # Parse and validate

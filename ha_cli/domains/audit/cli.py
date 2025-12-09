@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import sys
-from typing import Optional, List
 
 import typer
 from rich.console import Console
@@ -16,7 +15,6 @@ from ...common.exceptions import EXIT_USAGE_ERROR
 from ...common.porcelain import (
     PorcelainFormatter,
     create_home_assistant_metadata,
-    get_home_assistant_health,
 )
 from .models import AuditResult, AuditSeverity
 from .service import AuditService
@@ -38,7 +36,7 @@ logger = logging.getLogger(__name__)
 def _output_result(
     result: AuditResult,
     porcelain: bool,
-    formatter: Optional[PorcelainFormatter],
+    formatter: PorcelainFormatter | None,
     url: str,
 ) -> None:
     """Output audit result in appropriate format.
@@ -122,7 +120,7 @@ def _output_result(
         console.print(table)
 
         # Summary
-        console.print(f"\n[bold]Summary:[/bold]")
+        console.print("\n[bold]Summary:[/bold]")
         console.print(f"  Total findings: {len(result.findings)}")
         console.print(f"  Errors: [red]{result.error_count}[/red]")
         console.print(f"  Warnings: [yellow]{result.warning_count}[/yellow]")
@@ -132,12 +130,12 @@ def _output_result(
 
 @app.command("dead-entities")
 def dead_entities(
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
-    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Filter by domain"),
-    integration: Optional[str] = typer.Option(None, "--integration", "-i", help="Filter by integration"),
-    ignore_pattern: Optional[List[str]] = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
+    domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain"),
+    integration: str | None = typer.Option(None, "--integration", "-i", help="Filter by integration"),
+    ignore_pattern: list[str] | None = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
     include_disabled: bool = typer.Option(False, "--include-disabled", help="Include disabled entities"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
@@ -178,11 +176,11 @@ def dead_entities(
 
 @app.command("duplicates")
 def duplicates(
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
     show_disabled: bool = typer.Option(False, "--show-disabled", help="Include disabled entities"),
-    ignore_pattern: Optional[List[str]] = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
+    ignore_pattern: list[str] | None = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -220,10 +218,10 @@ def duplicates(
 
 @app.command("broken-automations")
 def broken_automations(
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
-    ignore_pattern: Optional[List[str]] = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
+    ignore_pattern: list[str] | None = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -260,10 +258,10 @@ def broken_automations(
 
 @app.command("fragile-automations")
 def fragile_automations(
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
-    ignore_pattern: Optional[List[str]] = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
+    ignore_pattern: list[str] | None = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -300,8 +298,8 @@ def fragile_automations(
 
 @app.command("unused-automations")
 def unused_automations(
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
     days: int = typer.Option(90, "--days", help="Days threshold for unused"),
     include_disabled: bool = typer.Option(False, "--include-disabled", help="Include disabled automations"),
@@ -342,11 +340,11 @@ def unused_automations(
 
 @app.command("trigger-stats")
 def trigger_stats(
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
     top: int = typer.Option(20, "--top", help="Number of results to show"),
-    days: Optional[int] = typer.Option(None, "--days", help="Filter to last N days"),
+    days: int | None = typer.Option(None, "--days", help="Filter to last N days"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -384,10 +382,10 @@ def trigger_stats(
 
 @app.command("integrations")
 def integrations(
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
-    ignore_pattern: Optional[List[str]] = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
+    ignore_pattern: list[str] | None = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -465,11 +463,11 @@ def integrations(
 
 @app.command("all")
 def all_checks(
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
     timeout: int = typer.Option(60, "--timeout", help="Request timeout"),
-    severity: Optional[str] = typer.Option(None, "--severity", help="Filter by severity (error, warning, info)"),
-    ignore_pattern: Optional[List[str]] = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
+    severity: str | None = typer.Option(None, "--severity", help="Filter by severity (error, warning, info)"),
+    ignore_pattern: list[str] | None = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
     days: int = typer.Option(90, "--days", help="Days threshold for unused automations"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
@@ -478,7 +476,7 @@ def all_checks(
     setup_logging(debug)
 
     # Parse severity filter
-    severity_filter: Optional[AuditSeverity] = None
+    severity_filter: AuditSeverity | None = None
     if severity:
         try:
             severity_filter = AuditSeverity(severity.lower())
@@ -547,7 +545,7 @@ def all_checks(
 
                     # Summary
                     console.print(f"\n[bold]{'='*50}[/bold]")
-                    console.print(f"[bold]AUDIT SUMMARY[/bold]")
+                    console.print("[bold]AUDIT SUMMARY[/bold]")
                     console.print(f"[bold]{'='*50}[/bold]")
                     console.print(f"  Total findings: {len(result.findings)}")
                     console.print(f"  Errors: [red]{result.error_count}[/red]")
@@ -556,11 +554,11 @@ def all_checks(
                     console.print(f"  Execution time: {result.execution_time_ms:.0f}ms")
 
                     if result.exit_code == 0:
-                        console.print(f"\n[green]Exit code: 0 (clean)[/green]")
+                        console.print("\n[green]Exit code: 0 (clean)[/green]")
                     elif result.exit_code == 1:
-                        console.print(f"\n[yellow]Exit code: 1 (findings present)[/yellow]")
+                        console.print("\n[yellow]Exit code: 1 (findings present)[/yellow]")
                     else:
-                        console.print(f"\n[red]Exit code: 2 (error)[/red]")
+                        console.print("\n[red]Exit code: 2 (error)[/red]")
 
                 return result.exit_code
 

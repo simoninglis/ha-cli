@@ -1,6 +1,7 @@
 """Home Assistant API client with REST and WebSocket support."""
 
 import asyncio
+import contextlib
 import json
 import logging
 from collections.abc import AsyncIterator, Callable
@@ -96,17 +97,13 @@ class HAClient:
         # Cancel background tasks
         if self._ws_heartbeat_task:
             self._ws_heartbeat_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._ws_heartbeat_task
-            except asyncio.CancelledError:
-                pass
         
         if self._ws_reconnect_task:
             self._ws_reconnect_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._ws_reconnect_task
-            except asyncio.CancelledError:
-                pass
         
         if self._client:
             await self._client.aclose()
@@ -303,7 +300,7 @@ class HAClient:
         """
         try:
             await asyncio.wait_for(self._ws_connected.wait(), timeout=timeout)
-        except asyncio.TimeoutError as e:
+        except (TimeoutError, asyncio.TimeoutError) as e:
             raise TimeoutError(f"WebSocket connection not established within {timeout}s") from e
     
     async def _ws_call(
@@ -713,8 +710,7 @@ class HAClient:
         
         if isinstance(value, str):
             # Remove ALL control characters including newlines, tabs, etc.
-            cleaned = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', value)
-            return cleaned
+            return re.sub(r'[\x00-\x1F\x7F-\x9F]', '', value)
         elif isinstance(value, dict):
             return {k: self._sanitize_value(v) for k, v in value.items()}
         elif isinstance(value, list):

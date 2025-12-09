@@ -1,9 +1,6 @@
 """Entry point for ha-cli."""
 
 import sys
-from typing import Optional
-
-import typer
 
 from .cli import app
 

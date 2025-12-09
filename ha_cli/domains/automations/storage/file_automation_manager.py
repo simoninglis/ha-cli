@@ -5,7 +5,6 @@ import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import ruamel.yaml
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
@@ -53,7 +52,7 @@ class FileAutomationManager:
             return []
         
         try:
-            with open(self.automations_file, 'r', encoding='utf-8') as f:
+            with open(self.automations_file, encoding='utf-8') as f:
                 data = self._yaml.load(f)
             
             if not data:

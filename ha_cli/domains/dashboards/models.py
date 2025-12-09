@@ -1,6 +1,7 @@
 """Data models for Home Assistant dashboards using Pydantic v2."""
 
 from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -64,13 +65,12 @@ class CardConfig(BaseModel):
                 # service call entities
                 if action.get("service"):
                     target = action.get("target", {})
-                    if isinstance(target, dict):
-                        if target.get("entity_id"):
-                            entity_id = target["entity_id"]
-                            if isinstance(entity_id, str):
-                                entities.append(entity_id)
-                            elif isinstance(entity_id, list):
-                                entities.extend(entity_id)
+                    if isinstance(target, dict) and target.get("entity_id"):
+                        entity_id = target["entity_id"]
+                        if isinstance(entity_id, str):
+                            entities.append(entity_id)
+                        elif isinstance(entity_id, list):
+                            entities.extend(entity_id)
         
         # Extract from extra fields (card-specific)
         extra_fields = self.model_dump(exclude={"type", "title", "entity", "entities", 

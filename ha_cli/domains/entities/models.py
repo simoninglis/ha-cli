@@ -1,7 +1,9 @@
 """Data models for entity management."""
 
+import contextlib
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Any
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -12,9 +14,9 @@ class Entity(BaseModel):
     friendly_name: str = Field("", description="Human-readable name")
     domain: str = Field(..., description="Entity domain (e.g., 'light', 'sensor')")
     state: str = Field("", description="Current state of the entity")
-    attributes: Dict[str, Any] = Field(default_factory=dict, description="Entity attributes")
-    last_changed: Optional[datetime] = Field(None, description="When the entity last changed")
-    last_updated: Optional[datetime] = Field(None, description="When the entity was last updated")
+    attributes: dict[str, Any] = Field(default_factory=dict, description="Entity attributes")
+    last_changed: datetime | None = Field(None, description="When the entity last changed")
+    last_updated: datetime | None = Field(None, description="When the entity was last updated")
     
     # Note: We discovered that Home Assistant can send entity IDs with embedded newlines
     # However, the main issue was with print() modifying output, not the data itself
@@ -32,7 +34,7 @@ class Entity(BaseModel):
         return str(v) if v is not None else ""
     
     @classmethod
-    def from_ha_state(cls, state_data: Dict[str, Any]) -> "Entity":
+    def from_ha_state(cls, state_data: dict[str, Any]) -> "Entity":
         """Create Entity from Home Assistant state data."""
         entity_id = state_data["entity_id"]
         domain = entity_id.split(".", 1)[0]
@@ -41,15 +43,11 @@ class Entity(BaseModel):
         last_changed = None
         last_updated = None
         if state_data.get("last_changed"):
-            try:
+            with contextlib.suppress(ValueError, AttributeError):
                 last_changed = datetime.fromisoformat(state_data["last_changed"].replace("Z", "+00:00"))
-            except (ValueError, AttributeError):
-                pass
         if state_data.get("last_updated"):
-            try:
+            with contextlib.suppress(ValueError, AttributeError):
                 last_updated = datetime.fromisoformat(state_data["last_updated"].replace("Z", "+00:00"))
-            except (ValueError, AttributeError):
-                pass
         
         return cls(
             entity_id=entity_id,
@@ -61,7 +59,7 @@ class Entity(BaseModel):
             last_updated=last_updated,
         )
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "entity_id": self.entity_id,
@@ -81,7 +79,7 @@ class RenameOperation(BaseModel):
     new_entity_id: str = Field(..., description="New entity ID")
     friendly_name: str = Field("", description="Entity friendly name for reference")
     
-    def validate_ids(self) -> List[str]:
+    def validate_ids(self) -> list[str]:
         """Validate the rename operation and return any issues."""
         issues = []
         
@@ -106,14 +104,14 @@ class RenameOperation(BaseModel):
 class RenamePreview(BaseModel):
     """Preview of rename operations before execution."""
     
-    operations: List[RenameOperation] = Field(default_factory=list, description="List of rename operations")
+    operations: list[RenameOperation] = Field(default_factory=list, description="List of rename operations")
     total_count: int = Field(0, description="Total number of operations")
     valid_count: int = Field(0, description="Number of valid operations")
-    invalid_operations: List[Dict[str, Any]] = Field(default_factory=list, description="Invalid operations with reasons")
-    warnings: List[str] = Field(default_factory=list, description="General warnings")
+    invalid_operations: list[dict[str, Any]] = Field(default_factory=list, description="Invalid operations with reasons")
+    warnings: list[str] = Field(default_factory=list, description="General warnings")
     
     @classmethod
-    def from_operations(cls, operations: List[RenameOperation]) -> "RenamePreview":
+    def from_operations(cls, operations: list[RenameOperation]) -> "RenamePreview":
         """Create preview from list of operations."""
         valid_ops = []
         invalid_ops = []
@@ -133,7 +131,7 @@ class RenamePreview(BaseModel):
         if len(valid_ops) > 50:
             warnings.append(f"Large number of operations ({len(valid_ops)}) - consider breaking into smaller batches")
         
-        domains = set(op.new_entity_id.split(".", 1)[0] for op in valid_ops)
+        domains = {op.new_entity_id.split(".", 1)[0] for op in valid_ops}
         if len(domains) > 5:
             warnings.append(f"Operations span many domains ({len(domains)}) - ensure coordination")
         
@@ -151,10 +149,10 @@ class RenameResult(BaseModel):
     
     operation: RenameOperation = Field(..., description="The rename operation")
     success: bool = Field(..., description="Whether the operation succeeded")
-    error_message: Optional[str] = Field(None, description="Error message if failed")
+    error_message: str | None = Field(None, description="Error message if failed")
     timestamp: datetime = Field(default_factory=datetime.now, description="When the operation was performed")
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "old_entity_id": self.operation.old_entity_id,
@@ -170,14 +168,14 @@ class EntityImpactAnalysis(BaseModel):
     """Analysis of the impact of entity changes on automations and dashboards."""
     
     entity_id: str = Field(..., description="Entity being analyzed")
-    automation_references: List[str] = Field(default_factory=list, description="Automation IDs that reference this entity")
-    dashboard_references: List[str] = Field(default_factory=list, description="Dashboard IDs that reference this entity")
+    automation_references: list[str] = Field(default_factory=list, description="Automation IDs that reference this entity")
+    dashboard_references: list[str] = Field(default_factory=list, description="Dashboard IDs that reference this entity")
     total_references: int = Field(0, description="Total number of references found")
     impact_level: str = Field("low", description="Impact level: low, medium, high")
-    recommendations: List[str] = Field(default_factory=list, description="Recommended actions")
+    recommendations: list[str] = Field(default_factory=list, description="Recommended actions")
     
     @classmethod
-    def create(cls, entity_id: str, automation_refs: List[str], dashboard_refs: List[str]) -> "EntityImpactAnalysis":
+    def create(cls, entity_id: str, automation_refs: list[str], dashboard_refs: list[str]) -> "EntityImpactAnalysis":
         """Create impact analysis from reference lists."""
         total_refs = len(automation_refs) + len(dashboard_refs)
         

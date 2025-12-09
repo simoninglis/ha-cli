@@ -3,33 +3,29 @@
 import asyncio
 import json
 import logging
-import os
 import sys
 from pathlib import Path
-from typing import Optional, Dict, List, Any, Literal
+from typing import Any, List, Literal
 
 import typer
-from rich import print
 from rich.console import Console
 from rich.table import Table
-from rich.syntax import Syntax
 
+from ...common.cli_utils import run_async_command, setup_logging
 from ...common.client import HAClient
 from ...common.config import get_client_config
-from ...common.cli_utils import run_async_command, setup_logging
 from ...common.exceptions import (
     EXIT_HA_ERROR,
     EXIT_USAGE_ERROR,
-    HAAutomationError,
 )
 from ...common.porcelain import (
     PorcelainFormatter,
+    analyze_dashboard_performance,
     create_dashboard_suggestions,
     create_home_assistant_metadata,
-    get_home_assistant_health,
-    analyze_dashboard_performance,
     create_workflow_recommendations,
     detect_advanced_issues,
+    get_home_assistant_health,
 )
 from .service import DashboardService
 
@@ -49,8 +45,8 @@ logger = logging.getLogger(__name__)
 
 @app.command()
 def list(
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
@@ -100,7 +96,7 @@ def list(
                             storage_mode_count["yaml"] += 1
                     
                     # Create metadata
-                    metadata: Dict[str, Any] = {
+                    metadata: dict[str, Any] = {
                         "total_count": len(dashboards),
                         "storage_mode_breakdown": storage_mode_count,
                         "sidebar_count": sum(1 for d in dashboards if d.show_in_sidebar),
@@ -193,12 +189,12 @@ def list(
 
 @app.command()
 def read(
-    url_path: Optional[str] = typer.Argument(None, help="Dashboard URL path (omit for default)"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    url_path: str | None = typer.Argument(None, help="Dashboard URL path (omit for default)"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     format: str = typer.Option("yaml", "--format", "-f", help="Output format: yaml or json"),
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file"),
+    output: str | None = typer.Option(None, "--output", "-o", help="Output file"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
     """Read dashboard configuration."""
@@ -247,11 +243,11 @@ def read(
 
 @app.command()
 def backup(
-    url_path: Optional[str] = typer.Argument(None, help="Dashboard URL path (omit for default)"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    url_path: str | None = typer.Argument(None, help="Dashboard URL path (omit for default)"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file (auto-generated if omitted)"),
+    output: str | None = typer.Option(None, "--output", "-o", help="Output file (auto-generated if omitted)"),
     format: str = typer.Option("yaml", "--format", "-f", help="Output format: yaml or json"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -280,9 +276,9 @@ def backup(
 @app.command()
 def restore(
     input_file: str = typer.Argument(..., help="Backup file to restore from"),
-    url_path: Optional[str] = typer.Option(None, "--url-path", "-p", help="Dashboard URL path (omit for default)"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    url_path: str | None = typer.Option(None, "--url-path", "-p", help="Dashboard URL path (omit for default)"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     validate_only: bool = typer.Option(False, "--validate-only", help="Only validate without restoring"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
@@ -317,9 +313,9 @@ def restore(
 
 @app.command()
 def entities(
-    url_path: Optional[str] = typer.Argument(None, help="Dashboard URL path (omit for default)"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    url_path: str | None = typer.Argument(None, help="Dashboard URL path (omit for default)"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
@@ -347,7 +343,7 @@ def entities(
                 if porcelain:
                     assert formatter is not None  # Type narrowing for mypy
                     # Group entities by domain for analysis
-                    domains_map: Dict[str, List[str]] = {}
+                    domains_map: dict[str, List[str]] = {}
                     for entity in sorted(entities):
                         domain = entity.split(".", 1)[0]
                         if domain not in domains_map:
@@ -355,7 +351,7 @@ def entities(
                         domains_map[domain].append(entity)
 
                     # Create entity data with domain grouping
-                    entity_data: List[Dict[str, str]] = []
+                    entity_data: List[dict[str, str]] = []
                     for entity in sorted(entities):
                         domain = entity.split(".", 1)[0]
                         entity_data.append({
@@ -386,7 +382,7 @@ def entities(
                     }
 
                     # Create enhanced suggestions based on performance analysis
-                    suggestions: Dict[str, Any] = {
+                    suggestions: dict[str, Any] = {
                         "common_actions": [
                             f"View dashboard: ha-cli dashboards read {url_path or 'default'} --porcelain",
                             "Check entity states: Use MCP tools for real-time states",
@@ -416,14 +412,16 @@ def entities(
                         suggestions["detected_issues"].append("No entities found - dashboard may be empty or use only static content")
 
                     # Add performance score context
-                    if performance_analysis["performance_score"] < 70:
-                        suggestions["detected_issues"].append(f"Poor performance score ({performance_analysis['performance_score']}/100) - optimization recommended")
-                    elif performance_analysis["performance_score"] < 85:
-                        suggestions["performance_optimizations"].append(f"Moderate performance score ({performance_analysis['performance_score']}/100) - consider optimization")
+                    perf_score = performance_analysis["performance_score"]
+                    if perf_score < 70:
+                        suggestions["detected_issues"].append(f"Poor performance score ({perf_score}/100) - optimization recommended")
+                    elif perf_score < 85:
+                        suggestions["performance_optimizations"].append(f"Moderate performance score ({perf_score}/100) - consider optimization")
 
                     # Domain-specific suggestions
                     if "sensor" in domains_map and len(domains_map["sensor"]) > 20:
-                        suggestions["performance_optimizations"].append(f"Many sensors ({len(domains_map['sensor'])}) - consider grouping or filtering")
+                        sensor_count = len(domains_map['sensor'])
+                        suggestions["performance_optimizations"].append(f"Many sensors ({sensor_count}) - consider grouping or filtering")
 
                     if "camera" in domains_map:
                         suggestions["performance_optimizations"].append("Cameras detected - ensure efficient streaming configuration")
@@ -481,7 +479,7 @@ def entities(
                     console.print(f"[cyan]Found {len(entities)} unique entities:[/cyan]")
 
                     # Group by domain
-                    domains: Dict[str, List[str]] = {}
+                    domains: dict[str, List[str]] = {}
                     for entity in sorted(entities):
                         domain = entity.split(".", 1)[0]
                         if domain not in domains:
@@ -503,10 +501,7 @@ def entities(
                                     view_name = loc.split('/', 1)[1]
                                     views.append(view_name)
                             
-                            if views:
-                                view_str = f" [dim](views: {', '.join(views)})[/dim]"
-                            else:
-                                view_str = ""
+                            view_str = f" [dim](views: {', '.join(views)})[/dim]" if views else ""
                             
                             console.print(f"  • {entity}{view_str}")
                             
@@ -528,10 +523,10 @@ def create(
     dashboard_id: str = typer.Argument(..., help="Unique dashboard ID"),
     url_path: str = typer.Argument(..., help="URL path for the dashboard"),
     title: str = typer.Argument(..., help="Dashboard title"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
-    icon: Optional[str] = typer.Option(None, "--icon", "-i", help="Icon (e.g., mdi:view-dashboard)"),
+    icon: str | None = typer.Option(None, "--icon", "-i", help="Icon (e.g., mdi:view-dashboard)"),
     no_sidebar: bool = typer.Option(False, "--no-sidebar", help="Don't show in sidebar"),
     require_admin: bool = typer.Option(False, "--require-admin", help="Require admin access"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
@@ -563,8 +558,8 @@ def create(
 @app.command()
 def delete(
     dashboard_id: str = typer.Argument(..., help="Dashboard ID to delete"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
@@ -593,8 +588,8 @@ def delete(
 @app.command()
 def views(
     url_path: str = typer.Argument(None, help="Dashboard URL path (blank for default)"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: Optional[str] = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
@@ -610,13 +605,13 @@ def views(
             config = await service.get_dashboard(url_path)
             
             dashboard_name = url_path or "default"
-            views: List[Dict[str, Any]] = []
+            views: List[dict[str, Any]] = []
 
             # Extract views from config
             if hasattr(config, 'views') and config.views:
                 for view in config.views:
-                    view_dict: Dict[str, Any] = view.model_dump() if hasattr(view, 'model_dump') else dict(view)
-                    view_info: Dict[str, Any] = {
+                    view_dict: dict[str, Any] = view.model_dump() if hasattr(view, 'model_dump') else dict(view)
+                    view_info: dict[str, Any] = {
                         'title': view_dict.get('title', 'Untitled'),
                         'path': view_dict.get('path', ''),
                         'icon': view_dict.get('icon', ''),

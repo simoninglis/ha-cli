@@ -7,7 +7,7 @@ from typing import Any
 import yaml
 
 from ...common.client import HAClient
-from ...common.exceptions import AutomationNotFoundError, NotFoundError, ValidationError
+from ...common.exceptions import AutomationNotFoundError, ValidationError
 from .models import Automation, AutomationListResponse
 
 logger = logging.getLogger(__name__)

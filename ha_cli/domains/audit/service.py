@@ -3,7 +3,7 @@
 import logging
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from ...common.client import HAClient
@@ -434,7 +434,7 @@ class AuditService:
 
         try:
             automations = await self._automation_service.list_all()
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             never_triggered = 0
             old_triggered = 0
@@ -451,7 +451,7 @@ class AuditService:
                     # Make sure last_triggered is timezone-aware
                     last_triggered = automation.last_triggered
                     if last_triggered.tzinfo is None:
-                        last_triggered = last_triggered.replace(tzinfo=timezone.utc)
+                        last_triggered = last_triggered.replace(tzinfo=UTC)
                     delta = now - last_triggered
                     days_since = delta.days
                 else:
@@ -524,7 +524,7 @@ class AuditService:
 
         try:
             automations = await self._automation_service.list_all()
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Build stats list
             stats: list[dict[str, Any]] = []
@@ -536,14 +536,13 @@ class AuditService:
                 if automation.last_triggered:
                     last_triggered = automation.last_triggered
                     if last_triggered.tzinfo is None:
-                        last_triggered = last_triggered.replace(tzinfo=timezone.utc)
+                        last_triggered = last_triggered.replace(tzinfo=UTC)
                     delta = now - last_triggered
                     days_since = delta.days
 
                 # Filter by days if specified
-                if days is not None:
-                    if days_since is None or days_since > days:
-                        continue
+                if days is not None and (days_since is None or days_since > days):
+                    continue
 
                 stats.append({
                     "automation_id": automation.id,
@@ -558,7 +557,7 @@ class AuditService:
             stats.sort(
                 key=lambda x: (
                     x["last_triggered"] is None,
-                    x["last_triggered"] or datetime.min.replace(tzinfo=timezone.utc),
+                    x["last_triggered"] or datetime.min.replace(tzinfo=UTC),
                 ),
                 reverse=True,
             )
@@ -866,7 +865,7 @@ class AuditService:
                                     for v in target_value:
                                         if isinstance(v, str):
                                             refs.append((v, location))
-                    elif isinstance(value, (dict, list)):
+                    elif isinstance(value, dict | list):
                         search_dict(value, location)
             elif isinstance(obj, list):
                 for item in obj:
@@ -947,9 +946,9 @@ class AuditService:
         # Default suggestion
         if state == "unavailable":
             return (
-                f"Entity is unavailable. Check if the device is online, "
-                f"the integration is configured correctly, or consider removing "
-                f"the entity if it's no longer needed."
+                "Entity is unavailable. Check if the device is online, "
+                "the integration is configured correctly, or consider removing "
+                "the entity if it's no longer needed."
             )
         else:
             return (

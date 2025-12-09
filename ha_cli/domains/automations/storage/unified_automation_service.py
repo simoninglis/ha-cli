@@ -64,7 +64,7 @@ class UnifiedAutomationService:
         file_automations = await self.file_manager.load_all()
         
         # Create a map of file automation IDs for deduplication
-        file_ids = {a.id for a in file_automations if a.id}
+        {a.id for a in file_automations if a.id}
         
         # Combine and deduplicate
         all_automations = []
@@ -137,10 +137,7 @@ class UnifiedAutomationService:
         # Determine storage type
         if storage_type == "auto":
             # Default to file-based for new automations unless ID suggests UI
-            if automation.id and self.detector.is_ui_id(automation.id):
-                storage_type = "ui"
-            else:
-                storage_type = "file"
+            storage_type = "ui" if automation.id and self.detector.is_ui_id(automation.id) else "file"
         
         # Validate ID format for chosen storage
         if storage_type == "ui":

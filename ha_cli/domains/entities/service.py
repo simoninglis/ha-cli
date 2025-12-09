@@ -7,14 +7,20 @@ import re
 import ssl
 from datetime import datetime
 from json import JSONDecodeError
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import websockets
 
 from ...common.client import HAClient
 from ...common.exceptions import HAAutomationError
-from ...common.utils import RegexValidationError, compile_user_regex
-from .models import Entity, EntityImpactAnalysis, RenameOperation, RenamePreview, RenameResult
+from ...common.utils import compile_user_regex
+from .models import (
+    Entity,
+    EntityImpactAnalysis,
+    RenameOperation,
+    RenamePreview,
+    RenameResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,25 +42,22 @@ def _search_dict_for_entity(obj: Any, entity_id: str) -> bool:
         for key, value in obj.items():
             # Direct entity_id references
             if key in ['entity_id', 'entity_ids']:
-                if isinstance(value, str) and value == entity_id:
-                    return True
-                elif isinstance(value, list) and entity_id in value:
+                if isinstance(value, str) and value == entity_id or isinstance(value, list) and entity_id in value:
                     return True
             # Service call targets (target.entity_id, target.entity_ids)
             elif key == 'target' and isinstance(value, dict):
                 for target_key, target_value in value.items():
                     if target_key in ['entity_id', 'entity_ids']:
-                        if isinstance(target_value, str) and target_value == entity_id:
-                            return True
-                        elif isinstance(target_value, list) and entity_id in target_value:
+                        is_str_match = isinstance(target_value, str) and target_value == entity_id
+                        is_list_match = isinstance(target_value, list) and entity_id in target_value
+                        if is_str_match or is_list_match:
                             return True
             # Device/area targets that might contain entities - skip these
             elif key in ['device_id', 'device_ids', 'area_id', 'area_ids']:
                 continue
             # Check nested structures
-            elif isinstance(value, (dict, list)):
-                if _search_dict_for_entity(value, entity_id):
-                    return True
+            elif isinstance(value, dict | list) and _search_dict_for_entity(value, entity_id):
+                return True
     elif isinstance(obj, list):
         for item in obj:
             if _search_dict_for_entity(item, entity_id):
@@ -120,9 +123,9 @@ class EntityService:
     
     async def list_entities(
         self, 
-        search_pattern: Optional[str] = None,
-        domain_filter: Optional[str] = None
-    ) -> List[Entity]:
+        search_pattern: str | None = None,
+        domain_filter: str | None = None
+    ) -> list[Entity]:
         """List entities with optional filtering.
         
         Args:
@@ -158,7 +161,7 @@ class EntityService:
         except Exception as e:
             raise HAAutomationError(f"Failed to list entities: {e}") from e
 
-    async def get_entity(self, entity_id: str) -> Optional[Entity]:
+    async def get_entity(self, entity_id: str) -> Entity | None:
         """Get a specific entity by ID.
         
         Args:
@@ -182,7 +185,7 @@ class EntityService:
         self, 
         search_pattern: str, 
         replace_pattern: str, 
-        entities: List[Entity]
+        entities: list[Entity]
     ) -> RenamePreview:
         """Preview rename operations without executing them.
         
@@ -210,7 +213,7 @@ class EntityService:
         
         return RenamePreview.from_operations(operations)
     
-    async def execute_rename_operations(self, operations: List[RenameOperation]) -> List[RenameResult]:
+    async def execute_rename_operations(self, operations: list[RenameOperation]) -> list[RenameResult]:
         """Execute rename operations via WebSocket API.
         
         Args:
@@ -392,7 +395,9 @@ class EntityService:
         
         try:
             # Import the automation and dashboard services
-            from ..automations.storage.unified_automation_service import UnifiedAutomationService
+            from ..automations.storage.unified_automation_service import (
+                UnifiedAutomationService,
+            )
             from ..dashboards.service import DashboardService
             
             # Check automation references
@@ -407,7 +412,7 @@ class EntityService:
                     # Also check for potential references based on naming patterns
                     elif self._entity_likely_referenced_in_automation(entity_id, automation):
                         automation_refs.append(f"{automation.id or automation.alias} (likely)")
-            except Exception as e:
+            except Exception:
                 # If automation service fails, try alternative methods
                 automation_refs = await self._analyze_automation_references_alternative(entity_id)
                 pass
@@ -438,7 +443,7 @@ class EntityService:
             
             return EntityImpactAnalysis.create(entity_id, automation_refs, dashboard_refs)
             
-        except Exception as e:
+        except Exception:
             # Return empty analysis on error
             return EntityImpactAnalysis.create(entity_id, [], [])
     
@@ -457,18 +462,13 @@ class EntityService:
             """Recursively search for entity references in dashboard structure."""
             if isinstance(obj, dict):
                 for key, value in obj.items():
-                    if key == 'entity' and value == entity_id:
-                        return True
-                    elif key == 'entities' and isinstance(value, list) and entity_id in value:
+                    if key == 'entity' and value == entity_id or key == 'entities' and isinstance(value, list) and entity_id in value:
                         return True
                     elif key in ['entity_id', 'entity_ids']:
-                        if isinstance(value, str) and value == entity_id:
+                        if isinstance(value, str) and value == entity_id or isinstance(value, list) and entity_id in value:
                             return True
-                        elif isinstance(value, list) and entity_id in value:
-                            return True
-                    elif isinstance(value, (dict, list)):
-                        if search_dashboard_structure(value):
-                            return True
+                    elif isinstance(value, dict | list) and search_dashboard_structure(value):
+                        return True
             elif isinstance(obj, list):
                 for item in obj:
                     if search_dashboard_structure(item):
@@ -476,14 +476,11 @@ class EntityService:
             return False
 
         # Check the dashboard configuration structure
-        if hasattr(dashboard_config, 'model_dump'):
-            config_dict = dashboard_config.model_dump()
-        else:
-            config_dict = dashboard_config
+        config_dict = dashboard_config.model_dump() if hasattr(dashboard_config, 'model_dump') else dashboard_config
 
         return bool(search_dashboard_structure(config_dict))
     
-    def export_entities_to_csv(self, entities: List[Entity], output_file: str) -> None:
+    def export_entities_to_csv(self, entities: list[Entity], output_file: str) -> None:
         """Export entities to CSV file.
         
         Args:
@@ -505,7 +502,7 @@ class EntityService:
                     'state': entity.state
                 })
     
-    def import_operations_from_csv(self, csv_file: str) -> List[RenameOperation]:
+    def import_operations_from_csv(self, csv_file: str) -> list[RenameOperation]:
         """Import rename operations from CSV file.
         
         Args:
@@ -518,7 +515,7 @@ class EntityService:
         
         operations = []
         
-        with open(csv_file, 'r', encoding='utf-8') as csvfile:
+        with open(csv_file, encoding='utf-8') as csvfile:
             reader = csv.DictReader(csvfile)
             
             for row in reader:
@@ -558,18 +555,15 @@ class EntityService:
             
             if has_ac or has_climate:
                 # For specific entity locations, require exact matching
-                if entity_name == "master_bedroom" and "master" in automation_name:
-                    return True
-                elif entity_name == "bedroom_2" and "bed" in automation_name:
-                    return True
-                elif entity_name == "office_ac" and "office" in automation_name:
-                    return True
-                elif entity_name == "lounge" and "lounge" in automation_name:
-                    return True
-                elif entity_name == "office_store" and "office" in automation_name:
-                    return True
-                # General AC automations that might affect any climate entity
-                elif has_ac and not any(loc in automation_name for loc in ["master", "bed", "office", "lounge"]):
+                location_matches = (
+                    (entity_name == "master_bedroom" and "master" in automation_name)
+                    or (entity_name == "bedroom_2" and "bed" in automation_name)
+                    or (entity_name == "office_ac" and "office" in automation_name)
+                    or (entity_name == "lounge" and "lounge" in automation_name)
+                    or (entity_name == "office_store" and "office" in automation_name)
+                    or (has_ac and not any(loc in automation_name for loc in ["master", "bed", "office", "lounge"]))
+                )
+                if location_matches:
                     return True
             return False
                     
@@ -636,11 +630,12 @@ class EntityService:
             import yaml
 
             # Try multiple access methods for File Editor
+            token = getattr(self.client, '_token', '')
             access_methods = [
                 # Method 1: Direct access on port 3218 (if enabled)
                 {"base_url": "http://10.0.20.35:3218", "headers": {}},
                 # Method 2: Through Home Assistant API proxy (if ingress available)
-                {"base_url": "http://10.0.20.35:8123/api/hassio_ingress", "headers": {"Authorization": f"Bearer {getattr(self.client, '_token', '')}"}},
+                {"base_url": "http://10.0.20.35:8123/api/hassio_ingress", "headers": {"Authorization": f"Bearer {token}"}},
                 # Method 3: Try without authentication first (some configurations don't require it)
                 {"base_url": "http://10.0.20.35:3218", "headers": {"User-Agent": "ha-cli/1.0"}},
             ]
@@ -657,7 +652,7 @@ class EntityService:
 
             for method in access_methods:
                 base_url = str(method["base_url"])
-                headers: Dict[str, str] = dict(method["headers"])  # type: ignore[arg-type]
+                headers: dict[str, str] = dict(method["headers"])  # type: ignore[arg-type]
 
                 try:
                     async with httpx.AsyncClient(timeout=3.0) as client:
@@ -758,7 +753,7 @@ class EntityService:
 
         return False
     
-    async def delete_entities(self, entity_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    async def delete_entities(self, entity_ids: list[str]) -> dict[str, dict[str, Any]]:
         """Delete entities via WebSocket API.
         
         Args:

@@ -1,6 +1,7 @@
 """Real-time automation monitoring service."""
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -56,10 +57,8 @@ class AutomationMonitor:
         """Stop monitoring."""
         if self._monitoring_task:
             self._monitoring_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._monitoring_task
-            except asyncio.CancelledError:
-                pass
             self._monitoring_task = None
         logger.info("Automation monitoring stopped")
     

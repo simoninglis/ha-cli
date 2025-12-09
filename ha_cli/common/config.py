@@ -2,8 +2,6 @@
 
 import logging
 import os
-from pathlib import Path
-from typing import Optional, Tuple
 
 from dotenv import load_dotenv
 
@@ -13,11 +11,11 @@ from .utils import get_config_path, get_token_from_env, load_config, save_config
 
 
 def get_client_config(
-    url: Optional[str] = None,
-    token: Optional[str] = None,
+    url: str | None = None,
+    token: str | None = None,
     timeout: int = 10,
     interactive: bool = True,
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """Get client configuration from args, env, config file, or prompt.
 
     Configuration sources (in order of precedence):

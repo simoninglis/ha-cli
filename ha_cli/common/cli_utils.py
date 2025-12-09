@@ -2,7 +2,8 @@
 
 import logging
 import sys
-from typing import Any, Awaitable, TypeVar
+from collections.abc import Awaitable
+from typing import TypeVar
 
 from rich.console import Console
 

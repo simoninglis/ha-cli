@@ -3,34 +3,28 @@
 import asyncio
 import json
 import logging
-import os
 import sys
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
 
 import typer
-from rich import print
 from rich.console import Console
 from rich.table import Table
 
+from ...common.cli_utils import run_async_command, setup_logging
 from ...common.client import HAClient
 from ...common.config import get_client_config
-from ...common.cli_utils import run_async_command, setup_logging
 from ...common.exceptions import (
     EXIT_HA_ERROR,
     EXIT_USAGE_ERROR,
-    HAAutomationError,
 )
 from ...common.porcelain import (
     PorcelainFormatter,
+    analyze_automation_complexity,
     create_automation_suggestions,
     create_home_assistant_metadata,
-    get_home_assistant_health,
-    analyze_automation_complexity,
-    extract_entity_references,
     create_workflow_recommendations,
     detect_advanced_issues,
+    extract_entity_references,
+    get_home_assistant_health,
 )
 from .service import AutomationCRUD, AutomationWS
 
@@ -50,10 +44,10 @@ logger = logging.getLogger(__name__)
 
 @app.command()
 def list(
-    url: Optional[str] = typer.Option(None, "--url", "-u"),
-    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    url: str | None = typer.Option(None, "--url", "-u"),
+    token: str | None = typer.Option(None, "--token", "-t"),
     timeout: int = typer.Option(10, "--timeout"),
-    storage: Optional[str] = typer.Option(None, "--storage"),
+    storage: str | None = typer.Option(None, "--storage"),
     json_output: bool = typer.Option(False, "--json"),
     porcelain: bool = typer.Option(False, "--porcelain"),
     debug: bool = typer.Option(False, "--debug"),
@@ -75,8 +69,11 @@ def list(
             url_final, token_final = get_client_config(url, token)
             
             async with HAClient(url_final, token_final, timeout) as client:
+                from .storage.automation_type_detector import (
+                    AutomationTypeDetector,
+                    StorageType,
+                )
                 from .storage.unified_automation_service import UnifiedAutomationService
-                from .storage.automation_type_detector import AutomationTypeDetector, StorageType
                 
                 service = UnifiedAutomationService(client)
                 detector = AutomationTypeDetector()
@@ -249,8 +246,8 @@ def list(
 @app.command()
 def read(
     automation_id: str = typer.Argument(..., help="Automation ID to read"),
-    url: Optional[str] = typer.Option(None, "--url", "-u"),
-    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    url: str | None = typer.Option(None, "--url", "-u"),
+    token: str | None = typer.Option(None, "--token", "-t"),
     timeout: int = typer.Option(10, "--timeout"),
     json_output: bool = typer.Option(False, "--json"),
     porcelain: bool = typer.Option(False, "--porcelain"),
@@ -389,7 +386,8 @@ def read(
                     
                     # Add complexity warnings
                     if complexity_analysis["level"] == "very_complex":
-                        suggestions["detected_issues"].append(f"Very complex automation (score: {complexity_analysis['score']}) may be hard to maintain")
+                        msg = f"Very complex automation (score: {complexity_analysis['score']}) may be hard to maintain"
+                        suggestions["detected_issues"].append(msg)
                     elif complexity_analysis["level"] == "complex":
                         suggestions["detected_issues"].append(f"Complex automation (score: {complexity_analysis['score']}) consider reviewing")
                     
@@ -399,7 +397,8 @@ def read(
                         suggestions["entity_insights"].append(f"References many entities ({total_entities}) - consider impact on system performance")
                     
                     if len(entity_analysis["by_domain"]) > 5:
-                        suggestions["entity_insights"].append(f"Spans multiple domains ({len(entity_analysis['by_domain'])}) - ensure proper integration testing")
+                        domain_count = len(entity_analysis['by_domain'])
+                        suggestions["entity_insights"].append(f"Spans multiple domains ({domain_count}) - ensure proper integration testing")
                     
                     # Add domain-specific insights
                     for domain, entities in entity_analysis["by_domain"].items():
@@ -508,8 +507,8 @@ def version() -> None:
 @app.command()
 def enable(
     automation_id: str = typer.Argument(..., help="Automation ID to enable"),
-    url: Optional[str] = typer.Option(None, "--url", "-u"),
-    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    url: str | None = typer.Option(None, "--url", "-u"),
+    token: str | None = typer.Option(None, "--token", "-t"),
     timeout: int = typer.Option(10, "--timeout"),
     porcelain: bool = typer.Option(False, "--porcelain"),
     debug: bool = typer.Option(False, "--debug"),
@@ -559,8 +558,8 @@ def enable(
 @app.command()
 def disable(
     automation_id: str = typer.Argument(..., help="Automation ID to disable"),
-    url: Optional[str] = typer.Option(None, "--url", "-u"),
-    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    url: str | None = typer.Option(None, "--url", "-u"),
+    token: str | None = typer.Option(None, "--token", "-t"),
     timeout: int = typer.Option(10, "--timeout"),
     porcelain: bool = typer.Option(False, "--porcelain"),
     debug: bool = typer.Option(False, "--debug"),
@@ -609,8 +608,8 @@ def disable(
 
 @app.command()
 def reload(
-    url: Optional[str] = typer.Option(None, "--url", "-u"),
-    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    url: str | None = typer.Option(None, "--url", "-u"),
+    token: str | None = typer.Option(None, "--token", "-t"),
     timeout: int = typer.Option(10, "--timeout"),
     porcelain: bool = typer.Option(False, "--porcelain"),
     debug: bool = typer.Option(False, "--debug"),
@@ -659,8 +658,8 @@ def reload(
 @app.command()
 def create(
     file_path: str = typer.Argument(..., help="Path to YAML/JSON automation file"),
-    url: Optional[str] = typer.Option(None, "--url", "-u"),
-    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    url: str | None = typer.Option(None, "--url", "-u"),
+    token: str | None = typer.Option(None, "--token", "-t"),
     timeout: int = typer.Option(10, "--timeout"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without creating"),
     porcelain: bool = typer.Option(False, "--porcelain"),
@@ -753,8 +752,8 @@ def create(
 def update(
     automation_id: str = typer.Argument(..., help="Automation ID to update"),
     file_path: str = typer.Argument(..., help="Path to YAML/JSON automation file"),
-    url: Optional[str] = typer.Option(None, "--url", "-u"),
-    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    url: str | None = typer.Option(None, "--url", "-u"),
+    token: str | None = typer.Option(None, "--token", "-t"),
     timeout: int = typer.Option(10, "--timeout"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without updating"),
     porcelain: bool = typer.Option(False, "--porcelain"),
@@ -860,8 +859,8 @@ def update(
 @app.command()
 def delete(
     automation_id: str = typer.Argument(..., help="Automation ID to delete"),
-    url: Optional[str] = typer.Option(None, "--url", "-u"),
-    token: Optional[str] = typer.Option(None, "--token", "-t"),
+    url: str | None = typer.Option(None, "--url", "-u"),
+    token: str | None = typer.Option(None, "--token", "-t"),
     timeout: int = typer.Option(10, "--timeout"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without deleting"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),

@@ -34,15 +34,29 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
-line-length = 88
+line-length = 150
 target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "S", "B", "A", "C4", "PT", "RET", "SIM", "ARG"]
-ignore = ["S101"]  # Allow assert in tests
+ignore = [
+    "S101",   # Allow assert in tests
+    "B008",   # Allow typer.Option() in function defaults (standard typer pattern)
+    "A001",   # Allow shadowing builtins like 'list' (common in CLI commands)
+    "A002",   # Allow argument names like 'format', 'id' shadowing builtins
+    "E402",   # Allow module imports not at top (often intentional for late imports)
+    "RET505", # Allow else after return (often clearer for complex logic)
+    "RET506", # Allow elif after raise (often clearer for error handling)
+    "SIM102", # Allow nested if (sometimes clearer than combined conditions)
+    "UP041",  # Allow asyncio.TimeoutError for Python 3.10 compat
+]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "ARG"]
+"**/cli.py" = ["ARG001", "ARG002", "UP035", "UP006"]  # CLI commands: unused args, List (Typer compatibility)
+"**/service.py" = ["ARG001", "ARG002"]  # Service methods may have unused args for interface consistency
+"**/config.py" = ["ARG001"]  # Config may have placeholder arguments
+"**/storage/*.py" = ["ARG002"]  # Storage services may have interface placeholder arguments
 
 [tool.mypy]
 python_version = "3.11"

@@ -68,7 +68,7 @@ class FormatConverter:
             True if plural format, False if singular format
         """
         # Check if any plural keys exist
-        return any(key in automation_data for key in cls.PLURAL_TO_SINGULAR.keys())
+        return any(key in automation_data for key in cls.PLURAL_TO_SINGULAR)
     
     @classmethod
     def is_singular_format(cls, automation_data: dict[str, Any]) -> bool:
@@ -81,7 +81,7 @@ class FormatConverter:
             True if singular format, False if plural format
         """
         # Check if any singular keys exist
-        return any(key in automation_data for key in cls.SINGULAR_TO_PLURAL.keys())
+        return any(key in automation_data for key in cls.SINGULAR_TO_PLURAL)
     
     @classmethod
     def normalize_format(cls, automation_data: dict[str, Any], target_format: str = "singular") -> dict[str, Any]:

@@ -1,5 +1,6 @@
 """Data models for Home Assistant automations using Pydantic v2."""
 
+import contextlib
 from datetime import datetime
 from typing import Any, Literal
 
@@ -127,10 +128,8 @@ class AutomationListResponse(BaseModel):
             
             # Add last_triggered if available
             if "last_triggered" in item and item["last_triggered"]:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     automation_data["last_triggered"] = datetime.fromisoformat(item["last_triggered"])
-                except (ValueError, TypeError):
-                    pass
             
             try:
                 automations.append(Automation(**automation_data))  # type: ignore[arg-type]

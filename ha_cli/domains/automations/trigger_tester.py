@@ -200,7 +200,7 @@ class TriggerTester:
                         logger.info(f"Reached maximum event count ({max_events})")
                         break
                         
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.info(f"Trigger test timed out after {timeout}s")
             if not result.events_received:
                 result.error = f"No trigger events received within {timeout}s"
@@ -270,7 +270,7 @@ class TriggerTester:
         async def run_test() -> None:
             """Run the test in background."""
             try:
-                async for event in self.test_trigger_interactive(trigger_config, callback):
+                async for _event in self.test_trigger_interactive(trigger_config, callback):
                     pass  # Events are handled by callback
             except asyncio.CancelledError:
                 logger.info(f"Background test {test_id} cancelled")
@@ -377,8 +377,7 @@ class TriggerTester:
         elif platform == "webhook":
             if "webhook_id" not in trigger_config:
                 errors.append("Webhook trigger requires webhook_id")
-        elif platform == "mqtt":
-            if "topic" not in trigger_config:
-                errors.append("MQTT trigger requires topic")
+        elif platform == "mqtt" and "topic" not in trigger_config:
+            errors.append("MQTT trigger requires topic")
         
         return errors

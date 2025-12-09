@@ -4,8 +4,8 @@ import json
 import logging
 import re
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +37,11 @@ class CleanJSONEncoder(json.JSONEncoder):
 class PorcelainMetadata(BaseModel):
     """Metadata included in porcelain responses."""
     
-    total_count: Optional[int] = None
-    filtered_count: Optional[int] = None
-    filters_applied: List[str] = []
-    home_assistant: Optional[Dict[str, Any]] = None
-    response_time_ms: Optional[int] = None
+    total_count: int | None = None
+    filtered_count: int | None = None
+    filters_applied: list[str] = []
+    home_assistant: dict[str, Any] | None = None
+    response_time_ms: int | None = None
     
     model_config = ConfigDict(extra="allow")  # Allow additional metadata fields
 
@@ -49,10 +49,10 @@ class PorcelainMetadata(BaseModel):
 class PorcelainSuggestions(BaseModel):
     """Suggestions for common actions and troubleshooting."""
     
-    common_actions: List[str] = []
-    detected_issues: List[str] = []
-    related_commands: List[str] = []
-    troubleshooting: List[str] = []
+    common_actions: list[str] = []
+    detected_issues: list[str] = []
+    related_commands: list[str] = []
+    troubleshooting: list[str] = []
     
     model_config = ConfigDict(extra="allow")  # Allow additional suggestion fields
 
@@ -62,8 +62,8 @@ class PorcelainError(BaseModel):
     
     type: str
     message: str
-    code: Optional[str] = None
-    details: Optional[Dict[str, Any]] = None
+    code: str | None = None
+    details: dict[str, Any] | None = None
 
 
 class PorcelainResponse(BaseModel):
@@ -72,10 +72,10 @@ class PorcelainResponse(BaseModel):
     command: str
     timestamp: str
     status: str  # "success" or "error"
-    metadata: Optional[PorcelainMetadata] = None
-    data: Optional[Union[List[Any], Dict[str, Any], Any]] = None
-    error: Optional[PorcelainError] = None
-    suggestions: Optional[PorcelainSuggestions] = None
+    metadata: PorcelainMetadata | None = None
+    data: list[Any] | dict[str, Any] | Any | None = None
+    error: PorcelainError | None = None
+    suggestions: PorcelainSuggestions | None = None
 
 
 class PorcelainFormatter:
@@ -89,8 +89,8 @@ class PorcelainFormatter:
     def success(
         self,
         data: Any,
-        metadata: Optional[Dict[str, Any]] = None,
-        suggestions: Optional[Dict[str, Any]] = None
+        metadata: dict[str, Any] | None = None,
+        suggestions: dict[str, Any] | None = None
     ) -> str:
         """Create a success response in porcelain format."""
         response_time_ms = int((time.time() - self.start_time) * 1000)
@@ -106,7 +106,7 @@ class PorcelainFormatter:
         
         response = PorcelainResponse(
             command=self.command,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             status="success",
             metadata=porcelain_metadata,
             data=data,
@@ -124,10 +124,10 @@ class PorcelainFormatter:
     
     def error(
         self,
-        error: Union[Exception, HAAutomationError, str],
-        error_code: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
-        suggestions: Optional[Dict[str, Any]] = None
+        error: Exception | HAAutomationError | str,
+        error_code: str | None = None,
+        details: dict[str, Any] | None = None,
+        suggestions: dict[str, Any] | None = None
     ) -> str:
         """Create an error response in porcelain format."""
         response_time_ms = int((time.time() - self.start_time) * 1000)
@@ -168,7 +168,7 @@ class PorcelainFormatter:
         
         response = PorcelainResponse(
             command=self.command,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             status="error",
             metadata=porcelain_metadata,
             error=porcelain_error,
@@ -179,7 +179,7 @@ class PorcelainFormatter:
         response_dict = response.model_dump(exclude_none=True)
         return json.dumps(response_dict, indent=2, cls=CleanJSONEncoder)
     
-    def _get_default_error_suggestions(self, error_type: str) -> Dict[str, List[str]]:
+    def _get_default_error_suggestions(self, error_type: str) -> dict[str, list[str]]:
         """Get default troubleshooting suggestions based on error type."""
         suggestions_map = {
             "AuthenticationError": {
@@ -225,7 +225,7 @@ class PorcelainFormatter:
         })
 
 
-def create_automation_suggestions(automation_count: int, storage_breakdown: Dict[str, int]) -> Dict[str, List[str]]:
+def create_automation_suggestions(automation_count: int, storage_breakdown: dict[str, int]) -> dict[str, list[str]]:
     """Create automation-specific suggestions based on current state."""
     suggestions = {
         "common_actions": [
@@ -258,7 +258,7 @@ def create_automation_suggestions(automation_count: int, storage_breakdown: Dict
     return suggestions
 
 
-def create_dashboard_suggestions(dashboard_count: int) -> Dict[str, List[str]]:
+def create_dashboard_suggestions(dashboard_count: int) -> dict[str, list[str]]:
     """Create dashboard-specific suggestions based on current state."""
     suggestions = {
         "common_actions": [
@@ -283,7 +283,7 @@ def create_dashboard_suggestions(dashboard_count: int) -> Dict[str, List[str]]:
     return suggestions
 
 
-async def get_home_assistant_health(client: Any) -> Dict[str, Any]:
+async def get_home_assistant_health(client: Any) -> dict[str, Any]:
     """Get Home Assistant health and version information."""
     health_info = {
         "status": "unknown",
@@ -342,11 +342,11 @@ async def get_home_assistant_health(client: Any) -> Dict[str, Any]:
 def create_home_assistant_metadata(
     url: str,
     connection_method: str,
-    version: Optional[str] = None,
-    health_info: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
+    version: str | None = None,
+    health_info: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Create Home Assistant metadata for porcelain responses."""
-    metadata: Dict[str, Any] = {
+    metadata: dict[str, Any] = {
         "url": url,
         "connection_method": connection_method
     }
@@ -383,9 +383,9 @@ def create_home_assistant_metadata(
     return metadata
 
 
-def analyze_automation_complexity(automation_data: Dict[str, Any]) -> Dict[str, Any]:
+def analyze_automation_complexity(automation_data: dict[str, Any]) -> dict[str, Any]:
     """Analyze automation complexity and provide optimization insights."""
-    complexity: Dict[str, Any] = {
+    complexity: dict[str, Any] = {
         "score": 0,
         "level": "simple",
         "factors": [],
@@ -436,9 +436,9 @@ def analyze_automation_complexity(automation_data: Dict[str, Any]) -> Dict[str, 
     return complexity
 
 
-def extract_entity_references(automation_data: Dict[str, Any]) -> Dict[str, Any]:
+def extract_entity_references(automation_data: dict[str, Any]) -> dict[str, Any]:
     """Extract and analyze entity references from automation configuration."""
-    entities: Dict[str, Any] = {
+    entities: dict[str, Any] = {
         "referenced": [],
         "by_domain": {},
         "triggers": [],
@@ -457,7 +457,7 @@ def extract_entity_references(automation_data: Dict[str, Any]) -> Dict[str, Any]
                     elif isinstance(value, list):
                         entities["referenced"].extend(value)
                         entities[section].extend(value)
-                elif isinstance(value, (dict, list)):
+                elif isinstance(value, dict | list):
                     extract_from_dict(value, section)
         elif isinstance(data, list):
             for item in data:
@@ -481,9 +481,9 @@ def extract_entity_references(automation_data: Dict[str, Any]) -> Dict[str, Any]
     return entities
 
 
-def analyze_dashboard_performance(entity_count: int, domain_breakdown: Dict[str, int]) -> Dict[str, Any]:
+def analyze_dashboard_performance(entity_count: int, domain_breakdown: dict[str, int]) -> dict[str, Any]:
     """Analyze dashboard performance characteristics."""
-    analysis: Dict[str, Any] = {
+    analysis: dict[str, Any] = {
         "performance_score": 100,
         "issues": [],
         "optimizations": [],
@@ -527,11 +527,11 @@ def analyze_dashboard_performance(entity_count: int, domain_breakdown: Dict[str,
 
 def create_workflow_recommendations(
     command: str,
-    data_context: Dict[str, Any],
-    health_info: Optional[Dict[str, Any]] = None
-) -> Dict[str, List[str]]:
+    data_context: dict[str, Any],
+    health_info: dict[str, Any] | None = None
+) -> dict[str, list[str]]:
     """Create intelligent workflow recommendations based on current context."""
-    recommendations: Dict[str, List[str]] = {
+    recommendations: dict[str, list[str]] = {
         "next_steps": [],
         "workflow_sequences": [],
         "best_practices": [],
@@ -573,9 +573,9 @@ def create_workflow_recommendations(
         automation_id = data_context.get("automation_id")
         if automation_id:
             recommendations["next_steps"].extend([
-                f"Test automation: Trigger manually in Home Assistant",
-                f"Check related entities: Use MCP tools to verify entity states",
-                f"Monitor automation: ha-cli automations monitor --porcelain"
+                "Test automation: Trigger manually in Home Assistant",
+                "Check related entities: Use MCP tools to verify entity states",
+                "Monitor automation: ha-cli automations monitor --porcelain"
             ])
             
             # Complexity-based recommendations
@@ -667,9 +667,9 @@ def create_workflow_recommendations(
 def detect_advanced_issues(
     command: str,
     data: Any,
-    metadata: Dict[str, Any],
-    health_info: Optional[Dict[str, Any]] = None
-) -> List[str]:
+    metadata: dict[str, Any],
+    health_info: dict[str, Any] | None = None
+) -> list[str]:
     """Detect advanced configuration and performance issues."""
     issues = []
     
