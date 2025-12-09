@@ -62,7 +62,7 @@ def _search_dict_for_entity(obj: Any, entity_id: str) -> bool:
     return False
 
 
-async def recv_with_timeout(ws, timeout: float = WS_RECV_TIMEOUT) -> str:
+async def recv_with_timeout(ws: Any, timeout: float = WS_RECV_TIMEOUT) -> str:
     """Receive a WebSocket message with timeout.
 
     Args:
@@ -304,6 +304,7 @@ class EntityService:
                             result = RenameResult(
                                 operation=operation,
                                 success=True,
+                                error_message=None,
                                 timestamp=datetime.now()
                             )
                         else:
@@ -441,7 +442,7 @@ class EntityService:
             # Return empty analysis on error
             return EntityImpactAnalysis.create(entity_id, [], [])
     
-    def _entity_referenced_in_automation(self, entity_id: str, automation) -> bool:
+    def _entity_referenced_in_automation(self, entity_id: str, automation: Any) -> bool:
         """Check if an entity is referenced in an automation configuration."""
         # Check triggers, conditions, and actions using consolidated helper
         for section in [automation.trigger, automation.condition, automation.action]:
@@ -449,10 +450,10 @@ class EntityService:
                 return True
 
         return False
-    
-    def _entity_referenced_in_dashboard(self, entity_id: str, dashboard_config) -> bool:
+
+    def _entity_referenced_in_dashboard(self, entity_id: str, dashboard_config: Any) -> bool:
         """Check if an entity is referenced in a dashboard configuration."""
-        def search_dashboard_structure(obj):
+        def search_dashboard_structure(obj: Any) -> bool:
             """Recursively search for entity references in dashboard structure."""
             if isinstance(obj, dict):
                 for key, value in obj.items():
@@ -473,14 +474,14 @@ class EntityService:
                     if search_dashboard_structure(item):
                         return True
             return False
-        
+
         # Check the dashboard configuration structure
         if hasattr(dashboard_config, 'model_dump'):
             config_dict = dashboard_config.model_dump()
         else:
             config_dict = dashboard_config
-        
-        return search_dashboard_structure(config_dict)
+
+        return bool(search_dashboard_structure(config_dict))
     
     def export_entities_to_csv(self, entities: List[Entity], output_file: str) -> None:
         """Export entities to CSV file.
@@ -530,8 +531,8 @@ class EntityService:
                     operations.append(operation)
         
         return operations
-    
-    def _entity_likely_referenced_in_automation(self, entity_id: str, automation) -> bool:
+
+    def _entity_likely_referenced_in_automation(self, entity_id: str, automation: Any) -> bool:
         """Check if an entity is likely referenced in an automation based on naming patterns.
         
         This is used when full automation configuration is not available (WebSocket mode).
@@ -655,8 +656,8 @@ class EntityService:
             ]
 
             for method in access_methods:
-                base_url = method["base_url"]
-                headers = method["headers"]
+                base_url = str(method["base_url"])
+                headers: Dict[str, str] = dict(method["headers"])  # type: ignore[arg-type]
 
                 try:
                     async with httpx.AsyncClient(timeout=3.0) as client:
@@ -732,7 +733,7 @@ class EntityService:
                 
                 # Create a minimal automation object for pattern matching
                 class AutomationInfo:
-                    def __init__(self, id, alias):
+                    def __init__(self, id: str, alias: str) -> None:
                         self.id = id
                         self.alias = alias
                 

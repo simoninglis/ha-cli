@@ -133,7 +133,7 @@ class AutomationListResponse(BaseModel):
                     pass
             
             try:
-                automations.append(Automation(**automation_data))
+                automations.append(Automation(**automation_data))  # type: ignore[arg-type]
             except Exception as e:
                 # Log error but continue processing other automations
                 import logging

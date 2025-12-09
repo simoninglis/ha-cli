@@ -150,9 +150,9 @@ class AutomationMonitor:
             
             # Notify state listeners if state changed
             if old_state != new_state:
-                for listener in self._state_listeners:
+                for state_listener in self._state_listeners:
                     try:
-                        listener(automation_id, new_state)
+                        state_listener(automation_id, new_state)
                     except Exception as e:
                         logger.error(f"State listener error: {e}")
                         

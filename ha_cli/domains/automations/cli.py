@@ -93,6 +93,7 @@ def list(
                         filters_applied.append(f"storage={storage.lower()}")
                     elif storage.lower() != "all":
                         if porcelain:
+                            assert formatter is not None
                             error_output = formatter.error(
                                 f"Invalid storage filter: {storage}. Use 'ui', 'file', or 'all'",
                                 error_code="INVALID_FILTER",
@@ -132,6 +133,7 @@ def list(
                         file_count += 1
                 
                 if porcelain:
+                    assert formatter is not None
                     # Convert automations to porcelain-friendly format
                     data = []
                     for automation in automations:
@@ -277,6 +279,7 @@ def read(
                 except Exception as e:
                     if "404" in str(e) or "not found" in str(e).lower():
                         if porcelain:
+                            assert formatter is not None
                             error_output = formatter.error(
                                 f"Automation '{automation_id}' not found",
                                 error_code="NOT_FOUND",
@@ -304,6 +307,7 @@ def read(
                         raise
                 
                 if porcelain:
+                    assert formatter is not None
                     # Convert automation to porcelain-friendly format
                     automation_data = {
                         "id": automation.id,
@@ -524,6 +528,7 @@ def enable(
                 await service.enable_automation(automation_id)
 
                 if porcelain:
+                    assert formatter is not None
                     porcelain_output = formatter.success(
                         {"automation_id": automation_id, "state": "enabled"},
                         {"action": "enable", "automation_id": automation_id},
@@ -574,6 +579,7 @@ def disable(
                 await service.disable_automation(automation_id)
 
                 if porcelain:
+                    assert formatter is not None
                     porcelain_output = formatter.success(
                         {"automation_id": automation_id, "state": "disabled"},
                         {"action": "disable", "automation_id": automation_id},
@@ -623,6 +629,7 @@ def reload(
                 await service.reload_automations()
 
                 if porcelain:
+                    assert formatter is not None
                     porcelain_output = formatter.success(
                         {"reloaded": True},
                         {"action": "reload"},
@@ -678,6 +685,7 @@ def create(
                     numeric_id = await service.create_automation(file_path, dry_run=dry_run)
 
                     if porcelain:
+                        assert formatter is not None
                         result_data = {
                             "created": not dry_run,
                             "dry_run": dry_run,
@@ -708,6 +716,7 @@ def create(
                     error_msg = str(e)
                     if "REST API not available" in error_msg:
                         if porcelain:
+                            assert formatter is not None
                             error_output = formatter.error(
                                 error_msg,
                                 error_code="REST_API_UNAVAILABLE",
@@ -770,6 +779,7 @@ def update(
                     await service.update_automation(automation_id, file_path, dry_run=dry_run)
 
                     if porcelain:
+                        assert formatter is not None
                         porcelain_output = formatter.success(
                             {
                                 "updated": not dry_run,
@@ -796,6 +806,7 @@ def update(
                     error_msg = str(e)
                     if "REST API not available" in error_msg:
                         if porcelain:
+                            assert formatter is not None
                             error_output = formatter.error(
                                 error_msg,
                                 error_code="REST_API_UNAVAILABLE",
@@ -814,6 +825,7 @@ def update(
                         sys.exit(EXIT_HA_ERROR)
                     elif "not found" in error_msg.lower():
                         if porcelain:
+                            assert formatter is not None
                             error_output = formatter.error(
                                 f"Automation '{automation_id}' not found",
                                 error_code="NOT_FOUND",
@@ -882,6 +894,7 @@ def delete(
                     await service.delete_automation(automation_id, dry_run=dry_run)
 
                     if porcelain:
+                        assert formatter is not None  # Type narrowing for mypy
                         porcelain_output = formatter.success(
                             {
                                 "deleted": not dry_run,
@@ -906,6 +919,7 @@ def delete(
                     error_msg = str(e)
                     if "REST API not available" in error_msg:
                         if porcelain:
+                            assert formatter is not None  # Type narrowing for mypy
                             error_output = formatter.error(
                                 error_msg,
                                 error_code="REST_API_UNAVAILABLE",
@@ -924,6 +938,7 @@ def delete(
                         sys.exit(EXIT_HA_ERROR)
                     elif "not found" in error_msg.lower():
                         if porcelain:
+                            assert formatter is not None  # Type narrowing for mypy
                             error_output = formatter.error(
                                 f"Automation '{automation_id}' not found",
                                 error_code="NOT_FOUND",

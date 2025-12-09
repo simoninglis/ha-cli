@@ -76,15 +76,16 @@ def list(
                 entities = await service.list_entities(search, domain)
                 
                 if porcelain:
+                    assert formatter is not None  # Type narrowing for mypy
                     # Group by domain for analysis
-                    domains = {}
+                    domains_map: Dict[str, List[Any]] = {}
                     for entity in entities:
-                        if entity.domain not in domains:
-                            domains[entity.domain] = []
-                        domains[entity.domain].append(entity)
-                    
+                        if entity.domain not in domains_map:
+                            domains_map[entity.domain] = []
+                        domains_map[entity.domain].append(entity)
+
                     # Convert entities to porcelain-friendly format
-                    data = []
+                    data: List[Dict[str, Any]] = []
                     for entity in entities:
                         entity_data = {
                             "entity_id": entity.entity_id,
@@ -95,25 +96,25 @@ def list(
                             "last_updated": entity.last_updated.isoformat() if entity.last_updated else None,
                         }
                         data.append(entity_data)
-                    
+
                     # Create filters applied list
-                    filters_applied = []
+                    filters_applied: List[str] = []
                     if search:
                         filters_applied.append(f"search={search}")
                     if domain:
                         filters_applied.append(f"domain={domain}")
-                    
+
                     # Get Home Assistant health information
                     health_info = await get_home_assistant_health(client)
-                    
+
                     # Create metadata
-                    domain_breakdown = {domain_name: len(entity_list) for domain_name, entity_list in domains.items()}
+                    domain_breakdown = {domain_name: len(entity_list) for domain_name, entity_list in domains_map.items()}
                     metadata = {
                         "total_entities": len(entities),
                         "filtered_entities": len(entities),
                         "filters_applied": filters_applied,
                         "domain_breakdown": domain_breakdown,
-                        "unique_domains": len(domains),
+                        "unique_domains": len(domains_map),
                         "performance_score": min(100, max(0, 100 - len(entities) // 10)),  # Simple score based on entity count
                         "home_assistant": create_home_assistant_metadata(
                             url_final,
@@ -121,9 +122,9 @@ def list(
                             health_info=health_info
                         )
                     }
-                    
+
                     # Create suggestions
-                    suggestions = {
+                    suggestions: Dict[str, Any] = {
                         "common_actions": [
                             "Export entities: ha-cli entities export entities.csv --porcelain",
                             "Backup entities: ha-cli entities backup --porcelain",
@@ -136,16 +137,16 @@ def list(
                         "optimization_recommendations": [],
                         "filtering_suggestions": []
                     }
-                    
+
                     # Add filtering suggestions
                     if not search and not domain and len(entities) > 100:
                         suggestions["filtering_suggestions"].append("Consider filtering with --domain or --search for large entity sets")
-                    
-                    if len(domains) > 10:
+
+                    if len(domains_map) > 10:
                         top_domains = sorted(domain_breakdown.items(), key=lambda x: x[1], reverse=True)[:3]
                         domain_names = [d[0] for d in top_domains]
                         suggestions["filtering_suggestions"].append(f"Top domains to explore: {', '.join(domain_names)}")
-                    
+
                     # Add domain-specific suggestions
                     for domain_name, count in domain_breakdown.items():
                         if domain_name == "sensor" and count > 50:
@@ -154,14 +155,14 @@ def list(
                             suggestions["common_actions"].append(f"Rename lights: ha-cli entities rename --domain light --search pattern --replace new_pattern")
                         elif domain_name == "climate" and count > 0:
                             suggestions["common_actions"].append("Check climate entities: ha-cli entities list --domain climate --porcelain")
-                    
+
                     # Performance suggestions
                     if len(entities) > 500:
                         suggestions["optimization_recommendations"].append("Large number of entities may impact performance")
-                    
+
                     # Add rename suggestions if patterns detected
-                    inconsistent_naming = []
-                    for domain_name, entity_list in domains.items():
+                    inconsistent_naming: List[str] = []
+                    for domain_name, entity_list in domains_map.items():
                         if len(entity_list) > 2:
                             # Check for naming inconsistencies (simplified heuristic)
                             has_underscores = any("_" in e.entity_id.split(".", 1)[1] for e in entity_list)
@@ -210,9 +211,9 @@ def list(
                     if not entities:
                         console.print("No entities found")
                         return
-                    
+
                     # Group by domain for better organization
-                    domains = {}
+                    domains: Dict[str, List[Any]] = {}
                     for entity in entities:
                         if entity.domain not in domains:
                             domains[entity.domain] = []
@@ -286,12 +287,12 @@ def export(
             service.export_entities_to_csv(entities, output)
             
             console.print(f"[green]✓ Exported {len(entities)} entities to {output}[/green]")
-            
+
             # Show summary
-            domains = {}
+            domains: Dict[str, int] = {}
             for entity in entities:
                 domains[entity.domain] = domains.get(entity.domain, 0) + 1
-            
+
             console.print(f"[cyan]Summary:[/cyan] {len(entities)} entities across {len(domains)} domains")
             for domain_name, count in sorted(domains.items()):
                 console.print(f"  {domain_name}: {count}")
@@ -329,12 +330,12 @@ def backup(
             service.export_entities_to_csv(entities, output_file)
             
             console.print(f"[green]✓ Backed up {len(entities)} entities to {output_file}[/green]")
-            
+
             # Show summary
-            domains = {}
+            domains: Dict[str, int] = {}
             for entity in entities:
                 domains[entity.domain] = domains.get(entity.domain, 0) + 1
-            
+
             console.print(f"[cyan]Backup Summary:[/cyan] {len(entities)} entities across {len(domains)} domains")
             for domain_name, count in sorted(domains.items()):
                 console.print(f"  {domain_name}: {count}")
@@ -898,16 +899,18 @@ def delete(
                 
                 if not entities_to_delete:
                     if porcelain:
+                        assert formatter is not None  # Type narrowing for mypy
                         output = formatter.success([], {"entities_found": 0}, {"message": "No entities found to delete"})
                         print(output)
                     else:
                         console.print("[yellow]No entities found matching the criteria[/yellow]")
                     return
-                
+
                 # Show entities to be deleted
                 if porcelain:
+                    assert formatter is not None  # Type narrowing for mypy
                     # Porcelain output for dry-run or pre-confirmation
-                    data = [{"entity_id": e.entity_id, "friendly_name": e.friendly_name, "state": e.state} for e in entities_to_delete]
+                    data: List[Dict[str, Optional[str]]] = [{"entity_id": e.entity_id, "friendly_name": e.friendly_name, "state": e.state} for e in entities_to_delete]
                     metadata = {
                         "total_entities": len(entities_to_delete),
                         "dry_run": dry_run,
@@ -933,7 +936,7 @@ def delete(
                 
                 elif json_output:
                     # JSON output
-                    data = {
+                    json_preview = {
                         "entities_to_delete": [
                             {
                                 "entity_id": e.entity_id,
@@ -945,7 +948,7 @@ def delete(
                         "dry_run": dry_run,
                         "total": len(entities_to_delete)
                     }
-                    print(json.dumps(data, indent=2))
+                    print(json.dumps(json_preview, indent=2))
                     
                     if dry_run:
                         return
@@ -996,41 +999,42 @@ def delete(
                 failure_count = len(results) - success_count
                 
                 if porcelain:
+                    assert formatter is not None  # Type narrowing for mypy
                     # Porcelain output for results
-                    data = []
+                    results_data: List[Dict[str, Any]] = []
                     for entity_id, result in results.items():
-                        data.append({
+                        results_data.append({
                             "entity_id": entity_id,
                             "success": result.get("success", False),
                             "error": result.get("error", None)
                         })
-                    
+
                     metadata = {
                         "total_processed": len(results),
                         "successful_deletions": success_count,
                         "failed_deletions": failure_count,
                         "home_assistant": create_home_assistant_metadata(url_final, "websocket")
                     }
-                    
-                    suggestions = {
+
+                    result_suggestions: Dict[str, List[str]] = {
                         "common_actions": [],
                         "warnings": []
                     }
-                    
+
                     if success_count > 0:
-                        suggestions["common_actions"].append("Reload integrations: ha-cli integrations reload")
-                        suggestions["warnings"].append("Some entities may reappear after integration reload")
-                    
+                        result_suggestions["common_actions"].append("Reload integrations: ha-cli integrations reload")
+                        result_suggestions["warnings"].append("Some entities may reappear after integration reload")
+
                     if failure_count > 0:
-                        suggestions["common_actions"].append("Check entity states: ha-cli entities list --porcelain")
-                        suggestions["warnings"].append("Failed deletions may indicate entities are in use")
-                    
-                    output = formatter.success(data, metadata, suggestions)
+                        result_suggestions["common_actions"].append("Check entity states: ha-cli entities list --porcelain")
+                        result_suggestions["warnings"].append("Failed deletions may indicate entities are in use")
+
+                    output = formatter.success(results_data, metadata, result_suggestions)
                     print(output)
-                    
+
                 elif json_output:
                     # JSON results
-                    data = {
+                    json_data = {
                         "results": results,
                         "summary": {
                             "total": len(results),
@@ -1038,7 +1042,7 @@ def delete(
                             "failed": failure_count
                         }
                     }
-                    print(json.dumps(data, indent=2))
+                    print(json.dumps(json_data, indent=2))
                     
                 else:
                     # Rich console output

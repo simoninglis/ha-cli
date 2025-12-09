@@ -484,7 +484,7 @@ class AuditService:
                         suggested_action=suggested,
                         last_triggered=automation.last_triggered,
                         days_since_trigger=days_since,
-                        automation_name=automation.alias or automation.id,
+                        automation_name=automation.alias or automation.id or "unknown",
                         is_enabled=is_enabled,
                     )
                     result.findings.append(finding)

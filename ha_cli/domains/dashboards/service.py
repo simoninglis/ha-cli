@@ -298,7 +298,7 @@ class DashboardService:
         # Get entities from views
         if hasattr(config, 'views') and config.views:
             for view in config.views:
-                view_dict: dict[str, Any] = view.model_dump() if hasattr(view, 'model_dump') else dict(view) if isinstance(view, dict) else {}
+                view_dict: dict[str, Any] = view.model_dump() if hasattr(view, 'model_dump') else dict(view) if isinstance(view, dict) else {}  # type: ignore[unreachable]
                 view_path = view_dict.get('path', view_dict.get('title', 'untitled'))
                 view_location = f"{dashboard_name}/{view_path}"
 

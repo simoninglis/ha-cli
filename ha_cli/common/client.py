@@ -834,8 +834,8 @@ class HAClient:
             else:
                 # Default dashboard
                 result = await self._ws_call("lovelace/config")
-            
-            return result
+
+            return result if isinstance(result, dict) else {}
         except WebSocketError as e:
             if "not_found" in str(e).lower():
                 raise NotFoundError(f"Dashboard not found: {url_path or 'default'}") from e

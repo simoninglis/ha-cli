@@ -340,7 +340,7 @@ class TriggerTester:
         
         # Check required fields
         if not isinstance(trigger_config, dict):
-            errors.append("Trigger configuration must be a dictionary")
+            errors.append("Trigger configuration must be a dictionary")  # type: ignore[unreachable]
             return errors
         
         if "platform" not in trigger_config:

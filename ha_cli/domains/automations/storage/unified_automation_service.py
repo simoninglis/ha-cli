@@ -243,7 +243,7 @@ class UnifiedAutomationService:
             automation.id = None
         else:  # file
             # Clear ID if it's UI-style
-            if self.detector.is_ui_id(automation.id):
+            if automation.id and self.detector.is_ui_id(automation.id):
                 automation.id = None
         
         new_id = await self.create(automation, storage_type=target_storage)
@@ -262,7 +262,7 @@ class UnifiedAutomationService:
             Analysis results with counts and statistics
         """
         all_automations = await self.list_all()
-        return self.detector.analyze_automation_set(all_automations)
+        return self.detector.analyze_automation_set(list(all_automations))
     
     async def validate_all(self) -> dict[str, list[str]]:
         """Validate all automations and report issues.
@@ -278,7 +278,7 @@ class UnifiedAutomationService:
             
             # Check ID format matches storage type
             storage_type = self.detector.detect_automation_type(automation)
-            if not self.detector.validate_id_format(automation.id, storage_type):
+            if automation.id and not self.detector.validate_id_format(automation.id, storage_type):
                 automation_issues.append(
                     f"ID format mismatch: '{automation.id}' in {storage_type} storage"
                 )

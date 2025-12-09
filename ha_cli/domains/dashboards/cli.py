@@ -6,7 +6,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, List, Any, Literal
 
 import typer
 from rich import print
@@ -76,6 +76,7 @@ def list(
                 dashboards = await service.list_dashboards()
                 
                 if porcelain:
+                    assert formatter is not None  # Type narrowing for mypy
                     # Convert dashboards to porcelain-friendly format
                     data = []
                     storage_mode_count = {"storage": 0, "yaml": 0}
@@ -99,7 +100,7 @@ def list(
                             storage_mode_count["yaml"] += 1
                     
                     # Create metadata
-                    metadata = {
+                    metadata: Dict[str, Any] = {
                         "total_count": len(dashboards),
                         "storage_mode_breakdown": storage_mode_count,
                         "sidebar_count": sum(1 for d in dashboards if d.show_in_sidebar),
@@ -109,7 +110,7 @@ def list(
                             "rest"
                         )
                     }
-                    
+
                     # Create suggestions
                     suggestions = create_dashboard_suggestions(len(dashboards))
                     
@@ -256,18 +257,19 @@ def backup(
 ) -> None:
     """Backup dashboard to file."""
     setup_logging(debug)
-    
+
     async def _backup() -> None:
         url_final, token_final = get_client_config(url, token)
-        
+
         async with HAClient(url_final, token_final, timeout) as client:
             service = DashboardService(client)
-            
-            # Backup dashboard
+
+            # Backup dashboard - cast format to literal type
+            format_literal: Literal['json', 'yaml'] = 'yaml' if format == 'yaml' else 'json'
             backup_file = await service.backup_dashboard(
                 url_path=url_path,
                 output_file=output,
-                format=format,
+                format=format_literal,
             )
             
             console.print(f"[green]✓ Dashboard backed up to: {backup_file}[/green]")
@@ -343,16 +345,17 @@ def entities(
                 entities = await service.get_entity_references(url_path)
                 
                 if porcelain:
+                    assert formatter is not None  # Type narrowing for mypy
                     # Group entities by domain for analysis
-                    domains = {}
+                    domains_map: Dict[str, List[str]] = {}
                     for entity in sorted(entities):
                         domain = entity.split(".", 1)[0]
-                        if domain not in domains:
-                            domains[domain] = []
-                        domains[domain].append(entity)
-                    
+                        if domain not in domains_map:
+                            domains_map[domain] = []
+                        domains_map[domain].append(entity)
+
                     # Create entity data with domain grouping
-                    entity_data = []
+                    entity_data: List[Dict[str, str]] = []
                     for entity in sorted(entities):
                         domain = entity.split(".", 1)[0]
                         entity_data.append({
@@ -360,9 +363,9 @@ def entities(
                             "domain": domain,
                             "friendly_name": entity.replace("_", " ").title(),
                         })
-                    
+
                     # Analyze dashboard performance
-                    domain_breakdown = {domain: len(entity_list) for domain, entity_list in domains.items()}
+                    domain_breakdown = {domain: len(entity_list) for domain, entity_list in domains_map.items()}
                     performance_analysis = analyze_dashboard_performance(len(entities), domain_breakdown)
                     
                     # Get Home Assistant health information
@@ -372,7 +375,7 @@ def entities(
                     metadata = {
                         "dashboard_url_path": url_path or "default",
                         "total_entities": len(entities),
-                        "unique_domains": len(domains),
+                        "unique_domains": len(domains_map),
                         "domain_breakdown": domain_breakdown,
                         "performance": performance_analysis,
                         "home_assistant": create_home_assistant_metadata(
@@ -381,9 +384,9 @@ def entities(
                             health_info=health_info
                         )
                     }
-                    
+
                     # Create enhanced suggestions based on performance analysis
-                    suggestions = {
+                    suggestions: Dict[str, Any] = {
                         "common_actions": [
                             f"View dashboard: ha-cli dashboards read {url_path or 'default'} --porcelain",
                             "Check entity states: Use MCP tools for real-time states",
@@ -397,45 +400,45 @@ def entities(
                         "performance_optimizations": [],
                         "monitoring_recommendations": []
                     }
-                    
+
                     # Add performance-based suggestions
                     if performance_analysis["issues"]:
                         suggestions["detected_issues"].extend(performance_analysis["issues"])
-                    
+
                     if performance_analysis["optimizations"]:
                         suggestions["performance_optimizations"].extend(performance_analysis["optimizations"])
-                    
+
                     if performance_analysis["monitoring_needed"]:
                         suggestions["monitoring_recommendations"].extend(performance_analysis["monitoring_needed"])
-                    
+
                     # Analyze entity usage patterns
                     if len(entities) == 0:
                         suggestions["detected_issues"].append("No entities found - dashboard may be empty or use only static content")
-                    
+
                     # Add performance score context
                     if performance_analysis["performance_score"] < 70:
                         suggestions["detected_issues"].append(f"Poor performance score ({performance_analysis['performance_score']}/100) - optimization recommended")
                     elif performance_analysis["performance_score"] < 85:
                         suggestions["performance_optimizations"].append(f"Moderate performance score ({performance_analysis['performance_score']}/100) - consider optimization")
-                    
+
                     # Domain-specific suggestions
-                    if "sensor" in domains and len(domains["sensor"]) > 20:
-                        suggestions["performance_optimizations"].append(f"Many sensors ({len(domains['sensor'])}) - consider grouping or filtering")
-                    
-                    if "camera" in domains:
+                    if "sensor" in domains_map and len(domains_map["sensor"]) > 20:
+                        suggestions["performance_optimizations"].append(f"Many sensors ({len(domains_map['sensor'])}) - consider grouping or filtering")
+
+                    if "camera" in domains_map:
                         suggestions["performance_optimizations"].append("Cameras detected - ensure efficient streaming configuration")
                         suggestions["monitoring_recommendations"].append("Monitor bandwidth usage for camera streams")
-                    
-                    if "automation" in domains:
+
+                    if "automation" in domains_map:
                         suggestions["related_commands"].append("Check automation complexity: ha-cli automations read <id> --porcelain")
-                    
+
                     # Add system-wide insights
                     if health_info and health_info.get("entities", 0) > 1000:
                         suggestions["monitoring_recommendations"].append("Large Home Assistant instance - monitor overall system performance")
-                    
+
                     # Add domain diversity insights
-                    if len(domains) > 8:
-                        suggestions["detected_issues"].append(f"High domain diversity ({len(domains)} domains) may indicate dashboard complexity")
+                    if len(domains_map) > 8:
+                        suggestions["detected_issues"].append(f"High domain diversity ({len(domains_map)} domains) may indicate dashboard complexity")
                         suggestions["performance_optimizations"].append("Consider organizing by function rather than mixing all domains")
                     
                     # Add workflow recommendations
@@ -476,9 +479,9 @@ def entities(
                     entity_locations = await service.get_entity_references_with_location(url_path)
                     
                     console.print(f"[cyan]Found {len(entities)} unique entities:[/cyan]")
-                    
+
                     # Group by domain
-                    domains = {}
+                    domains: Dict[str, List[str]] = {}
                     for entity in sorted(entities):
                         domain = entity.split(".", 1)[0]
                         if domain not in domains:
@@ -607,20 +610,20 @@ def views(
             config = await service.get_dashboard(url_path)
             
             dashboard_name = url_path or "default"
-            views = []
-            
+            views: List[Dict[str, Any]] = []
+
             # Extract views from config
             if hasattr(config, 'views') and config.views:
                 for view in config.views:
-                    view_dict = view.model_dump() if hasattr(view, 'model_dump') else view
-                    view_info = {
+                    view_dict: Dict[str, Any] = view.model_dump() if hasattr(view, 'model_dump') else dict(view)
+                    view_info: Dict[str, Any] = {
                         'title': view_dict.get('title', 'Untitled'),
                         'path': view_dict.get('path', ''),
                         'icon': view_dict.get('icon', ''),
                         'cards': len(view_dict.get('cards', [])),
                         'full_path': f"/lovelace/{view_dict.get('path', '')}" if view_dict.get('path') else f"/lovelace/{dashboard_name}"
                     }
-                    
+
                     # Count entities in view
                     entity_count = 0
                     if 'cards' in view_dict:
@@ -628,7 +631,7 @@ def views(
                             card_entities = service._extract_entities_from_card(card)
                             entity_count += len(card_entities)
                     view_info['entities'] = entity_count
-                    
+
                     views.append(view_info)
             
             if json_output:
@@ -650,16 +653,16 @@ def views(
                 table.add_column("Entities", style="red", justify="right")
                 table.add_column("URL", style="blue")
                 
-                for view in views:
+                for view_item in views:
                     table.add_row(
-                        view['title'],
-                        view['path'] or "(home)",
-                        view['icon'] or "none",
-                        str(view['cards']),
-                        str(view['entities']),
-                        view['full_path']
+                        view_item['title'],
+                        view_item['path'] or "(home)",
+                        view_item['icon'] or "none",
+                        str(view_item['cards']),
+                        str(view_item['entities']),
+                        view_item['full_path']
                     )
-                
+
                 console.print(table)
                 console.print(f"\n[cyan]Total views:[/cyan] {len(views)}")
                 console.print(f"[cyan]Total entities:[/cyan] {sum(v['entities'] for v in views)}")
