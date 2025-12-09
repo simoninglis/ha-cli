@@ -65,7 +65,7 @@ def list(
         console.print("[red]Error:[/red] Cannot use --json and --porcelain together")
         sys.exit(EXIT_USAGE_ERROR)
     
-    async def _list():
+    async def _list() -> None:
         formatter = PorcelainFormatter("dashboards list") if porcelain else None
         
         try:
@@ -203,7 +203,7 @@ def read(
     """Read dashboard configuration."""
     setup_logging(debug)
     
-    async def _read():
+    async def _read() -> None:
         url_final, token_final = get_client_config(url, token)
         
         async with HAClient(url_final, token_final, timeout) as client:
@@ -257,7 +257,7 @@ def backup(
     """Backup dashboard to file."""
     setup_logging(debug)
     
-    async def _backup():
+    async def _backup() -> None:
         url_final, token_final = get_client_config(url, token)
         
         async with HAClient(url_final, token_final, timeout) as client:
@@ -288,7 +288,7 @@ def restore(
     """Restore dashboard from backup file."""
     setup_logging(debug)
     
-    async def _restore():
+    async def _restore() -> None:
         url_final, token_final = get_client_config(url, token)
         
         async with HAClient(url_final, token_final, timeout) as client:
@@ -332,7 +332,7 @@ def entities(
         console.print("[red]Error:[/red] Cannot use --json and --porcelain together")
         sys.exit(EXIT_USAGE_ERROR)
     
-    async def _entities():
+    async def _entities() -> None:
         formatter = PorcelainFormatter("dashboards entities") if porcelain else None
         
         try:
@@ -536,7 +536,7 @@ def create(
     """Create a new dashboard."""
     setup_logging(debug)
     
-    async def _create():
+    async def _create() -> None:
         url_final, token_final = get_client_config(url, token)
         
         async with HAClient(url_final, token_final, timeout) as client:
@@ -569,7 +569,7 @@ def delete(
     """Delete a dashboard."""
     setup_logging(debug)
     
-    async def _delete():
+    async def _delete() -> None:
         if not force:
             confirm = typer.confirm(f"Are you sure you want to delete dashboard '{dashboard_id}'?")
             if not confirm:
@@ -599,7 +599,7 @@ def views(
     """List all views within a dashboard."""
     setup_logging(debug)
     
-    async def _views():
+    async def _views() -> None:
         url_final, token_final = get_client_config(url, token)
         
         async with HAClient(url_final, token_final, timeout) as client:

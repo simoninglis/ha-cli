@@ -56,9 +56,9 @@ class UIAutomationManager:
         # POST to /api/config/automation/config/{id}
         endpoint = f"/api/config/automation/config/{automation.id}"
         try:
-            await self.client._request(
-                method="POST",
-                endpoint=endpoint,
+            await self.client._rest(
+                "POST",
+                endpoint,
                 json_data=ui_data,
             )
             logger.info(f"Created UI automation: {automation.id}")
@@ -98,9 +98,9 @@ class UIAutomationManager:
         # POST to /api/config/automation/config/{id} (same as create)
         endpoint = f"/api/config/automation/config/{automation.id}"
         try:
-            await self.client._request(
-                method="POST",
-                endpoint=endpoint,
+            await self.client._rest(
+                "POST",
+                endpoint,
                 json_data=ui_data,
             )
             logger.info(f"Updated UI automation: {automation.id}")
@@ -131,9 +131,9 @@ class UIAutomationManager:
         # DELETE to /api/config/automation/config/{id}
         endpoint = f"/api/config/automation/config/{automation_id}"
         try:
-            await self.client._request(
-                method="DELETE",
-                endpoint=endpoint,
+            await self.client._rest(
+                "DELETE",
+                endpoint,
             )
             logger.info(f"Deleted UI automation: {automation_id}")
         except NotFoundError:

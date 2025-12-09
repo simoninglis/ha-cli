@@ -63,7 +63,8 @@ def load_config(config_path: Path) -> dict[str, Any]:
     check_config_file_permissions(config_path)
 
     with open(config_path) as f:
-        return json.load(f)
+        data = json.load(f)
+        return dict(data) if isinstance(data, dict) else {}
 
 
 def save_config(config_path: Path, config: dict[str, Any]) -> None:
@@ -105,7 +106,8 @@ def load_yaml_file(file_path: str) -> dict[str, Any]:
     yaml.preserve_quotes = True
     yaml.default_flow_style = False
     with open(file_path) as f:
-        return yaml.load(f)
+        data = yaml.load(f)
+        return dict(data) if isinstance(data, dict) else {}
 
 
 def save_yaml_file(file_path: str, data: dict[str, Any]) -> None:

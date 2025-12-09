@@ -9,9 +9,10 @@ from pydantic import BaseModel, Field, model_validator
 
 class Automation(BaseModel):
     """Home Assistant automation model according to spec."""
-    
+
     id: str | None = None
     alias: str
+    description: str | None = None
     trigger: list[Any]
     condition: list[Any] | None = None
     action: list[Any]
@@ -21,6 +22,7 @@ class Automation(BaseModel):
     trace: dict[str, Any] | None = None
     last_triggered: datetime | None = None
     variables: dict[str, Any] | None = None
+    enabled: bool = True  # Used by unified_automation_service
     
     model_config = {
         "validate_assignment": True,
@@ -163,4 +165,5 @@ class AutomationState(BaseModel):
     @property
     def friendly_name(self) -> str:
         """Get friendly name from attributes."""
-        return self.attributes.get("friendly_name", self.automation_id)
+        name = self.attributes.get("friendly_name", self.automation_id)
+        return str(name) if name is not None else self.automation_id

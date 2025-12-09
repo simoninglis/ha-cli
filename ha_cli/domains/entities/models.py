@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class Entity(BaseModel):
@@ -19,8 +19,9 @@ class Entity(BaseModel):
     # Note: We discovered that Home Assistant can send entity IDs with embedded newlines
     # However, the main issue was with print() modifying output, not the data itself
     # Keeping minimal sanitization for actual problematic cases
-    
-    @validator('entity_id', pre=True)
+
+    @field_validator('entity_id', mode='before')
+    @classmethod
     def validate_entity_id(cls, v: Any) -> str:
         """Ensure entity_id is valid."""
         if isinstance(v, str):
@@ -28,7 +29,7 @@ class Entity(BaseModel):
             # Keep newlines/tabs in case they're somehow legitimate
             import re
             return re.sub(r'[\x00]', '', v)
-        return v
+        return str(v) if v is not None else ""
     
     @classmethod
     def from_ha_state(cls, state_data: Dict[str, Any]) -> "Entity":

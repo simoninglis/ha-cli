@@ -13,7 +13,7 @@ from ha_automation.storage.ui_automation_manager import UIAutomationManager
 def mock_client():
     """Create a mock HAClient."""
     client = MagicMock()
-    client._request = AsyncMock()
+    client._rest = AsyncMock()
     client.get_automation_config = AsyncMock()
     return client
 
@@ -45,15 +45,16 @@ class TestUIAutomationManager:
         await ui_manager.create(ui_automation)
         
         # Verify REST API call
-        mock_client._request.assert_called_once_with(
-            method="POST",
-            endpoint="/api/config/automation/config/1234567890abcdef1234567890abcdef",
+        mock_client._rest.assert_called_once_with(
+            "POST",
+            "/api/config/automation/config/1234567890abcdef1234567890abcdef",
             json_data={
                 "id": "1234567890abcdef1234567890abcdef",
                 "alias": "Test UI Automation",
                 "triggers": [{"platform": "state", "entity_id": "sensor.test"}],
                 "actions": [{"service": "light.turn_on", "entity_id": "light.test"}],
                 "mode": "single",
+                "enabled": True,
             },
         )
     
@@ -73,9 +74,9 @@ class TestUIAutomationManager:
         assert all(c in "0123456789abcdef" for c in result)
         
         # Verify API was called with generated ID
-        assert mock_client._request.called
-        call_args = mock_client._request.call_args
-        assert call_args[1]["endpoint"].startswith("/api/config/automation/config/")
+        assert mock_client._rest.called
+        call_args = mock_client._rest.call_args
+        assert call_args[0][1].startswith("/api/config/automation/config/")
     
     @pytest.mark.asyncio
     async def test_create_with_invalid_id(self, ui_manager):
@@ -96,15 +97,16 @@ class TestUIAutomationManager:
         await ui_manager.update(ui_automation)
         
         # Verify REST API call (same endpoint as create)
-        mock_client._request.assert_called_once_with(
-            method="POST",
-            endpoint="/api/config/automation/config/1234567890abcdef1234567890abcdef",
+        mock_client._rest.assert_called_once_with(
+            "POST",
+            "/api/config/automation/config/1234567890abcdef1234567890abcdef",
             json_data={
                 "id": "1234567890abcdef1234567890abcdef",
                 "alias": "Test UI Automation",
                 "triggers": [{"platform": "state", "entity_id": "sensor.test"}],
                 "actions": [{"service": "light.turn_on", "entity_id": "light.test"}],
                 "mode": "single",
+                "enabled": True,
             },
         )
     
@@ -136,8 +138,8 @@ class TestUIAutomationManager:
     @pytest.mark.asyncio
     async def test_update_not_found(self, ui_manager, mock_client, ui_automation):
         """Test updating non-existent automation."""
-        mock_client._request.side_effect = NotFoundError("Not found")
-        
+        mock_client._rest.side_effect = NotFoundError("Not found")
+
         with pytest.raises(NotFoundError):
             await ui_manager.update(ui_automation)
     
@@ -145,12 +147,12 @@ class TestUIAutomationManager:
     async def test_delete(self, ui_manager, mock_client):
         """Test deleting UI automation."""
         automation_id = "1234567890abcdef1234567890abcdef"
-        
+
         await ui_manager.delete(automation_id)
-        
-        mock_client._request.assert_called_once_with(
-            method="DELETE",
-            endpoint=f"/api/config/automation/config/{automation_id}",
+
+        mock_client._rest.assert_called_once_with(
+            "DELETE",
+            f"/api/config/automation/config/{automation_id}",
         )
     
     @pytest.mark.asyncio
@@ -162,8 +164,8 @@ class TestUIAutomationManager:
     @pytest.mark.asyncio
     async def test_delete_not_found(self, ui_manager, mock_client):
         """Test deleting non-existent automation."""
-        mock_client._request.side_effect = NotFoundError("Not found")
-        
+        mock_client._rest.side_effect = NotFoundError("Not found")
+
         with pytest.raises(NotFoundError):
             await ui_manager.delete("1234567890abcdef1234567890abcdef")
     
@@ -233,6 +235,7 @@ class TestUIAutomationManager:
         
         await ui_manager.create(automation)
         
-        call_data = mock_client._request.call_args[1]["json_data"]
+        # _rest uses positional args: method, endpoint, json_data=...
+        call_data = mock_client._rest.call_args[1]["json_data"]
         assert "last_triggered" not in call_data
         assert "trace" not in call_data

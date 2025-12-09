@@ -310,9 +310,9 @@ class HAClient:
         self,
         msg_type: str,
         **kwargs: Any,
-    ) -> dict[str, Any]:
+    ) -> Any:
         """Make WebSocket call.
-        
+
         Args:
             msg_type: Message type
             **kwargs: Additional message fields
@@ -408,7 +408,9 @@ class HAClient:
             # The config contains an 'id' field with the numeric ID
             if isinstance(result, dict):
                 config = result.get("config", result)
-                return config.get("id")
+                if isinstance(config, dict):
+                    id_value = config.get("id")
+                    return str(id_value) if id_value is not None else None
             return None
         except Exception as e:
             logger.debug(f"Failed to get numeric ID for {automation_id}: {e}")
@@ -493,7 +495,8 @@ class HAClient:
             NotFoundError: If automation not found or REST API unavailable
         """
         endpoint = f"/api/config/automation/config/{numeric_id}"
-        return await self._rest("GET", endpoint)
+        result = await self._rest("GET", endpoint)
+        return dict(result) if isinstance(result, dict) else {}
 
     async def get_automation_states(self) -> list[dict[str, Any]]:
         """Get all automation entities via WebSocket.
@@ -629,8 +632,9 @@ class HAClient:
         """
         def is_automation_event(event: dict[str, Any]) -> bool:
             """Filter for automation entities."""
-            entity_id = event.get("data", {}).get("entity_id", "")
-            return entity_id.startswith("automation.")
+            data = event.get("data", {})
+            entity_id = data.get("entity_id", "") if isinstance(data, dict) else ""
+            return bool(entity_id and isinstance(entity_id, str) and entity_id.startswith("automation."))
         
         async for event in self.subscribe_events("state_changed", is_automation_event):
             yield event
@@ -789,10 +793,10 @@ class HAClient:
             if isinstance(result, dict) and "config" in result:
                 config = result["config"]
                 # Add the ID to the config if not present
-                if "id" not in config:
+                if isinstance(config, dict) and "id" not in config:
                     config["id"] = automation_id.replace("automation.", "")
-                return config
-            return result
+                return dict(config) if isinstance(config, dict) else {}
+            return dict(result) if isinstance(result, dict) else {}
         except WebSocketError as e:
             if "not_found" in str(e).lower():
                 raise NotFoundError(f"Automation not found: {automation_id}") from e
@@ -966,8 +970,8 @@ class HAClient:
             ValidationError: If invalid parameters
         """
         try:
-            update_data = {"dashboard_id": dashboard_id}
-            
+            update_data: dict[str, Any] = {"dashboard_id": dashboard_id}
+
             if url_path is not None:
                 update_data["url_path"] = url_path
             if title is not None:

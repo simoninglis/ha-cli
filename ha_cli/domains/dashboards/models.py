@@ -114,7 +114,7 @@ class CardConfig(BaseModel):
         
         return entities
     
-    def _is_valid_entity_id(self, entity_id: str) -> bool:
+    def _is_valid_entity_id(self, entity_id: Any) -> bool:
         """Check if string is a valid entity ID format."""
         if not isinstance(entity_id, str):
             return False
@@ -145,7 +145,7 @@ class ViewConfig(BaseModel):
     title: str | None = None
     path: str | None = None
     icon: str | None = None
-    badges: list[dict[str, Any]] | None = None
+    badges: list[str | dict[str, Any]] | None = None
     cards: list[CardConfig] = Field(default_factory=list)
     theme: str | None = None
     background: str | None = None

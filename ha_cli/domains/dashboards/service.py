@@ -284,7 +284,7 @@ class DashboardService:
         """
         config = await self.get_dashboard(url_path)
         dashboard_name = url_path or "default"
-        entity_locations = {}
+        entity_locations: dict[str, list[str]] = {}
         
         # Get entities from top-level cards (no view)
         if hasattr(config, 'cards') and config.cards:
@@ -298,10 +298,10 @@ class DashboardService:
         # Get entities from views
         if hasattr(config, 'views') and config.views:
             for view in config.views:
-                view_dict = view.model_dump() if hasattr(view, 'model_dump') else view
+                view_dict: dict[str, Any] = view.model_dump() if hasattr(view, 'model_dump') else dict(view) if isinstance(view, dict) else {}
                 view_path = view_dict.get('path', view_dict.get('title', 'untitled'))
                 view_location = f"{dashboard_name}/{view_path}"
-                
+
                 if 'cards' in view_dict:
                     for card in view_dict['cards']:
                         entities = self._extract_entities_from_card(card)

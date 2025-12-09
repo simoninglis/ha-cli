@@ -65,7 +65,7 @@ def list(
         console.print("[red]Error:[/red] Cannot use --json and --porcelain together")
         sys.exit(EXIT_USAGE_ERROR)
     
-    async def _list():
+    async def _list() -> None:
         formatter = PorcelainFormatter("entities list") if porcelain else None
         
         try:
@@ -275,7 +275,7 @@ def export(
     """Export entities to CSV file."""
     setup_logging(debug)
     
-    async def _export():
+    async def _export() -> None:
         url_final, token_final = get_client_config(url, token)
         
         async with HAClient(url_final, token_final, timeout) as client:
@@ -310,7 +310,7 @@ def backup(
     """Create a backup of all entities."""
     setup_logging(debug)
     
-    async def _backup():
+    async def _backup() -> None:
         # Generate filename if not provided
         if not output:
             from datetime import datetime
@@ -356,7 +356,7 @@ def rename(
     """Rename entities using regex patterns."""
     setup_logging(debug)
     
-    async def _rename():
+    async def _rename() -> None:
         url_final, token_final = get_client_config(url, token)
         
         async with HAClient(url_final, token_final, timeout) as client:
@@ -515,7 +515,7 @@ def import_operations(
     """Import and execute rename operations from CSV file."""
     setup_logging(debug)
     
-    async def _import():
+    async def _import() -> None:
         # Check if CSV file exists
         if not Path(csv_file).exists():
             console.print(f"[red]Error:[/red] CSV file '{csv_file}' not found")
@@ -616,7 +616,7 @@ def analyze(
     """Analyze entity usage in automations and dashboards."""
     setup_logging(debug)
     
-    async def _analyze():
+    async def _analyze() -> None:
         url_final, token_final = get_client_config(url, token)
         
         async with HAClient(url_final, token_final, timeout) as client:
@@ -865,7 +865,7 @@ def delete(
         console.print("[red]Error:[/red] Must provide either --search pattern or --entity-id values")
         sys.exit(EXIT_USAGE_ERROR)
     
-    async def _delete():
+    async def _delete() -> None:
         formatter = PorcelainFormatter("entities delete") if porcelain else None
         
         try:

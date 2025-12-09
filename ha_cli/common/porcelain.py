@@ -21,7 +21,7 @@ class CleanJSONEncoder(json.JSONEncoder):
         """Encode object with control character sanitization."""
         return super().encode(self._sanitize_recursive(obj))
     
-    def _sanitize_recursive(self, obj):
+    def _sanitize_recursive(self, obj: Any) -> Any:
         """Recursively sanitize all strings in an object."""
         if isinstance(obj, str):
             # Remove control characters (0x00-0x1F except tab, newline, carriage return)
@@ -283,7 +283,7 @@ def create_dashboard_suggestions(dashboard_count: int) -> Dict[str, List[str]]:
     return suggestions
 
 
-async def get_home_assistant_health(client) -> Dict[str, Any]:
+async def get_home_assistant_health(client: Any) -> Dict[str, Any]:
     """Get Home Assistant health and version information."""
     health_info = {
         "status": "unknown",
@@ -346,7 +346,7 @@ def create_home_assistant_metadata(
     health_info: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """Create Home Assistant metadata for porcelain responses."""
-    metadata = {
+    metadata: Dict[str, Any] = {
         "url": url,
         "connection_method": connection_method
     }
@@ -385,7 +385,7 @@ def create_home_assistant_metadata(
 
 def analyze_automation_complexity(automation_data: Dict[str, Any]) -> Dict[str, Any]:
     """Analyze automation complexity and provide optimization insights."""
-    complexity = {
+    complexity: Dict[str, Any] = {
         "score": 0,
         "level": "simple",
         "factors": [],
@@ -438,7 +438,7 @@ def analyze_automation_complexity(automation_data: Dict[str, Any]) -> Dict[str, 
 
 def extract_entity_references(automation_data: Dict[str, Any]) -> Dict[str, Any]:
     """Extract and analyze entity references from automation configuration."""
-    entities = {
+    entities: Dict[str, Any] = {
         "referenced": [],
         "by_domain": {},
         "triggers": [],
@@ -483,7 +483,7 @@ def extract_entity_references(automation_data: Dict[str, Any]) -> Dict[str, Any]
 
 def analyze_dashboard_performance(entity_count: int, domain_breakdown: Dict[str, int]) -> Dict[str, Any]:
     """Analyze dashboard performance characteristics."""
-    analysis = {
+    analysis: Dict[str, Any] = {
         "performance_score": 100,
         "issues": [],
         "optimizations": [],
@@ -531,7 +531,7 @@ def create_workflow_recommendations(
     health_info: Optional[Dict[str, Any]] = None
 ) -> Dict[str, List[str]]:
     """Create intelligent workflow recommendations based on current context."""
-    recommendations = {
+    recommendations: Dict[str, List[str]] = {
         "next_steps": [],
         "workflow_sequences": [],
         "best_practices": [],

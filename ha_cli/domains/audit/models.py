@@ -28,7 +28,7 @@ class AuditFinding:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        result = {
+        result: dict[str, Any] = {
             "severity": self.severity.value,
             "category": self.category,
             "message": self.message,

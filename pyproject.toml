@@ -27,6 +27,7 @@ vcrpy = "^6.0"
 ruff = "^0.2"
 mypy = "^1.8"
 pytest-cov = "^4.1"
+types-pyyaml = "^6.0.12.20250915"
 
 [build-system]
 requires = ["poetry-core"]

@@ -68,7 +68,7 @@ def list(
         console.print("[red]Error:[/red] Cannot use --json and --porcelain together")
         sys.exit(EXIT_USAGE_ERROR)
     
-    async def _list():
+    async def _list() -> None:
         formatter = PorcelainFormatter("automations list") if porcelain else None
         
         try:
@@ -263,7 +263,7 @@ def read(
         console.print("[red]Error:[/red] Cannot use --json and --porcelain together")
         sys.exit(EXIT_USAGE_ERROR)
     
-    async def _read():
+    async def _read() -> None:
         formatter = PorcelainFormatter("automations read") if porcelain else None
         
         try:
@@ -513,7 +513,7 @@ def enable(
     """Enable an automation."""
     setup_logging(debug)
 
-    async def _enable():
+    async def _enable() -> None:
         formatter = PorcelainFormatter("automations enable") if porcelain else None
 
         try:
@@ -563,7 +563,7 @@ def disable(
     """Disable an automation."""
     setup_logging(debug)
 
-    async def _disable():
+    async def _disable() -> None:
         formatter = PorcelainFormatter("automations disable") if porcelain else None
 
         try:
@@ -612,7 +612,7 @@ def reload(
     """Reload all automations from configuration."""
     setup_logging(debug)
 
-    async def _reload():
+    async def _reload() -> None:
         formatter = PorcelainFormatter("automations reload") if porcelain else None
 
         try:
@@ -665,7 +665,7 @@ def create(
     """
     setup_logging(debug)
 
-    async def _create():
+    async def _create() -> None:
         formatter = PorcelainFormatter("automations create") if porcelain else None
 
         try:
@@ -757,7 +757,7 @@ def update(
     """
     setup_logging(debug)
 
-    async def _update():
+    async def _update() -> None:
         formatter = PorcelainFormatter("automations update") if porcelain else None
 
         try:
@@ -862,7 +862,7 @@ def delete(
     """
     setup_logging(debug)
 
-    async def _delete():
+    async def _delete() -> None:
         formatter = PorcelainFormatter("automations delete") if porcelain else None
 
         try:
