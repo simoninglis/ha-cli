@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -426,8 +427,6 @@ class HAClient:
             NotFoundError: If REST API is not available (config integration disabled)
             ValidationError: If configuration is invalid
         """
-        import time
-
         # Generate a numeric ID (timestamp-based, matching HA's pattern)
         numeric_id = str(int(time.time() * 1000))
 

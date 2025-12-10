@@ -1,5 +1,6 @@
 """Service layer for Home Assistant automation management."""
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -69,14 +70,12 @@ class AutomationCRUD:
             if path.suffix.lower() in (".yaml", ".yml"):
                 config = yaml.safe_load(content)
             elif path.suffix.lower() == ".json":
-                import json
                 config = json.loads(content)
             else:
                 # Try YAML first, then JSON
                 try:
                     config = yaml.safe_load(content)
                 except yaml.YAMLError:
-                    import json
                     config = json.loads(content)
 
             if not isinstance(config, dict):
