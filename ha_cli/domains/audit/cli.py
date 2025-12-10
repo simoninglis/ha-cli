@@ -8,7 +8,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...common.cli_utils import run_async_command, setup_logging
+from ...common.cli_utils import run_async_command, setup_logging, write_output
 from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import EXIT_USAGE_ERROR
@@ -82,9 +82,7 @@ def _output_result(
             metadata=metadata,
             suggestions=suggestions,
         )
-        sys.stdout.write(porcelain_output)
-        sys.stdout.write('\n')
-        sys.stdout.flush()
+        write_output(porcelain_output)
     else:
         # Rich table output
         if result.error:
@@ -163,9 +161,7 @@ def dead_entities(
         except Exception as e:
             if formatter:
                 error_output = formatter.error(str(e))
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
@@ -205,9 +201,7 @@ def duplicates(
         except Exception as e:
             if formatter:
                 error_output = formatter.error(str(e))
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
@@ -245,9 +239,7 @@ def broken_automations(
         except Exception as e:
             if formatter:
                 error_output = formatter.error(str(e))
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
@@ -285,9 +277,7 @@ def fragile_automations(
         except Exception as e:
             if formatter:
                 error_output = formatter.error(str(e))
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
@@ -327,9 +317,7 @@ def unused_automations(
         except Exception as e:
             if formatter:
                 error_output = formatter.error(str(e))
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
@@ -369,9 +357,7 @@ def trigger_stats(
         except Exception as e:
             if formatter:
                 error_output = formatter.error(str(e))
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
@@ -450,9 +436,7 @@ def integrations(
         except Exception as e:
             if formatter:
                 error_output = formatter.error(str(e))
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2
@@ -565,9 +549,7 @@ def all_checks(
         except Exception as e:
             if formatter:
                 error_output = formatter.error(str(e))
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
             else:
                 console.print(f"[red]Error:[/red] {e}")
             return 2

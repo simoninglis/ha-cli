@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...common.cli_utils import run_async_command, setup_logging
+from ...common.cli_utils import run_async_command, setup_logging, write_output
 from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import (
@@ -102,9 +102,7 @@ def list(
                                     ]
                                 }
                             )
-                            sys.stdout.write(error_output)
-                            sys.stdout.write('\n')
-                            sys.stdout.flush()
+                            write_output(error_output)
                         else:
                             console.print(f"[red]Error:[/red] Invalid storage filter: {storage}. Use 'ui', 'file', or 'all'")
                         sys.exit(EXIT_USAGE_ERROR)
@@ -182,16 +180,12 @@ def list(
                         suggestions.setdefault("detected_issues", []).extend(advanced_issues)
                     
                     porcelain_output = formatter.success(data, metadata, suggestions)
-                    sys.stdout.write(porcelain_output)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(porcelain_output)
                     
                 elif json_output:
                     data = [automation.to_json_dict() for automation in automations]
                     json_str = json.dumps(data, indent=2)
-                    sys.stdout.write(json_str)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(json_str)
                     
                 else:
                     # Original table output
@@ -233,9 +227,7 @@ def list(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -294,9 +286,7 @@ def read(
                                     ]
                                 }
                             )
-                            sys.stdout.write(error_output)
-                            sys.stdout.write('\n')
-                            sys.stdout.flush()
+                            write_output(error_output)
                         else:
                             console.print(f"[red]Error:[/red] Automation '{automation_id}' not found")
                         sys.exit(EXIT_HA_ERROR)
@@ -441,15 +431,11 @@ def read(
                         suggestions.setdefault("detected_issues", []).extend(advanced_issues)
                     
                     porcelain_output = formatter.success(automation_data, metadata, suggestions)
-                    sys.stdout.write(porcelain_output)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(porcelain_output)
                     
                 elif json_output:
                     json_str = json.dumps(automation.to_json_dict(), indent=2)
-                    sys.stdout.write(json_str)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(json_str)
                     
                 else:
                     # Original human-readable output
@@ -486,9 +472,7 @@ def read(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -536,18 +520,14 @@ def enable(
                             f"Read: ha-cli automations read {automation_id}",
                         ]}
                     )
-                    sys.stdout.write(porcelain_output)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(porcelain_output)
                 else:
                     console.print(f"[green]✓[/green] Automation '{automation_id}' enabled")
 
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -587,18 +567,14 @@ def disable(
                             f"Read: ha-cli automations read {automation_id}",
                         ]}
                     )
-                    sys.stdout.write(porcelain_output)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(porcelain_output)
                 else:
                     console.print(f"[yellow]○[/yellow] Automation '{automation_id}' disabled")
 
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -636,18 +612,14 @@ def reload(
                             "ha-cli automations list --porcelain",
                         ]}
                     )
-                    sys.stdout.write(porcelain_output)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(porcelain_output)
                 else:
                     console.print("[green]✓[/green] All automations reloaded")
 
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -702,9 +674,7 @@ def create(
                                 "ha-cli automations list --porcelain",
                             ]}
                         )
-                        sys.stdout.write(porcelain_output)
-                        sys.stdout.write('\n')
-                        sys.stdout.flush()
+                        write_output(porcelain_output)
                     else:
                         if dry_run:
                             console.print(f"[yellow]Dry run:[/yellow] Would create automation from {file_path}")
@@ -727,9 +697,7 @@ def create(
                                     ]
                                 }
                             )
-                            sys.stdout.write(error_output)
-                            sys.stdout.write('\n')
-                            sys.stdout.flush()
+                            write_output(error_output)
                         else:
                             console.print(f"[red]Error:[/red] {error_msg}")
                         sys.exit(EXIT_HA_ERROR)
@@ -738,9 +706,7 @@ def create(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -792,9 +758,7 @@ def update(
                                 "ha-cli automations list --porcelain",
                             ]}
                         )
-                        sys.stdout.write(porcelain_output)
-                        sys.stdout.write('\n')
-                        sys.stdout.flush()
+                        write_output(porcelain_output)
                     else:
                         if dry_run:
                             console.print(f"[yellow]Dry run:[/yellow] Would update automation '{automation_id}' from {file_path}")
@@ -816,9 +780,7 @@ def update(
                                     ]
                                 }
                             )
-                            sys.stdout.write(error_output)
-                            sys.stdout.write('\n')
-                            sys.stdout.flush()
+                            write_output(error_output)
                         else:
                             console.print(f"[red]Error:[/red] {error_msg}")
                         sys.exit(EXIT_HA_ERROR)
@@ -835,9 +797,7 @@ def update(
                                     ]
                                 }
                             )
-                            sys.stdout.write(error_output)
-                            sys.stdout.write('\n')
-                            sys.stdout.flush()
+                            write_output(error_output)
                         else:
                             console.print(f"[red]Error:[/red] Automation '{automation_id}' not found")
                         sys.exit(EXIT_HA_ERROR)
@@ -846,9 +806,7 @@ def update(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -905,9 +863,7 @@ def delete(
                                 "ha-cli automations list --porcelain",
                             ]}
                         )
-                        sys.stdout.write(porcelain_output)
-                        sys.stdout.write('\n')
-                        sys.stdout.flush()
+                        write_output(porcelain_output)
                     else:
                         if dry_run:
                             console.print(f"[yellow]Dry run:[/yellow] Would delete automation '{automation_id}'")
@@ -929,9 +885,7 @@ def delete(
                                     ]
                                 }
                             )
-                            sys.stdout.write(error_output)
-                            sys.stdout.write('\n')
-                            sys.stdout.flush()
+                            write_output(error_output)
                         else:
                             console.print(f"[red]Error:[/red] {error_msg}")
                         sys.exit(EXIT_HA_ERROR)
@@ -948,9 +902,7 @@ def delete(
                                     ]
                                 }
                             )
-                            sys.stdout.write(error_output)
-                            sys.stdout.write('\n')
-                            sys.stdout.flush()
+                            write_output(error_output)
                         else:
                             console.print(f"[red]Error:[/red] Automation '{automation_id}' not found")
                         sys.exit(EXIT_HA_ERROR)
@@ -959,9 +911,7 @@ def delete(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise

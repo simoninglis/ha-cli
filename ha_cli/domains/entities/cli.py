@@ -12,7 +12,7 @@ from rich import print
 from rich.console import Console
 from rich.table import Table
 
-from ...common.cli_utils import run_async_command, setup_logging
+from ...common.cli_utils import run_async_command, setup_logging, write_output
 from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import (
@@ -194,19 +194,13 @@ def list(
                         suggestions.setdefault("detected_issues", []).extend(advanced_issues)
                     
                     porcelain_output = formatter.success(data, metadata, suggestions)
-                    import sys
-                    sys.stdout.write(porcelain_output)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(porcelain_output)
                     
                 elif json_output:
                     data = [entity.to_dict() for entity in entities]
                     json_str = json.dumps(data, indent=2)
-                    import sys
-                    sys.stdout.write(json_str)
-                    sys.stdout.write('\n')  # Add final newline
-                    sys.stdout.flush()
-                    
+                    write_output(json_str)
+
                 else:
                     # Rich table output
                     if not entities:

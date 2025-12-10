@@ -16,6 +16,24 @@ T = TypeVar('T')
 console = Console()
 
 
+def write_output(text: str, newline: bool = True, flush: bool = True) -> None:
+    """Write text to stdout in a controlled manner.
+
+    This function avoids issues with Python's print() adding unwanted
+    newlines in JSON/structured output.
+
+    Args:
+        text: The text to write to stdout.
+        newline: If True, append a newline after the text.
+        flush: If True, flush stdout after writing.
+    """
+    sys.stdout.write(text)
+    if newline:
+        sys.stdout.write('\n')
+    if flush:
+        sys.stdout.flush()
+
+
 def setup_logging(debug: bool = False) -> None:
     """Configure logging for CLI commands.
 

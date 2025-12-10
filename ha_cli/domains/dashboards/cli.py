@@ -11,7 +11,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...common.cli_utils import run_async_command, setup_logging
+from ...common.cli_utils import run_async_command, setup_logging, write_output
 from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import (
@@ -136,16 +136,12 @@ def list(
                         suggestions.setdefault("detected_issues", []).extend(advanced_issues)
                     
                     porcelain_output = formatter.success(data, metadata, suggestions)
-                    sys.stdout.write(porcelain_output)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(porcelain_output)
                     
                 elif json_output:
                     data = [dashboard.model_dump() for dashboard in dashboards]
                     json_str = json.dumps(data, indent=2)
-                    sys.stdout.write(json_str)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(json_str)
                     
                 else:
                     # Original table output
@@ -177,9 +173,7 @@ def list(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -217,9 +211,7 @@ def read(
                     Path(output).write_text(output_str)
                     console.print(f"[green]Dashboard saved to {output}[/green]")
                 else:
-                    sys.stdout.write(output_str)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(output_str)
             else:  # yaml
                 import ruamel.yaml
                 yaml = ruamel.yaml.YAML()
@@ -235,8 +227,7 @@ def read(
                     import io
                     stream = io.StringIO()
                     yaml.dump(config_dict, stream)
-                    sys.stdout.write(stream.getvalue())
-                    sys.stdout.flush()
+                    write_output(stream.getvalue(), newline=False)
     
     asyncio.run(run_async_command(_read()))
 
@@ -457,15 +448,11 @@ def entities(
                         suggestions.setdefault("detected_issues", []).extend(advanced_issues)
                     
                     porcelain_output = formatter.success(entity_data, metadata, suggestions)
-                    sys.stdout.write(porcelain_output)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(porcelain_output)
                     
                 elif json_output:
                     json_str = json.dumps(entities, indent=2)
-                    sys.stdout.write(json_str)
-                    sys.stdout.write('\n')
-                    sys.stdout.flush()
+                    write_output(json_str)
                     
                 else:
                     # Enhanced output with view information
@@ -508,9 +495,7 @@ def entities(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                sys.stdout.write(error_output)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -631,9 +616,7 @@ def views(
             
             if json_output:
                 json_str = json.dumps(views, indent=2)
-                sys.stdout.write(json_str)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+                write_output(json_str)
             else:
                 if not views:
                     console.print(f"No views found in dashboard '{dashboard_name}'")

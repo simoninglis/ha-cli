@@ -8,7 +8,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...common.cli_utils import run_async_command, setup_logging
+from ...common.cli_utils import run_async_command, setup_logging, write_output
 from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import EXIT_USAGE_ERROR
@@ -72,14 +72,10 @@ def list_areas(
                         ]
                     },
                 )
-                sys.stdout.write(output)
-                sys.stdout.write("\n")
-                sys.stdout.flush()
+                write_output(output)
             elif json_output:
                 data = [a.to_dict() for a in areas]
-                sys.stdout.write(json.dumps(data, indent=2))
-                sys.stdout.write("\n")
-                sys.stdout.flush()
+                write_output(json.dumps(data, indent=2))
             else:
                 if not areas:
                     console.print("[yellow]No areas found[/yellow]")
@@ -142,9 +138,7 @@ def show_area(
                         f"Area '{area_id}' not found",
                         error_code="NOT_FOUND",
                     )
-                    sys.stdout.write(output)
-                    sys.stdout.write("\n")
-                    sys.stdout.flush()
+                    write_output(output)
                 else:
                     console.print(f"[red]Error:[/red] Area '{area_id}' not found")
                 sys.exit(EXIT_USAGE_ERROR)
@@ -161,13 +155,9 @@ def show_area(
                         ]
                     },
                 )
-                sys.stdout.write(output)
-                sys.stdout.write("\n")
-                sys.stdout.flush()
+                write_output(output)
             elif json_output:
-                sys.stdout.write(json.dumps(area.to_dict(), indent=2))
-                sys.stdout.write("\n")
-                sys.stdout.flush()
+                write_output(json.dumps(area.to_dict(), indent=2))
             else:
                 console.print(f"\n[bold cyan]Area: {area.name}[/bold cyan]")
                 console.print(f"  ID: {area.area_id}")
@@ -230,14 +220,10 @@ def list_floors(
                     data,
                     metadata={"total_count": len(floors)},
                 )
-                sys.stdout.write(output)
-                sys.stdout.write("\n")
-                sys.stdout.flush()
+                write_output(output)
             elif json_output:
                 data = [f.to_dict() for f in floors]
-                sys.stdout.write(json.dumps(data, indent=2))
-                sys.stdout.write("\n")
-                sys.stdout.flush()
+                write_output(json.dumps(data, indent=2))
             else:
                 if not floors:
                     console.print("[yellow]No floors defined[/yellow]")
@@ -291,14 +277,10 @@ def list_labels(
                     data,
                     metadata={"total_count": len(labels)},
                 )
-                sys.stdout.write(output)
-                sys.stdout.write("\n")
-                sys.stdout.flush()
+                write_output(output)
             elif json_output:
                 data = [lbl.to_dict() for lbl in labels]
-                sys.stdout.write(json.dumps(data, indent=2))
-                sys.stdout.write("\n")
-                sys.stdout.flush()
+                write_output(json.dumps(data, indent=2))
             else:
                 if not labels:
                     console.print("[yellow]No labels defined[/yellow]")
@@ -402,17 +384,13 @@ def audit_areas(
                         ]
                     },
                 )
-                sys.stdout.write(output)
-                sys.stdout.write("\n")
-                sys.stdout.flush()
+                write_output(output)
             elif json_output:
                 output_data = {
                     "findings": findings,
                     "summary": summary,
                 }
-                sys.stdout.write(json.dumps(output_data, indent=2))
-                sys.stdout.write("\n")
-                sys.stdout.flush()
+                write_output(json.dumps(output_data, indent=2))
             else:
                 console.print("\n[bold]Area Audit Report[/bold]\n")
 
