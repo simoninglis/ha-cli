@@ -100,7 +100,7 @@ class TestAreasCLI:
         mock_client_class: MagicMock,
         mock_config: MagicMock,
     ) -> None:
-        """Test list command with porcelain output."""
+        """Test list command with porcelain output and validate structure."""
         mock_config.return_value = ("http://test:8123", "test-token")
         mock_client = AsyncMock()
         mock_client_class.return_value.__aenter__.return_value = mock_client
@@ -124,7 +124,17 @@ class TestAreasCLI:
         result = runner.invoke(app, ["areas", "list", "--porcelain"])
         assert result.exit_code == 0
         output = json.loads(result.stdout)
+        # Validate porcelain envelope structure
         assert output["status"] == "success"
+        assert "command" in output
+        assert "timestamp" in output
+        assert "metadata" in output
+        assert "data" in output
+        assert "suggestions" in output
+        # Validate data content
+        assert isinstance(output["data"], list)
+        assert len(output["data"]) == 1
+        assert output["data"][0]["area_id"] == "kitchen"
 
     @patch("ha_cli.domains.areas.cli.get_client_config")
     @patch("ha_cli.domains.areas.cli.HAClient")
@@ -311,3 +321,280 @@ class TestAreasCLI:
         result = runner.invoke(app, ["areas", "version"])
         assert result.exit_code == 0
         assert "version" in result.stdout.lower()
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_show_command_porcelain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test show command with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        test_area = AreaWithCounts(
+            area_id="kitchen",
+            name="Kitchen",
+            device_count=3,
+            entity_count=10,
+            devices=["Light", "Sensor"],
+            entities=["light.kitchen", "sensor.temp"],
+        )
+        mock_service.get_area = AsyncMock(return_value=test_area)
+
+        result = runner.invoke(app, ["areas", "show", "kitchen", "--porcelain"])
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert "data" in output
+        assert output["data"]["area_id"] == "kitchen"
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_show_command_json(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test show command with JSON output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        test_area = AreaWithCounts(
+            area_id="kitchen",
+            name="Kitchen",
+            device_count=3,
+            entity_count=10,
+        )
+        mock_service.get_area = AsyncMock(return_value=test_area)
+
+        result = runner.invoke(app, ["areas", "show", "kitchen", "--json"])
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["area_id"] == "kitchen"
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_floors_command_json(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test floors command with JSON output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        test_floors = [
+            Floor(floor_id="ground", name="Ground Floor", level=0),
+            Floor(floor_id="first", name="First Floor", level=1),
+        ]
+        mock_service.list_floors = AsyncMock(return_value=test_floors)
+
+        result = runner.invoke(app, ["areas", "floors", "--json"])
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert isinstance(output, list)
+        assert len(output) == 2
+        assert output[0]["floor_id"] == "ground"
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_floors_command_porcelain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test floors command with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        test_floors = [
+            Floor(floor_id="ground", name="Ground Floor", level=0),
+        ]
+        mock_service.list_floors = AsyncMock(return_value=test_floors)
+
+        result = runner.invoke(app, ["areas", "floors", "--porcelain"])
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert "data" in output
+        assert isinstance(output["data"], list)
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_labels_command_json(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test labels command with JSON output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        test_labels = [
+            Label(label_id="important", name="Important", color="red"),
+        ]
+        mock_service.list_labels = AsyncMock(return_value=test_labels)
+
+        result = runner.invoke(app, ["areas", "labels", "--json"])
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert isinstance(output, list)
+        assert output[0]["label_id"] == "important"
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_labels_command_porcelain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test labels command with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        test_labels = [
+            Label(label_id="important", name="Important", color="red"),
+        ]
+        mock_service.list_labels = AsyncMock(return_value=test_labels)
+
+        result = runner.invoke(app, ["areas", "labels", "--porcelain"])
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert "data" in output
+        assert isinstance(output["data"], list)
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_audit_command_porcelain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test audit command with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        mock_service.check_naming_issues = AsyncMock(return_value=[])
+        mock_service.find_empty_areas = AsyncMock(return_value=[])
+        mock_service.get_area_summary = AsyncMock(
+            return_value={
+                "total_areas": 5,
+                "empty_areas": 0,
+                "area_coverage_entities": 50,
+                "area_coverage_devices": 80,
+            }
+        )
+
+        result = runner.invoke(app, ["areas", "audit", "--porcelain"])
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert "data" in output
+        # data is the findings list directly (can be empty when no issues)
+        assert isinstance(output["data"], list)
+        # metadata should contain summary info
+        assert "metadata" in output
+        assert "total_findings" in output["metadata"]
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_audit_command_json(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test audit command with JSON output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        mock_service.check_naming_issues = AsyncMock(return_value=[])
+        mock_service.find_empty_areas = AsyncMock(return_value=[])
+        mock_service.get_area_summary = AsyncMock(
+            return_value={
+                "total_areas": 5,
+                "empty_areas": 0,
+                "area_coverage_entities": 50,
+                "area_coverage_devices": 80,
+            }
+        )
+
+        result = runner.invoke(app, ["areas", "audit", "--json"])
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert "findings" in output
+        assert "summary" in output
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_show_command_not_found_porcelain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test show command with porcelain when area not found."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_area = AsyncMock(return_value=None)
+
+        result = runner.invoke(app, ["areas", "show", "nonexistent", "--porcelain"])
+        assert result.exit_code == 1
+        output = json.loads(result.stdout)
+        assert output["status"] == "error"
+        assert "error" in output
