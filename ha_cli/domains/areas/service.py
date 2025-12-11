@@ -5,6 +5,7 @@ import re
 from typing import Any, cast
 
 from ...common.client import HAClient
+from ...common.exceptions import NotFoundError, ValidationError
 from .models import Area, AreaWithCounts, Device, EntityRegistryEntry, Floor, Label
 
 logger = logging.getLogger(__name__)
@@ -305,3 +306,171 @@ class AreaService:
             unassigned.append(entity)
 
         return unassigned
+
+    # =========================================================================
+    # CRUD Operations
+    # =========================================================================
+
+    async def create_area(
+        self,
+        name: str,
+        floor_id: str | None = None,
+        icon: str | None = None,
+        aliases: list[str] | None = None,
+        labels: list[str] | None = None,
+        picture: str | None = None,
+    ) -> Area:
+        """Create a new area.
+
+        Args:
+            name: Area name (required)
+            floor_id: Optional floor ID to assign area to
+            icon: Optional icon (e.g., "mdi:home")
+            aliases: Optional list of aliases
+            labels: Optional list of label IDs
+            picture: Optional picture URL
+
+        Returns:
+            The created Area
+
+        Raises:
+            ValidationError: If area with same name already exists or invalid parameters
+        """
+        # Build request payload
+        payload: dict[str, Any] = {"name": name}
+        if floor_id is not None:
+            payload["floor_id"] = floor_id
+        if icon is not None:
+            payload["icon"] = icon
+        if aliases is not None:
+            payload["aliases"] = aliases
+        if labels is not None:
+            payload["labels"] = labels
+        if picture is not None:
+            payload["picture"] = picture
+
+        try:
+            result = await self.client._ws_call(
+                "config/area_registry/create", **payload
+            )
+            result_dict = cast(dict[str, Any], result)
+            return Area.from_dict(result_dict)
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "already exists" in error_msg or "name is already in use" in error_msg:
+                raise ValidationError(f"Area with name '{name}' already exists") from e
+            if "invalid" in error_msg:
+                raise ValidationError(f"Invalid area parameters: {e}") from e
+            raise
+
+    async def update_area(
+        self,
+        area_id: str,
+        name: str | None = None,
+        floor_id: str | None = None,
+        icon: str | None = None,
+        aliases: list[str] | None = None,
+        labels: list[str] | None = None,
+        picture: str | None = None,
+    ) -> Area:
+        """Update an existing area.
+
+        Args:
+            area_id: Area ID to update (required)
+            name: New area name (optional)
+            floor_id: New floor ID (optional, use "" to clear)
+            icon: New icon (optional, use "" to clear)
+            aliases: New aliases list (optional)
+            labels: New labels list (optional)
+            picture: New picture URL (optional, use "" to clear)
+
+        Returns:
+            The updated Area
+
+        Raises:
+            NotFoundError: If area not found
+            ValidationError: If name already used or invalid parameters
+        """
+        # Build request payload - only include fields that were specified
+        payload: dict[str, Any] = {"area_id": area_id}
+        if name is not None:
+            payload["name"] = name
+        if floor_id is not None:
+            # Empty string means clear the value
+            payload["floor_id"] = floor_id if floor_id else None
+        if icon is not None:
+            payload["icon"] = icon if icon else None
+        if aliases is not None:
+            payload["aliases"] = aliases
+        if labels is not None:
+            payload["labels"] = labels
+        if picture is not None:
+            payload["picture"] = picture if picture else None
+
+        try:
+            result = await self.client._ws_call(
+                "config/area_registry/update", **payload
+            )
+            result_dict = cast(dict[str, Any], result)
+            return Area.from_dict(result_dict)
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "not found" in error_msg or "unknown area" in error_msg:
+                raise NotFoundError(f"Area not found: {area_id}") from e
+            if "already exists" in error_msg or "name is already in use" in error_msg:
+                raise ValidationError(f"Area name '{name}' is already in use") from e
+            if "invalid" in error_msg:
+                raise ValidationError(f"Invalid area parameters: {e}") from e
+            raise
+
+    async def rename_area(self, area_id: str, new_name: str) -> Area:
+        """Rename an existing area (convenience method).
+
+        Args:
+            area_id: Area ID to rename
+            new_name: New name for the area
+
+        Returns:
+            The updated Area
+
+        Raises:
+            NotFoundError: If area not found
+            ValidationError: If name already used
+        """
+        return await self.update_area(area_id, name=new_name)
+
+    async def delete_area(
+        self,
+        area_id: str,
+        force: bool = False,
+    ) -> None:
+        """Delete an area.
+
+        Args:
+            area_id: Area ID to delete
+            force: If True, delete even if area has devices/entities
+
+        Raises:
+            NotFoundError: If area not found
+            ValidationError: If area has devices/entities and force=False
+        """
+        # Check if area has devices/entities
+        if not force:
+            area = await self.get_area(area_id)
+            if area is None:
+                raise NotFoundError(f"Area not found: {area_id}")
+            if area.device_count > 0 or area.entity_count > 0:
+                raise ValidationError(
+                    f"Area '{area.name}' has {area.device_count} devices and "
+                    f"{area.entity_count} entities. Use --force to delete anyway."
+                )
+
+        try:
+            await self.client._ws_call(
+                "config/area_registry/delete", area_id=area_id
+            )
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "not found" in error_msg or "unknown area" in error_msg:
+                raise NotFoundError(f"Area not found: {area_id}") from e
+            raise

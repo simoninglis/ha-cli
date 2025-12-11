@@ -598,3 +598,410 @@ class TestAreasCLI:
         output = json.loads(result.stdout)
         assert output["status"] == "error"
         assert "error" in output
+
+
+class TestAreasCRUDCLI:
+    """Test areas CRUD CLI commands."""
+
+    def test_areas_help_includes_crud_commands(self) -> None:
+        """Test areas help shows CRUD commands."""
+        result = runner.invoke(app, ["areas", "--help"])
+        assert result.exit_code == 0
+        assert "create" in result.stdout
+        assert "rename" in result.stdout
+        assert "update" in result.stdout
+        assert "delete" in result.stdout
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_create_command(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test create command."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        mock_service.create_area = AsyncMock(
+            return_value=Area(area_id="new_area", name="New Area")
+        )
+
+        result = runner.invoke(app, ["areas", "create", "New Area"])
+        assert result.exit_code == 0
+        assert "Created area" in result.stdout
+        assert "New Area" in result.stdout
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_create_command_with_options(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test create command with all options."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        mock_service.create_area = AsyncMock(
+            return_value=Area(
+                area_id="new_area",
+                name="New Area",
+                floor_id="ground",
+                icon="mdi:home",
+            )
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "areas", "create", "New Area",
+                "--floor", "ground",
+                "--icon", "mdi:home",
+                "--aliases", "area1, alias2",
+            ]
+        )
+        assert result.exit_code == 0
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_create_command_porcelain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test create command with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        mock_service.create_area = AsyncMock(
+            return_value=Area(area_id="new_area", name="New Area")
+        )
+
+        result = runner.invoke(app, ["areas", "create", "New Area", "--porcelain"])
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert output["metadata"]["action"] == "created"
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_create_command_duplicate(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test create command with duplicate name."""
+        from ha_cli.common.exceptions import ValidationError
+
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.create_area = AsyncMock(
+            side_effect=ValidationError("Area with name 'Existing' already exists")
+        )
+
+        result = runner.invoke(app, ["areas", "create", "Existing"])
+        assert result.exit_code == 1
+        assert "already exists" in result.stdout.lower()
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_rename_command(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test rename command."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        mock_service.rename_area = AsyncMock(
+            return_value=Area(area_id="kitchen", name="New Kitchen")
+        )
+
+        result = runner.invoke(app, ["areas", "rename", "kitchen", "New Kitchen"])
+        assert result.exit_code == 0
+        assert "Renamed area" in result.stdout
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_rename_command_not_found(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test rename command with non-existent area."""
+        from ha_cli.common.exceptions import NotFoundError
+
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.rename_area = AsyncMock(
+            side_effect=NotFoundError("Area not found: nonexistent")
+        )
+
+        result = runner.invoke(app, ["areas", "rename", "nonexistent", "New Name"])
+        assert result.exit_code == 1
+        assert "not found" in result.stdout.lower()
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_rename_command_porcelain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test rename command with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        mock_service.rename_area = AsyncMock(
+            return_value=Area(area_id="kitchen", name="New Kitchen")
+        )
+
+        result = runner.invoke(
+            app, ["areas", "rename", "kitchen", "New Kitchen", "--porcelain"]
+        )
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert output["metadata"]["action"] == "renamed"
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_update_command(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test update command."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        mock_service.update_area = AsyncMock(
+            return_value=Area(area_id="kitchen", name="Kitchen", icon="mdi:kitchen")
+        )
+
+        result = runner.invoke(
+            app, ["areas", "update", "kitchen", "--icon", "mdi:kitchen"]
+        )
+        assert result.exit_code == 0
+        assert "Updated area" in result.stdout
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_update_command_porcelain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test update command with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        mock_service.update_area = AsyncMock(
+            return_value=Area(area_id="kitchen", name="Kitchen", icon="mdi:kitchen")
+        )
+
+        result = runner.invoke(
+            app, ["areas", "update", "kitchen", "--icon", "mdi:kitchen", "--porcelain"]
+        )
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert output["metadata"]["action"] == "updated"
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_delete_command(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test delete command."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+
+        mock_service.get_area = AsyncMock(
+            return_value=AreaWithCounts(
+                area_id="empty_room", name="Empty Room", device_count=0, entity_count=0
+            )
+        )
+        mock_service.delete_area = AsyncMock()
+
+        result = runner.invoke(app, ["areas", "delete", "empty_room"])
+        assert result.exit_code == 0
+        assert "Deleted area" in result.stdout
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_delete_command_not_found(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test delete command with non-existent area."""
+        from ha_cli.common.exceptions import NotFoundError
+
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_area = AsyncMock(return_value=None)
+        mock_service.delete_area = AsyncMock(
+            side_effect=NotFoundError("Area not found: nonexistent")
+        )
+
+        result = runner.invoke(app, ["areas", "delete", "nonexistent"])
+        assert result.exit_code == 1
+        assert "not found" in result.stdout.lower()
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_delete_command_with_contents_no_force(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test delete command fails without force when area has contents."""
+        from ha_cli.common.exceptions import ValidationError
+
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_area = AsyncMock(
+            return_value=AreaWithCounts(
+                area_id="kitchen", name="Kitchen", device_count=5, entity_count=10
+            )
+        )
+        mock_service.delete_area = AsyncMock(
+            side_effect=ValidationError("Area has 5 devices. Use --force.")
+        )
+
+        result = runner.invoke(app, ["areas", "delete", "kitchen"])
+        assert result.exit_code == 1
+        assert "--force" in result.stdout
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_delete_command_with_force(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test delete command with force flag."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_area = AsyncMock(
+            return_value=AreaWithCounts(
+                area_id="kitchen", name="Kitchen", device_count=5, entity_count=10
+            )
+        )
+        mock_service.delete_area = AsyncMock()
+
+        result = runner.invoke(app, ["areas", "delete", "kitchen", "--force"])
+        assert result.exit_code == 0
+        assert "Deleted area" in result.stdout
+
+    @patch("ha_cli.domains.areas.cli.get_client_config")
+    @patch("ha_cli.domains.areas.cli.HAClient")
+    @patch("ha_cli.domains.areas.cli.AreaService")
+    def test_delete_command_porcelain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test delete command with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_area = AsyncMock(
+            return_value=AreaWithCounts(
+                area_id="empty_room", name="Empty Room", device_count=0, entity_count=0
+            )
+        )
+        mock_service.delete_area = AsyncMock()
+
+        result = runner.invoke(app, ["areas", "delete", "empty_room", "--porcelain"])
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert output["metadata"]["action"] == "deleted"

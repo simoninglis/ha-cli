@@ -11,7 +11,7 @@ from rich.table import Table
 from ...common.cli_utils import run_async_command, setup_logging, write_output
 from ...common.client import HAClient
 from ...common.config import get_client_config
-from ...common.exceptions import EXIT_USAGE_ERROR
+from ...common.exceptions import EXIT_USAGE_ERROR, NotFoundError, ValidationError
 from ...common.porcelain import PorcelainFormatter
 from .service import AreaService
 
@@ -441,6 +441,325 @@ def audit_areas(
                 sys.exit(EXIT_USAGE_ERROR)
 
     asyncio.run(run_async_command(_audit()))
+
+
+@app.command("create")
+def create_area(
+    name: str = typer.Argument(..., help="Name for the new area"),
+    floor: str | None = typer.Option(None, "--floor", "-f", help="Floor ID to assign"),
+    icon: str | None = typer.Option(None, "--icon", "-i", help="Icon (e.g., mdi:home)"),
+    aliases: str | None = typer.Option(
+        None, "--aliases", "-a", help="Comma-separated aliases"
+    ),
+    labels: str | None = typer.Option(
+        None, "--labels", "-l", help="Comma-separated label IDs"
+    ),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Create a new area."""
+    setup_logging(debug)
+
+    async def _create() -> None:
+        formatter = PorcelainFormatter("areas create") if porcelain else None
+
+        url_final, token_final = get_client_config(url, token)
+
+        async with HAClient(url_final, token_final) as client:
+            service = AreaService(client)
+
+            # Parse comma-separated values
+            aliases_list = (
+                [a.strip() for a in aliases.split(",") if a.strip()]
+                if aliases
+                else None
+            )
+            labels_list = (
+                [lbl.strip() for lbl in labels.split(",") if lbl.strip()]
+                if labels
+                else None
+            )
+
+            try:
+                area = await service.create_area(
+                    name=name,
+                    floor_id=floor,
+                    icon=icon,
+                    aliases=aliases_list,
+                    labels=labels_list,
+                )
+
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.success(
+                        area.to_dict(),
+                        metadata={"area_id": area.area_id, "action": "created"},
+                        suggestions={
+                            "common_actions": [
+                                f"View area: ha-cli areas show {area.area_id}",
+                                "List all areas: ha-cli areas list",
+                            ]
+                        },
+                    )
+                    write_output(output)
+                elif json_output:
+                    write_output(json.dumps(area.to_dict(), indent=2))
+                else:
+                    console.print(
+                        f"[green]✓[/green] Created area '[bold]{area.name}[/bold]' "
+                        f"(ID: {area.area_id})"
+                    )
+            except ValidationError as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="VALIDATION_ERROR")
+                    write_output(output)
+                else:
+                    console.print(f"[red]Error:[/red] {e}")
+                sys.exit(EXIT_USAGE_ERROR)
+
+    asyncio.run(run_async_command(_create()))
+
+
+@app.command("rename")
+def rename_area(
+    area_id: str = typer.Argument(..., help="Area ID to rename"),
+    new_name: str = typer.Argument(..., help="New name for the area"),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Rename an existing area."""
+    setup_logging(debug)
+
+    async def _rename() -> None:
+        formatter = PorcelainFormatter("areas rename") if porcelain else None
+
+        url_final, token_final = get_client_config(url, token)
+
+        async with HAClient(url_final, token_final) as client:
+            service = AreaService(client)
+
+            try:
+                area = await service.rename_area(area_id, new_name)
+
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.success(
+                        area.to_dict(),
+                        metadata={
+                            "area_id": area.area_id,
+                            "action": "renamed",
+                            "new_name": new_name,
+                        },
+                        suggestions={
+                            "common_actions": [
+                                f"View area: ha-cli areas show {area.area_id}",
+                                "List all areas: ha-cli areas list",
+                            ]
+                        },
+                    )
+                    write_output(output)
+                elif json_output:
+                    write_output(json.dumps(area.to_dict(), indent=2))
+                else:
+                    console.print(
+                        f"[green]✓[/green] Renamed area to '[bold]{area.name}[/bold]'"
+                    )
+            except NotFoundError as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="NOT_FOUND")
+                    write_output(output)
+                else:
+                    console.print(f"[red]Error:[/red] {e}")
+                sys.exit(EXIT_USAGE_ERROR)
+            except ValidationError as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="VALIDATION_ERROR")
+                    write_output(output)
+                else:
+                    console.print(f"[red]Error:[/red] {e}")
+                sys.exit(EXIT_USAGE_ERROR)
+
+    asyncio.run(run_async_command(_rename()))
+
+
+@app.command("update")
+def update_area(
+    area_id: str = typer.Argument(..., help="Area ID to update"),
+    name: str | None = typer.Option(None, "--name", "-n", help="New area name"),
+    floor: str | None = typer.Option(
+        None, "--floor", "-f", help="Floor ID (empty string to clear)"
+    ),
+    icon: str | None = typer.Option(
+        None, "--icon", "-i", help="Icon (empty string to clear)"
+    ),
+    aliases: str | None = typer.Option(
+        None, "--aliases", "-a", help="Comma-separated aliases (replaces existing)"
+    ),
+    labels: str | None = typer.Option(
+        None, "--labels", "-l", help="Comma-separated label IDs (replaces existing)"
+    ),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Update an existing area's metadata."""
+    setup_logging(debug)
+
+    async def _update() -> None:
+        formatter = PorcelainFormatter("areas update") if porcelain else None
+
+        url_final, token_final = get_client_config(url, token)
+
+        async with HAClient(url_final, token_final) as client:
+            service = AreaService(client)
+
+            # Parse comma-separated values if provided
+            aliases_list: list[str] | None = None
+            labels_list: list[str] | None = None
+            if aliases is not None:
+                aliases_list = (
+                    [a.strip() for a in aliases.split(",") if a.strip()]
+                    if aliases
+                    else []
+                )
+            if labels is not None:
+                labels_list = (
+                    [lbl.strip() for lbl in labels.split(",") if lbl.strip()]
+                    if labels
+                    else []
+                )
+
+            try:
+                area = await service.update_area(
+                    area_id=area_id,
+                    name=name,
+                    floor_id=floor,
+                    icon=icon,
+                    aliases=aliases_list,
+                    labels=labels_list,
+                )
+
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.success(
+                        area.to_dict(),
+                        metadata={"area_id": area.area_id, "action": "updated"},
+                        suggestions={
+                            "common_actions": [
+                                f"View area: ha-cli areas show {area.area_id}",
+                                "List all areas: ha-cli areas list",
+                            ]
+                        },
+                    )
+                    write_output(output)
+                elif json_output:
+                    write_output(json.dumps(area.to_dict(), indent=2))
+                else:
+                    console.print(
+                        f"[green]✓[/green] Updated area '[bold]{area.name}[/bold]'"
+                    )
+            except NotFoundError as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="NOT_FOUND")
+                    write_output(output)
+                else:
+                    console.print(f"[red]Error:[/red] {e}")
+                sys.exit(EXIT_USAGE_ERROR)
+            except ValidationError as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="VALIDATION_ERROR")
+                    write_output(output)
+                else:
+                    console.print(f"[red]Error:[/red] {e}")
+                sys.exit(EXIT_USAGE_ERROR)
+
+    asyncio.run(run_async_command(_update()))
+
+
+@app.command("delete")
+def delete_area(
+    area_id: str = typer.Argument(..., help="Area ID to delete"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Delete even if area has devices/entities"
+    ),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Delete an area."""
+    setup_logging(debug)
+
+    async def _delete() -> None:
+        formatter = PorcelainFormatter("areas delete") if porcelain else None
+
+        url_final, token_final = get_client_config(url, token)
+
+        async with HAClient(url_final, token_final) as client:
+            service = AreaService(client)
+
+            try:
+                # Get area info before deletion for output
+                area_info = await service.get_area(area_id)
+                area_name = area_info.name if area_info else area_id
+
+                await service.delete_area(area_id, force=force)
+
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.success(
+                        {"area_id": area_id, "deleted": True},
+                        metadata={"area_id": area_id, "action": "deleted"},
+                        suggestions={
+                            "common_actions": [
+                                "List all areas: ha-cli areas list",
+                            ]
+                        },
+                    )
+                    write_output(output)
+                else:
+                    console.print(
+                        f"[green]✓[/green] Deleted area '[bold]{area_name}[/bold]'"
+                    )
+            except NotFoundError as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="NOT_FOUND")
+                    write_output(output)
+                else:
+                    console.print(f"[red]Error:[/red] {e}")
+                sys.exit(EXIT_USAGE_ERROR)
+            except ValidationError as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="VALIDATION_ERROR")
+                    write_output(output)
+                else:
+                    console.print(f"[red]Error:[/red] {e}")
+                sys.exit(EXIT_USAGE_ERROR)
+
+    asyncio.run(run_async_command(_delete()))
 
 
 @app.command("version")

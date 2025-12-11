@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from ha_cli.common.exceptions import NotFoundError, ValidationError
 from ha_cli.domains.areas.service import AreaService
 
 
@@ -266,3 +267,190 @@ class TestAreaService:
         unassigned = await service.get_unassigned_entities()
         assert len(unassigned) == 1
         assert unassigned[0].entity_id == "sensor.orphan"
+
+
+class TestAreaServiceCRUD:
+    """Test AreaService CRUD operations."""
+
+    @pytest.mark.asyncio()
+    async def test_create_area_success(
+        self, service: AreaService, mock_client: MagicMock
+    ) -> None:
+        """Test creating an area successfully."""
+        mock_client._ws_call.return_value = {
+            "area_id": "new_area",
+            "name": "New Area",
+            "icon": "mdi:home",
+        }
+        area = await service.create_area(name="New Area", icon="mdi:home")
+        assert area.area_id == "new_area"
+        assert area.name == "New Area"
+        assert area.icon == "mdi:home"
+        mock_client._ws_call.assert_called_once_with(
+            "config/area_registry/create",
+            name="New Area",
+            icon="mdi:home",
+        )
+
+    @pytest.mark.asyncio()
+    async def test_create_area_with_all_options(
+        self, service: AreaService, mock_client: MagicMock
+    ) -> None:
+        """Test creating an area with all optional parameters."""
+        mock_client._ws_call.return_value = {
+            "area_id": "new_area",
+            "name": "New Area",
+            "floor_id": "ground",
+            "icon": "mdi:home",
+            "aliases": ["alias1", "alias2"],
+            "labels": ["label1"],
+        }
+        area = await service.create_area(
+            name="New Area",
+            floor_id="ground",
+            icon="mdi:home",
+            aliases=["alias1", "alias2"],
+            labels=["label1"],
+        )
+        assert area.name == "New Area"
+        assert area.floor_id == "ground"
+        mock_client._ws_call.assert_called_once()
+
+    @pytest.mark.asyncio()
+    async def test_create_area_duplicate(
+        self, service: AreaService, mock_client: MagicMock
+    ) -> None:
+        """Test creating an area with a name that already exists."""
+        mock_client._ws_call.side_effect = Exception(
+            "name is already in use"
+        )
+        with pytest.raises(ValidationError, match="already exists"):
+            await service.create_area(name="Existing Area")
+
+    @pytest.mark.asyncio()
+    async def test_update_area_success(
+        self, service: AreaService, mock_client: MagicMock
+    ) -> None:
+        """Test updating an area successfully."""
+        mock_client._ws_call.return_value = {
+            "area_id": "kitchen",
+            "name": "Updated Kitchen",
+            "icon": "mdi:silverware-fork-knife",
+        }
+        area = await service.update_area(
+            area_id="kitchen",
+            name="Updated Kitchen",
+            icon="mdi:silverware-fork-knife",
+        )
+        assert area.name == "Updated Kitchen"
+        assert area.icon == "mdi:silverware-fork-knife"
+
+    @pytest.mark.asyncio()
+    async def test_update_area_not_found(
+        self, service: AreaService, mock_client: MagicMock
+    ) -> None:
+        """Test updating a non-existent area."""
+        mock_client._ws_call.side_effect = Exception("unknown area")
+        with pytest.raises(NotFoundError, match="not found"):
+            await service.update_area(area_id="nonexistent", name="New Name")
+
+    @pytest.mark.asyncio()
+    async def test_update_area_name_conflict(
+        self, service: AreaService, mock_client: MagicMock
+    ) -> None:
+        """Test updating area to a name that already exists."""
+        mock_client._ws_call.side_effect = Exception(
+            "name is already in use"
+        )
+        with pytest.raises(ValidationError, match="already in use"):
+            await service.update_area(area_id="kitchen", name="Living Room")
+
+    @pytest.mark.asyncio()
+    async def test_rename_area_success(
+        self, service: AreaService, mock_client: MagicMock
+    ) -> None:
+        """Test renaming an area (convenience method)."""
+        mock_client._ws_call.return_value = {
+            "area_id": "kitchen",
+            "name": "New Kitchen Name",
+        }
+        area = await service.rename_area("kitchen", "New Kitchen Name")
+        assert area.name == "New Kitchen Name"
+        mock_client._ws_call.assert_called_once_with(
+            "config/area_registry/update",
+            area_id="kitchen",
+            name="New Kitchen Name",
+        )
+
+    @pytest.mark.asyncio()
+    async def test_delete_area_success(
+        self, service: AreaService, mock_client: MagicMock
+    ) -> None:
+        """Test deleting an empty area."""
+        # Mock for get_area check (empty area)
+        mock_client._ws_call.side_effect = [
+            # list_areas
+            [{"area_id": "empty_room", "name": "Empty Room"}],
+            # list_devices
+            [],
+            # list_entities
+            [],
+            # delete
+            None,
+        ]
+        await service.delete_area("empty_room")
+        # Verify delete was called
+        assert mock_client._ws_call.call_count == 4
+
+    @pytest.mark.asyncio()
+    async def test_delete_area_with_contents_no_force(
+        self, service: AreaService, mock_client: MagicMock
+    ) -> None:
+        """Test deleting area with devices/entities without force flag."""
+        mock_client._ws_call.side_effect = [
+            # list_areas
+            [{"area_id": "kitchen", "name": "Kitchen"}],
+            # list_devices
+            [{"id": "dev1", "name": "Device 1", "area_id": "kitchen"}],
+            # list_entities
+            [{"entity_id": "light.kitchen", "area_id": "kitchen", "platform": "hue"}],
+        ]
+        with pytest.raises(ValidationError, match="has 1 devices"):
+            await service.delete_area("kitchen")
+
+    @pytest.mark.asyncio()
+    async def test_delete_area_with_force(
+        self, service: AreaService, mock_client: MagicMock
+    ) -> None:
+        """Test deleting area with force flag skips safety check."""
+        mock_client._ws_call.return_value = None
+        await service.delete_area("kitchen", force=True)
+        mock_client._ws_call.assert_called_once_with(
+            "config/area_registry/delete",
+            area_id="kitchen",
+        )
+
+    @pytest.mark.asyncio()
+    async def test_delete_area_not_found(
+        self, service: AreaService, mock_client: MagicMock
+    ) -> None:
+        """Test deleting a non-existent area."""
+        mock_client._ws_call.side_effect = [
+            # list_areas (for get_area check)
+            [],
+            # list_devices
+            [],
+            # list_entities
+            [],
+        ]
+        with pytest.raises(NotFoundError, match="not found"):
+            await service.delete_area("nonexistent")
+
+    @pytest.mark.asyncio()
+    async def test_delete_area_force_not_found(
+        self, service: AreaService, mock_client: MagicMock
+    ) -> None:
+        """Test deleting non-existent area with force flag."""
+        mock_client._ws_call.side_effect = Exception("unknown area")
+        with pytest.raises(NotFoundError, match="not found"):
+            await service.delete_area("nonexistent", force=True)
