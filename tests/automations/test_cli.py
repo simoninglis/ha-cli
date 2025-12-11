@@ -14,8 +14,8 @@ runner = CliRunner()
 class TestAutomationsCLI:
     """Test automations CLI commands."""
 
-    @patch("ha_cli.domains.automations.cli.get_client_config")
-    @patch("ha_cli.domains.automations.cli.HAClient")
+    @patch("ha_cli.domains.automations.commands.list_cmd.get_client_config")
+    @patch("ha_cli.domains.automations.commands.list_cmd.HAClient")
     @patch(
         "ha_cli.domains.automations.storage"
         ".unified_automation_service.UnifiedAutomationService"
@@ -50,8 +50,8 @@ class TestAutomationsCLI:
         assert result.exit_code == 0
         assert "Test Automation 1" in result.stdout
 
-    @patch("ha_cli.domains.automations.cli.get_client_config")
-    @patch("ha_cli.domains.automations.cli.HAClient")
+    @patch("ha_cli.domains.automations.commands.list_cmd.get_client_config")
+    @patch("ha_cli.domains.automations.commands.list_cmd.HAClient")
     @patch(
         "ha_cli.domains.automations.storage"
         ".unified_automation_service.UnifiedAutomationService"
@@ -88,8 +88,8 @@ class TestAutomationsCLI:
         output = json.loads(result.stdout)
         assert isinstance(output, list)
 
-    @patch("ha_cli.domains.automations.cli.get_client_config")
-    @patch("ha_cli.domains.automations.cli.HAClient")
+    @patch("ha_cli.domains.automations.commands.list_cmd.get_client_config")
+    @patch("ha_cli.domains.automations.commands.list_cmd.HAClient")
     @patch(
         "ha_cli.domains.automations.storage"
         ".unified_automation_service.UnifiedAutomationService"
@@ -127,9 +127,9 @@ class TestAutomationsCLI:
         assert output["status"] == "success"
         assert "data" in output
 
-    @patch("ha_cli.domains.automations.cli.get_client_config")
-    @patch("ha_cli.domains.automations.cli.HAClient")
-    @patch("ha_cli.domains.automations.cli.AutomationCRUD")
+    @patch("ha_cli.domains.automations.commands.read_cmd.get_client_config")
+    @patch("ha_cli.domains.automations.commands.read_cmd.HAClient")
+    @patch("ha_cli.domains.automations.commands.read_cmd.AutomationCRUD")
     def test_read_command(
         self,
         mock_service_class: MagicMock,
@@ -159,8 +159,8 @@ class TestAutomationsCLI:
         assert result.exit_code == 0
         assert "test_1" in result.stdout
 
-    @patch("ha_cli.domains.automations.cli.get_client_config")
-    @patch("ha_cli.domains.automations.cli.HAClient")
+    @patch("ha_cli.domains.automations.commands.control_cmd.get_client_config")
+    @patch("ha_cli.domains.automations.commands.control_cmd.HAClient")
     def test_enable_command(
         self, mock_client_class: MagicMock, mock_config: MagicMock
     ) -> None:
@@ -174,8 +174,8 @@ class TestAutomationsCLI:
         assert result.exit_code == 0
         assert "enabled" in result.stdout.lower() or "Enable" in result.stdout
 
-    @patch("ha_cli.domains.automations.cli.get_client_config")
-    @patch("ha_cli.domains.automations.cli.HAClient")
+    @patch("ha_cli.domains.automations.commands.control_cmd.get_client_config")
+    @patch("ha_cli.domains.automations.commands.control_cmd.HAClient")
     def test_disable_command(
         self, mock_client_class: MagicMock, mock_config: MagicMock
     ) -> None:
@@ -189,8 +189,8 @@ class TestAutomationsCLI:
         assert result.exit_code == 0
         assert "disabled" in result.stdout.lower() or "Disable" in result.stdout
 
-    @patch("ha_cli.domains.automations.cli.get_client_config")
-    @patch("ha_cli.domains.automations.cli.HAClient")
+    @patch("ha_cli.domains.automations.commands.control_cmd.get_client_config")
+    @patch("ha_cli.domains.automations.commands.control_cmd.HAClient")
     def test_reload_command(
         self, mock_client_class: MagicMock, mock_config: MagicMock
     ) -> None:
