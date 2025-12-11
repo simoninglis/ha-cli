@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import ssl
 import time
 from collections.abc import AsyncIterator, Callable
 from typing import Any
@@ -219,7 +220,7 @@ class HAClient:
                     
                     return
                     
-                except (websockets.exceptions.WebSocketException, ConnectionError) as e:
+                except (websockets.exceptions.WebSocketException, ConnectionError, ssl.SSLError, asyncio.TimeoutError) as e:
                     retry_count += 1
                     if retry_count >= 3:
                         raise WebSocketError(f"Failed to connect after 3 retries: {e}") from e

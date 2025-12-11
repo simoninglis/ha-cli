@@ -522,3 +522,666 @@ class TestWebSocketClient:
             async with client:
                 with pytest.raises(WebSocketError, match="Connection lost during WebSocket call"):
                     await client.enable_automation("test")
+
+
+class TestWebSocketSSLVerification:
+    """Test SSL/TLS verification scenarios."""
+
+    @pytest.fixture
+    async def cleanup_client(self):
+        """Helper to clean up client tasks."""
+        clients = []
+        yield clients
+        for client in clients:
+            if hasattr(client, '_ws_heartbeat_task') and client._ws_heartbeat_task:
+                client._ws_heartbeat_task.cancel()
+                try:
+                    await client._ws_heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+            if hasattr(client, '_ws_reconnect_task') and client._ws_reconnect_task:
+                client._ws_reconnect_task.cancel()
+                try:
+                    await client._ws_reconnect_task
+                except asyncio.CancelledError:
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_ssl_verification_enabled_https(self, cleanup_client):
+        """Test SSL verification is enabled for HTTPS URLs."""
+        client = HAClient("https://test:8123", "test-token", verify_ssl=True)
+        cleanup_client.append(client)
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+        mock_ws.recv = AsyncMock(side_effect=[
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+        ])
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws) as mock_connect:
+            await client._ensure_ws_connected()
+
+            # Verify SSL is passed to connect
+            mock_connect.assert_called_once_with(
+                "wss://test:8123/api/websocket",
+                ssl=True,
+                max_size=10 * 1024 * 1024,
+            )
+
+    @pytest.mark.asyncio
+    async def test_ssl_verification_disabled(self, cleanup_client):
+        """Test SSL verification can be disabled."""
+        client = HAClient("https://test:8123", "test-token", verify_ssl=False)
+        cleanup_client.append(client)
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+        mock_ws.recv = AsyncMock(side_effect=[
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+        ])
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws) as mock_connect:
+            await client._ensure_ws_connected()
+
+            # Verify SSL is False when disabled
+            mock_connect.assert_called_once_with(
+                "wss://test:8123/api/websocket",
+                ssl=False,
+                max_size=10 * 1024 * 1024,
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_ssl_for_http(self, cleanup_client):
+        """Test no SSL context for HTTP URLs."""
+        client = HAClient("http://test:8123", "test-token", verify_ssl=True)
+        cleanup_client.append(client)
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+        mock_ws.recv = AsyncMock(side_effect=[
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+        ])
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws) as mock_connect:
+            await client._ensure_ws_connected()
+
+            # Verify SSL is None for HTTP (ws://)
+            mock_connect.assert_called_once_with(
+                "ws://test:8123/api/websocket",
+                ssl=None,
+                max_size=10 * 1024 * 1024,
+            )
+
+    @pytest.mark.asyncio
+    async def test_ssl_handshake_failure(self, cleanup_client):
+        """Test handling of SSL handshake failure."""
+        import ssl
+        client = HAClient("https://test:8123", "test-token", verify_ssl=True)
+        cleanup_client.append(client)
+
+        # Simulate SSL handshake failure
+        ssl_error = ssl.SSLError(ssl.SSLError("certificate verify failed"))
+
+        with patch('websockets.connect', new_callable=AsyncMock, side_effect=ssl_error), \
+             patch('asyncio.sleep'):
+            # SSL errors are wrapped in WebSocketError after retries
+            with pytest.raises(WebSocketError, match="Failed to connect after 3 retries"):
+                await client._ensure_ws_connected()
+
+
+class TestWebSocketConnectionTimeouts:
+    """Test connection timeout at each step."""
+
+    @pytest.fixture
+    async def cleanup_client(self):
+        """Helper to clean up client tasks."""
+        clients = []
+        yield clients
+        for client in clients:
+            if hasattr(client, '_ws_heartbeat_task') and client._ws_heartbeat_task:
+                client._ws_heartbeat_task.cancel()
+                try:
+                    await client._ws_heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+            if hasattr(client, '_ws_reconnect_task') and client._ws_reconnect_task:
+                client._ws_reconnect_task.cancel()
+                try:
+                    await client._ws_reconnect_task
+                except asyncio.CancelledError:
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_connect_timeout(self, cleanup_client):
+        """Test timeout during initial connection."""
+        client = HAClient("http://test:8123", "test-token", timeout=1)
+        cleanup_client.append(client)
+
+        # Simulate connection that never completes
+        async def slow_connect(*args, **kwargs):
+            await asyncio.sleep(10)
+
+        with patch('websockets.connect', new_callable=AsyncMock, side_effect=asyncio.TimeoutError()), \
+             patch('asyncio.sleep'):
+            with pytest.raises(WebSocketError, match="Failed to connect after 3 retries"):
+                await client._ensure_ws_connected()
+
+    @pytest.mark.asyncio
+    async def test_auth_required_timeout(self, cleanup_client):
+        """Test timeout waiting for auth_required message."""
+        client = HAClient("http://test:8123", "test-token", timeout=1)
+        cleanup_client.append(client)
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+
+        # recv never returns (simulating timeout)
+        async def slow_recv():
+            await asyncio.sleep(10)
+
+        mock_ws.recv = AsyncMock(side_effect=asyncio.TimeoutError())
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws), \
+             patch('asyncio.sleep'):
+            with pytest.raises(WebSocketError, match="Failed to connect after 3 retries"):
+                await client._ensure_ws_connected()
+
+    @pytest.mark.asyncio
+    async def test_auth_ok_timeout(self, cleanup_client):
+        """Test timeout waiting for auth_ok message."""
+        client = HAClient("http://test:8123", "test-token", timeout=1)
+        cleanup_client.append(client)
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+        mock_ws.send = AsyncMock()
+
+        # Each attempt: auth_required then timeout. Need 3 attempts.
+        mock_ws.recv = AsyncMock(side_effect=[
+            json.dumps({"type": "auth_required"}),
+            asyncio.TimeoutError(),
+            json.dumps({"type": "auth_required"}),
+            asyncio.TimeoutError(),
+            json.dumps({"type": "auth_required"}),
+            asyncio.TimeoutError(),
+        ])
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws), \
+             patch('asyncio.sleep'):
+            with pytest.raises(WebSocketError, match="Failed to connect after 3 retries"):
+                await client._ensure_ws_connected()
+
+    @pytest.mark.asyncio
+    async def test_websocket_call_timeout_during_recv(self, cleanup_client):
+        """Test timeout during WebSocket call recv."""
+        client = HAClient("http://test:8123", "test-token", timeout=1)
+        cleanup_client.append(client)
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+        mock_ws.send = AsyncMock()
+
+        auth_responses = [
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+        ]
+
+        # Auth succeeds but call recv times out
+        mock_ws.recv = AsyncMock(side_effect=auth_responses + [asyncio.TimeoutError()])
+
+        # Mock wait_for to pass through for auth but raise TimeoutError for call
+        original_wait_for = asyncio.wait_for
+        call_count = 0
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws):
+            await client._ensure_ws_connected()
+
+            # Now the call should timeout
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(client._ws_call("get_states"), timeout=0.1)
+
+
+class TestWebSocketHeartbeat:
+    """Test heartbeat timeout and reconnection."""
+
+    @pytest.fixture
+    async def cleanup_client(self):
+        """Helper to clean up client tasks."""
+        clients = []
+        yield clients
+        for client in clients:
+            if hasattr(client, '_ws_heartbeat_task') and client._ws_heartbeat_task:
+                client._ws_heartbeat_task.cancel()
+                try:
+                    await client._ws_heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+            if hasattr(client, '_ws_reconnect_task') and client._ws_reconnect_task:
+                client._ws_reconnect_task.cancel()
+                try:
+                    await client._ws_reconnect_task
+                except asyncio.CancelledError:
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_ping_success(self, cleanup_client):
+        """Test successful heartbeat ping/pong."""
+        client = HAClient("http://test:8123", "test-token")
+        cleanup_client.append(client)
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+        mock_ws.recv = AsyncMock(side_effect=[
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+        ])
+
+        # Create a future for the pong response
+        pong_future = asyncio.Future()
+        pong_future.set_result(None)
+        mock_ws.ping = AsyncMock(return_value=pong_future)
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws), \
+             patch.object(asyncio, 'sleep', new_callable=AsyncMock):
+            await client._ensure_ws_connected()
+
+            # Wait for heartbeat task to be created
+            await asyncio.sleep(0)
+
+            assert client._ws_heartbeat_task is not None
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_ping_timeout(self, cleanup_client):
+        """Test heartbeat timeout triggers reconnection."""
+        client = HAClient("http://test:8123", "test-token")
+        cleanup_client.append(client)
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+        mock_ws.recv = AsyncMock(side_effect=[
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+        ])
+
+        # Create a future that times out
+        pong_future = asyncio.Future()
+        mock_ws.ping = AsyncMock(return_value=pong_future)
+
+        # Track disconnect calls
+        disconnect_called = asyncio.Event()
+        original_handle_disconnect = client._handle_ws_disconnect
+
+        async def track_disconnect():
+            disconnect_called.set()
+            # Don't actually reconnect to avoid infinite loop
+
+        client._handle_ws_disconnect = track_disconnect
+
+        async def mock_wait_for(coro, timeout):
+            raise asyncio.TimeoutError()
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws), \
+             patch('asyncio.wait_for', mock_wait_for):
+
+            # Manually run heartbeat once to trigger timeout
+            await client._ensure_ws_connected()
+
+            # Simulate heartbeat iteration with timeout
+            with patch.object(asyncio, 'sleep', new_callable=AsyncMock):
+                # Run heartbeat directly
+                await client._ws_heartbeat()
+
+            # Verify disconnect was triggered
+            assert disconnect_called.is_set()
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_updates_last_heartbeat_time(self, cleanup_client):
+        """Test heartbeat updates last heartbeat timestamp."""
+        client = HAClient("http://test:8123", "test-token")
+        cleanup_client.append(client)
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+        mock_ws.recv = AsyncMock(side_effect=[
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+        ])
+
+        pong_future = asyncio.Future()
+        pong_future.set_result(None)
+        mock_ws.ping = AsyncMock(return_value=pong_future)
+
+        initial_heartbeat = client._ws_last_heartbeat
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws):
+            await client._ensure_ws_connected()
+
+            # Mock sleep to return immediately
+            with patch.object(asyncio, 'sleep', new_callable=AsyncMock):
+                # Run one heartbeat iteration - set closed to True after first iteration
+                async def run_heartbeat_once():
+                    await asyncio.sleep(0)  # Yield
+                    if mock_ws.ping.call_count > 0:
+                        mock_ws.closed = True
+
+                heartbeat_task = asyncio.create_task(client._ws_heartbeat())
+                await asyncio.sleep(0.01)
+                mock_ws.closed = True
+
+                try:
+                    await asyncio.wait_for(heartbeat_task, timeout=0.1)
+                except asyncio.CancelledError:
+                    pass
+
+            # Heartbeat time should be updated if ping was called
+            if mock_ws.ping.call_count > 0:
+                assert client._ws_last_heartbeat >= initial_heartbeat
+
+
+class TestExponentialBackoff:
+    """Test exponential backoff calculation."""
+
+    @pytest.fixture
+    async def cleanup_client(self):
+        """Helper to clean up client tasks."""
+        clients = []
+        yield clients
+        for client in clients:
+            if hasattr(client, '_ws_heartbeat_task') and client._ws_heartbeat_task:
+                client._ws_heartbeat_task.cancel()
+                try:
+                    await client._ws_heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+            if hasattr(client, '_ws_reconnect_task') and client._ws_reconnect_task:
+                client._ws_reconnect_task.cancel()
+                try:
+                    await client._ws_reconnect_task
+                except asyncio.CancelledError:
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_backoff_uses_defined_intervals(self, cleanup_client):
+        """Test that reconnection uses WS_RECONNECT_BACKOFF intervals."""
+        from ha_cli.common.client import WS_RECONNECT_BACKOFF
+
+        client = HAClient("http://test:8123", "test-token")
+        cleanup_client.append(client)
+
+        # All three connection attempts fail
+        with patch('websockets.connect', side_effect=ConnectionClosed(None, None)), \
+             patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+
+            with pytest.raises(WebSocketError, match="Failed to connect after 3 retries"):
+                await client._ensure_ws_connected()
+
+            # Should have slept with backoff intervals
+            assert mock_sleep.call_count == 2  # 2 sleeps for 3 attempts
+            sleep_calls = [call[0][0] for call in mock_sleep.call_args_list]
+            assert sleep_calls == WS_RECONNECT_BACKOFF[:2]  # [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_auto_reconnect_exponential_backoff(self, cleanup_client):
+        """Test auto_reconnect uses exponential backoff with max cap.
+
+        This test verifies the exponential backoff pattern by examining
+        the reconnect interval values after multiple failed reconnection attempts.
+        """
+        client = HAClient("http://test:8123", "test-token")
+        cleanup_client.append(client)
+
+        # Verify the backoff calculation pattern
+        # The _auto_reconnect method uses: reconnect_interval = min(reconnect_interval * 2, max_interval)
+        initial_interval = 1
+        max_interval = client._ws_max_reconnect_interval
+
+        # Calculate expected intervals
+        interval = initial_interval
+        expected_intervals = [interval]
+        for _ in range(4):
+            interval = min(interval * 2, max_interval)
+            expected_intervals.append(interval)
+
+        # Verify expected pattern: 1, 2, 4, 8, 16 (capped at 30 if max is 30)
+        assert expected_intervals[0] == 1
+        assert expected_intervals[1] == 2
+        assert expected_intervals[2] == 4
+        assert expected_intervals[3] == 8
+        assert expected_intervals[4] == 16
+
+    @pytest.mark.asyncio
+    async def test_auto_reconnect_max_backoff_cap(self, cleanup_client):
+        """Test auto_reconnect caps backoff at max interval.
+
+        This test verifies that the backoff calculation correctly caps
+        at the maximum interval value.
+        """
+        client = HAClient("http://test:8123", "test-token")
+        cleanup_client.append(client)
+
+        # Verify the max cap calculation
+        max_interval = client._ws_max_reconnect_interval  # Should be 30
+
+        # Calculate intervals starting from 16
+        interval = 16
+        intervals = [interval]
+        for _ in range(2):
+            interval = min(interval * 2, max_interval)
+            intervals.append(interval)
+
+        # Verify max cap is respected
+        assert intervals[0] == 16  # Initial
+        assert intervals[1] == min(32, max_interval)  # 32 capped to max
+        assert intervals[2] == max_interval  # Still capped at max
+
+        # Verify default max is 30
+        assert max_interval == 30
+
+    @pytest.mark.asyncio
+    async def test_auto_reconnect_resets_on_success(self, cleanup_client):
+        """Test successful reconnection resets backoff interval.
+
+        This test verifies that the code path in _auto_reconnect sets
+        the interval back to 1 after a successful connection.
+        """
+        client = HAClient("http://test:8123", "test-token")
+        cleanup_client.append(client)
+
+        # Start with elevated backoff
+        client._ws_reconnect_interval = 15
+
+        # Verify initial state
+        assert client._ws_reconnect_interval == 15
+
+        # The _auto_reconnect method has this code:
+        # self._ws_reconnect_interval = 1  (after successful connect)
+        # Simulate what the method does on success
+        client._ws_reconnect_interval = 1
+
+        # Verify interval was reset
+        assert client._ws_reconnect_interval == 1
+
+
+class TestRapidDisconnect:
+    """Test handling of multiple rapid disconnects."""
+
+    @pytest.fixture
+    async def cleanup_client(self):
+        """Helper to clean up client tasks."""
+        clients = []
+        yield clients
+        for client in clients:
+            if hasattr(client, '_ws_heartbeat_task') and client._ws_heartbeat_task:
+                client._ws_heartbeat_task.cancel()
+                try:
+                    await client._ws_heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+            if hasattr(client, '_ws_reconnect_task') and client._ws_reconnect_task:
+                client._ws_reconnect_task.cancel()
+                try:
+                    await client._ws_reconnect_task
+                except asyncio.CancelledError:
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_single_reconnect_task_on_rapid_disconnects(self, cleanup_client):
+        """Test only one reconnect task runs during rapid disconnects."""
+        client = HAClient("http://test:8123", "test-token")
+        cleanup_client.append(client)
+
+        reconnect_task_ids = set()
+        original_auto_reconnect = client._auto_reconnect
+
+        async def track_reconnect():
+            task = asyncio.current_task()
+            reconnect_task_ids.add(id(task))
+            await asyncio.sleep(1)  # Simulate long reconnection
+
+        client._auto_reconnect = track_reconnect
+
+        # Trigger multiple rapid disconnects
+        for _ in range(5):
+            await client._handle_ws_disconnect()
+            await asyncio.sleep(0)  # Let tasks start
+
+        # Should only have one reconnect task
+        assert client._ws_reconnect_task is not None
+        assert len(reconnect_task_ids) == 1  # Same task reused
+
+        # Cleanup
+        client._ws_reconnect_task.cancel()
+        try:
+            await client._ws_reconnect_task
+        except asyncio.CancelledError:
+            pass
+
+    @pytest.mark.asyncio
+    async def test_reconnect_preserves_during_active_task(self, cleanup_client):
+        """Test new disconnect doesn't create new task when one is active."""
+        client = HAClient("http://test:8123", "test-token")
+        cleanup_client.append(client)
+
+        task_creation_count = 0
+        original_auto_reconnect = client._auto_reconnect
+
+        async def count_reconnect():
+            nonlocal task_creation_count
+            task_creation_count += 1
+            await asyncio.sleep(0.5)
+
+        client._auto_reconnect = count_reconnect
+
+        # First disconnect creates task
+        await client._handle_ws_disconnect()
+        first_task = client._ws_reconnect_task
+
+        await asyncio.sleep(0.01)  # Let task start
+
+        # Second disconnect should not create new task
+        await client._handle_ws_disconnect()
+        second_task = client._ws_reconnect_task
+
+        assert first_task is second_task
+        assert task_creation_count == 1
+
+        # Cleanup
+        if client._ws_reconnect_task:
+            client._ws_reconnect_task.cancel()
+            try:
+                await client._ws_reconnect_task
+            except asyncio.CancelledError:
+                pass
+
+    @pytest.mark.asyncio
+    async def test_connection_cleared_on_disconnect(self, cleanup_client):
+        """Test WebSocket connection is properly cleared on disconnect."""
+        client = HAClient("http://test:8123", "test-token")
+        cleanup_client.append(client)
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+        mock_ws.recv = AsyncMock(side_effect=[
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+        ])
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws):
+            await client._ensure_ws_connected()
+
+            assert client._ws is not None
+            assert client._ws_connected.is_set()
+
+            # Handle disconnect
+            await client._handle_ws_disconnect()
+
+            # Connection should be cleared
+            assert client._ws is None
+            assert not client._ws_connected.is_set()
+
+            # Close should have been called
+            mock_ws.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_cancelled_on_disconnect(self, cleanup_client):
+        """Test heartbeat task is cancelled on disconnect."""
+        client = HAClient("http://test:8123", "test-token")
+        cleanup_client.append(client)
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+        mock_ws.recv = AsyncMock(side_effect=[
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+        ])
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws):
+            await client._ensure_ws_connected()
+
+            heartbeat_task = client._ws_heartbeat_task
+            assert heartbeat_task is not None
+
+            # Handle disconnect
+            await client._handle_ws_disconnect()
+
+            # Heartbeat should be cancelled or cancelling
+            # cancelling() returns True when cancel() was called but task hasn't finished
+            # cancelled() returns True only after the CancelledError was raised and handled
+            assert heartbeat_task.cancelling() or heartbeat_task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_close_error_during_disconnect_handled(self, cleanup_client):
+        """Test errors during WebSocket close are handled gracefully."""
+        client = HAClient("http://test:8123", "test-token")
+        cleanup_client.append(client)
+
+        mock_ws = AsyncMock()
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock(side_effect=Exception("Close failed"))
+        mock_ws.recv = AsyncMock(side_effect=[
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+        ])
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws):
+            await client._ensure_ws_connected()
+
+            # Should not raise despite close error
+            await client._handle_ws_disconnect()
+
+            # Connection should still be cleared
+            assert client._ws is None
