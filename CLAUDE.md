@@ -229,7 +229,7 @@ The ha-cli codebase follows a domain-driven structure with shared utilities:
 ```
 ha_cli/
 ├── common/                    # Shared infrastructure
-│   ├── cli_utils.py          # Shared CLI utilities (setup_logging, run_async_command)
+│   ├── cli_utils.py          # Shared CLI utilities (setup_logging, run_async_command, write_output)
 │   ├── client.py             # WebSocket/REST client with connection constants
 │   ├── config.py             # Configuration management with security checks
 │   ├── exceptions.py         # Custom exceptions with docstrings
@@ -237,11 +237,27 @@ ha_cli/
 │   └── utils.py              # General utilities (YAML, config file ops)
 ├── domains/                   # Domain-specific code
 │   ├── automations/          # Automation management
+│   │   ├── commands/         # Command modules (modular architecture)
+│   │   │   ├── list_cmd.py   # List automations
+│   │   │   ├── read_cmd.py   # Read automation details
+│   │   │   ├── control_cmd.py # Enable/disable/reload
+│   │   │   └── crud_cmd.py   # Create/update/delete
+│   │   ├── cli.py            # Command registration
+│   │   ├── models.py         # Pydantic models
+│   │   └── service.py        # Business logic
+│   ├── areas/                # Area management (with CRUD operations)
 │   ├── audit/                # Tech debt auditing (dead entities, unused automations, etc.)
 │   ├── dashboards/           # Dashboard management
 │   └── entities/             # Entity management
 └── __main__.py               # CLI entry point
 ```
+
+### Modular CLI Architecture
+
+Large CLI modules are split into focused command modules under `commands/`:
+- Each command module is <300 lines for maintainability
+- Commands are imported and registered in the main `cli.py`
+- Tests patch at the command module level (e.g., `ha_cli.domains.automations.commands.list_cmd.HAClient`)
 
 ### Key Constants
 
