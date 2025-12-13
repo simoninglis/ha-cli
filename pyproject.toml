@@ -76,6 +76,9 @@ strict_equality = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "e2e: end-to-end tests that require live Home Assistant instance",
+]
 
 [tool.coverage.run]
 source = ["ha_automation"]

@@ -347,6 +347,7 @@ def rename(
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be renamed without doing it"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
     """Rename entities using regex patterns."""
@@ -456,26 +457,29 @@ def rename(
             if dry_run:
                 console.print("\n[yellow]Dry run mode - no changes made[/yellow]")
                 return
-            
-            # Enhanced confirmation with impact warnings
+
+            # Enhanced confirmation with impact warnings (skip if --force)
             console.print()
-            
+
             # Add impact-based warnings to confirmation
             warning_msg = f"Proceed with renaming {preview.valid_count} entities?"
             if high_impact_entities:
                 warning_msg = f"[red]WARNING:[/red] {len(high_impact_entities)} high-impact entities detected. " + warning_msg
             elif medium_impact_entities:
                 warning_msg = f"[yellow]CAUTION:[/yellow] {len(medium_impact_entities)} medium-impact entities detected. " + warning_msg
-            
+
             if total_automation_refs > 0 or total_dashboard_refs > 0:
                 msg = f"⚠ This operation will affect {total_automation_refs} automations and {total_dashboard_refs} dashboards"
                 console.print(f"[yellow]{msg}[/yellow]")
                 console.print("[yellow]⚠ Manual updates to configurations may be required after renaming[/yellow]")
-            
-            confirm = typer.confirm(warning_msg)
-            if not confirm:
-                console.print("[yellow]Rename operation cancelled[/yellow]")
-                return
+
+            if not force:
+                confirm = typer.confirm(warning_msg)
+                if not confirm:
+                    console.print("[yellow]Rename operation cancelled[/yellow]")
+                    return
+            else:
+                console.print(f"[yellow]{warning_msg} (--force used, skipping confirmation)[/yellow]")
             
             # Execute rename operations
             console.print("[cyan]Executing rename operations...[/cyan]")
