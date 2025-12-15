@@ -24,6 +24,7 @@ from .domains.automations import cli as automations_cli
 from .domains.dashboards import cli as dashboards_cli
 from .domains.deconz import cli as deconz_cli
 from .domains.entities import cli as entities_cli
+from .domains.labels import cli as labels_cli
 from .domains.system import cli as system_cli
 
 # Add subcommands
@@ -33,4 +34,5 @@ app.add_typer(automations_cli.app, name="automations")
 app.add_typer(dashboards_cli.app, name="dashboards")
 app.add_typer(deconz_cli.app, name="deconz")
 app.add_typer(entities_cli.app, name="entities")
+app.add_typer(labels_cli.app, name="labels")
 app.add_typer(system_cli.app, name="system")
