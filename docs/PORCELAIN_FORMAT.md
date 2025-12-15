@@ -93,7 +93,7 @@ Error responses include troubleshooting guidance:
     "Generate new long-lived access token"
   ],
   "related_commands": [
-    "Test connection: curl -H 'Authorization: Bearer <token>' <url>/api/"
+    "Test connection: ha-cli system info --porcelain"
   ]
 }
 ```

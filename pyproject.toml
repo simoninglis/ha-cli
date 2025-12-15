@@ -28,6 +28,8 @@ ruff = "^0.2"
 mypy = "^1.8"
 pytest-cov = "^4.1"
 types-pyyaml = "^6.0.12.20250915"
+playwright = "^1.57.0"
+pytest-playwright = "^0.7.2"
 
 [build-system]
 requires = ["poetry-core"]
@@ -78,6 +80,8 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
     "e2e: end-to-end tests that require live Home Assistant instance",
+    "smoke: critical smoke tests for deployment verification",
+    "integration: tests that require a live Home Assistant instance",
 ]
 
 [tool.coverage.run]
