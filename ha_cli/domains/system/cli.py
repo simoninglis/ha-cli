@@ -510,6 +510,132 @@ def info(
     asyncio.run(run_async_command(_info()))
 
 
+@app.command("call")
+def call(
+    service_spec: str = typer.Argument(..., help="Service to call (domain.service)"),
+    entity: list[str] = typer.Option(
+        None, "--entity", "-e", help="Target entity ID(s) - can be repeated"
+    ),
+    data: str | None = typer.Option(None, "--data", "-d", help="JSON service data"),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Call a Home Assistant service.
+
+    Examples:
+        ha-cli system call light.turn_on --entity light.office
+        ha-cli system call switch.turn_off --entity switch.pump
+        ha-cli system call climate.set_temperature --entity climate.lounge --data '{"temperature": 22}'
+        ha-cli system call homeassistant.restart
+        ha-cli system call notify.mobile_app_iphone --data '{"message": "Hello"}'
+    """
+    setup_logging(debug)
+
+    # Parse service spec
+    if "." not in service_spec:
+        console.print(
+            f"[red]Error:[/red] Invalid service format: '{service_spec}'. "
+            "Expected 'domain.service' (e.g., 'light.turn_on')"
+        )
+        sys.exit(1)
+
+    domain, service = service_spec.split(".", 1)
+
+    # Parse JSON data if provided
+    service_data: dict | None = None
+    if data:
+        try:
+            service_data = json.loads(data)
+        except json.JSONDecodeError as e:
+            console.print(f"[red]Error:[/red] Invalid JSON in --data: {e}")
+            sys.exit(1)
+
+    async def _call() -> None:
+        formatter = PorcelainFormatter("system call") if porcelain else None
+
+        url_final, token_final = get_client_config(url, token)
+
+        async with HAClient(url_final, token_final) as client:
+            service_obj = SystemService(client=client)
+
+            if not porcelain and not json_output:
+                entity_str = f" → {', '.join(entity)}" if entity else ""
+                console.print(f"[dim]Calling {domain}.{service}{entity_str}...[/dim]")
+
+            try:
+                result = await service_obj.call_service(
+                    domain=domain,
+                    service=service,
+                    entity_ids=list(entity) if entity else None,
+                    service_data=service_data,
+                )
+
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.success(
+                        {
+                            "action": "service_call",
+                            "domain": domain,
+                            "service": service,
+                            "entities": list(entity) if entity else [],
+                            "result": result,
+                        },
+                        metadata={
+                            "service_data": service_data,
+                        },
+                        suggestions={
+                            "common_actions": [
+                                f"Get state: ha-cli entities state {entity[0]}" if entity else "List entities: ha-cli entities list",
+                                f"List {domain} services: ha-cli system services {domain}",
+                            ],
+                            "related_commands": [
+                                "ha-cli system logs",
+                            ],
+                        },
+                    )
+                    write_output(output)
+                elif json_output:
+                    write_output(
+                        json.dumps(
+                            {
+                                "success": True,
+                                "domain": domain,
+                                "service": service,
+                                "entities": list(entity) if entity else [],
+                                "result": result,
+                            },
+                            indent=2,
+                        )
+                    )
+                else:
+                    console.print(f"[green]✓[/green] Service {domain}.{service} called successfully")
+                    if result and result != {"success": True}:
+                        console.print(f"[dim]Result: {result}[/dim]")
+
+            except Exception as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="SERVICE_CALL_FAILED")
+                    write_output(output)
+                elif json_output:
+                    write_output(
+                        json.dumps(
+                            {"success": False, "error": str(e)},
+                            indent=2,
+                        )
+                    )
+                else:
+                    console.print(f"[red]✗[/red] Service call failed: {e}")
+                sys.exit(EXIT_HA_ERROR)
+
+    asyncio.run(run_async_command(_call()))
+
+
 @app.command("version")
 def version() -> None:
     """Show system domain version."""

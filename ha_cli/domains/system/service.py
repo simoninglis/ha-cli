@@ -75,6 +75,53 @@ class SystemService:
     # API-based methods (preferred)
     # -------------------------------------------------------------------------
 
+    async def call_service(
+        self,
+        domain: str,
+        service: str,
+        entity_ids: list[str] | None = None,
+        service_data: dict | None = None,
+    ) -> dict:
+        """Call a Home Assistant service via WebSocket API.
+
+        Args:
+            domain: Service domain (e.g., "light", "switch", "automation")
+            service: Service name (e.g., "turn_on", "turn_off")
+            entity_ids: Optional list of entity IDs to target
+            service_data: Optional additional service data
+
+        Returns:
+            Result dict from service call
+
+        Raises:
+            HAAutomationError: If no API client or service call fails
+        """
+        from ...common.exceptions import HAAutomationError
+
+        if not self.client:
+            raise HAAutomationError("No API client available")
+
+        # Build target dict if entity_ids provided
+        target: dict | None = None
+        if entity_ids:
+            target = {"entity_id": entity_ids}
+
+        try:
+            # Build call arguments
+            call_kwargs: dict = {
+                "domain": domain,
+                "service": service,
+            }
+            if service_data:
+                call_kwargs["service_data"] = service_data
+            if target:
+                call_kwargs["target"] = target
+
+            result = await self.client._ws_call("call_service", **call_kwargs)
+            return dict(result) if isinstance(result, dict) else {"success": True}
+        except Exception as e:
+            raise HAAutomationError(f"Service call failed: {e}") from e
+
     async def restart_via_api(self) -> tuple[bool, str]:
         """Restart Home Assistant via API.
 

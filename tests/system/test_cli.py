@@ -536,6 +536,237 @@ class TestSystemInfo:
         assert output["data"]["version"] == "2025.12.1"
 
 
+class TestSystemCall:
+    """Test system call (service call) command."""
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_call_basic(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test basic service call."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.call_service = AsyncMock(return_value={"success": True})
+
+        result = runner.invoke(app, ["system", "call", "light.turn_on"])
+        assert result.exit_code == 0
+        assert "successfully" in result.stdout.lower()
+        mock_service.call_service.assert_called_once_with(
+            domain="light",
+            service="turn_on",
+            entity_ids=None,
+            service_data=None,
+        )
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_call_with_entity(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test service call with entity target."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.call_service = AsyncMock(return_value={"success": True})
+
+        result = runner.invoke(
+            app, ["system", "call", "light.turn_on", "--entity", "light.office"]
+        )
+        assert result.exit_code == 0
+        mock_service.call_service.assert_called_once_with(
+            domain="light",
+            service="turn_on",
+            entity_ids=["light.office"],
+            service_data=None,
+        )
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_call_with_multiple_entities(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test service call with multiple entity targets."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.call_service = AsyncMock(return_value={"success": True})
+
+        result = runner.invoke(
+            app,
+            [
+                "system", "call", "light.turn_on",
+                "--entity", "light.office",
+                "--entity", "light.kitchen",
+            ],
+        )
+        assert result.exit_code == 0
+        mock_service.call_service.assert_called_once_with(
+            domain="light",
+            service="turn_on",
+            entity_ids=["light.office", "light.kitchen"],
+            service_data=None,
+        )
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_call_with_data(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test service call with JSON data."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.call_service = AsyncMock(return_value={"success": True})
+
+        result = runner.invoke(
+            app,
+            [
+                "system", "call", "climate.set_temperature",
+                "--entity", "climate.lounge",
+                "--data", '{"temperature": 22}',
+            ],
+        )
+        assert result.exit_code == 0
+        mock_service.call_service.assert_called_once_with(
+            domain="climate",
+            service="set_temperature",
+            entity_ids=["climate.lounge"],
+            service_data={"temperature": 22},
+        )
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_call_json_output(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test service call with JSON output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.call_service = AsyncMock(return_value={"success": True})
+
+        result = runner.invoke(
+            app, ["system", "call", "light.turn_on", "--json"]
+        )
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["success"] is True
+        assert output["domain"] == "light"
+        assert output["service"] == "turn_on"
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_call_porcelain_output(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test service call with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.call_service = AsyncMock(return_value={"success": True})
+
+        result = runner.invoke(
+            app, ["system", "call", "light.turn_on", "--entity", "light.office", "--porcelain"]
+        )
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert output["data"]["domain"] == "light"
+        assert output["data"]["service"] == "turn_on"
+        assert "light.office" in output["data"]["entities"]
+
+    def test_call_invalid_service_format(self) -> None:
+        """Test error on invalid service format."""
+        result = runner.invoke(app, ["system", "call", "invalid_service"])
+        assert result.exit_code != 0
+        assert "Invalid service format" in result.stdout
+
+    def test_call_invalid_json_data(self) -> None:
+        """Test error on invalid JSON data."""
+        result = runner.invoke(
+            app, ["system", "call", "light.turn_on", "--data", "not valid json"]
+        )
+        assert result.exit_code != 0
+        assert "Invalid JSON" in result.stdout
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_call_service_failure(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test service call failure handling."""
+        from ha_cli.common.exceptions import HAAutomationError
+
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.call_service = AsyncMock(
+            side_effect=HAAutomationError("Service not found")
+        )
+
+        result = runner.invoke(app, ["system", "call", "invalid.service"])
+        assert result.exit_code != 0
+        assert "failed" in result.stdout.lower()
+
+
 class TestSystemVersion:
     """Test system version command."""
 
