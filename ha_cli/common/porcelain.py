@@ -135,7 +135,7 @@ class StreamingPorcelainFormatter:
         sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
         sys.stdout.flush()
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .exceptions import HAAutomationError
 
@@ -162,24 +162,24 @@ class CleanJSONEncoder(json.JSONEncoder):
 
 class PorcelainMetadata(BaseModel):
     """Metadata included in porcelain responses."""
-    
+
     total_count: int | None = None
     filtered_count: int | None = None
-    filters_applied: list[str] = []
+    filters_applied: list[str] = Field(default_factory=list)
     home_assistant: dict[str, Any] | None = None
     response_time_ms: int | None = None
-    
+
     model_config = ConfigDict(extra="allow")  # Allow additional metadata fields
 
 
 class PorcelainSuggestions(BaseModel):
     """Suggestions for common actions and troubleshooting."""
-    
-    common_actions: list[str] = []
-    detected_issues: list[str] = []
-    related_commands: list[str] = []
-    troubleshooting: list[str] = []
-    
+
+    common_actions: list[str] = Field(default_factory=list)
+    detected_issues: list[str] = Field(default_factory=list)
+    related_commands: list[str] = Field(default_factory=list)
+    troubleshooting: list[str] = Field(default_factory=list)
+
     model_config = ConfigDict(extra="allow")  # Allow additional suggestion fields
 
 
