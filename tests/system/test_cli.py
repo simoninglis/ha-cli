@@ -919,6 +919,296 @@ class TestSystemTemplate:
         assert "failed" in result.stdout.lower()
 
 
+class TestSystemIntegrations:
+    """Test system integrations command."""
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_integrations_list_all(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test listing all integrations."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_integrations = AsyncMock(
+            return_value=[
+                {
+                    "entry_id": "abc123",
+                    "domain": "sonos",
+                    "title": "Living Room Speaker",
+                    "state": "loaded",
+                    "disabled_by": None,
+                },
+                {
+                    "entry_id": "def456",
+                    "domain": "zha",
+                    "title": "Zigbee Coordinator",
+                    "state": "loaded",
+                    "disabled_by": None,
+                },
+            ]
+        )
+
+        result = runner.invoke(app, ["system", "integrations"])
+        assert result.exit_code == 0
+        assert "sonos" in result.stdout
+        assert "zha" in result.stdout
+        assert "loaded" in result.stdout
+        mock_service.get_integrations.assert_called_once_with(
+            domain=None,
+            unhealthy_only=False,
+        )
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_integrations_filter_by_domain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test filtering integrations by domain."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_integrations = AsyncMock(
+            return_value=[
+                {
+                    "entry_id": "abc123",
+                    "domain": "sonos",
+                    "title": "Living Room Speaker",
+                    "state": "loaded",
+                    "disabled_by": None,
+                },
+            ]
+        )
+
+        result = runner.invoke(app, ["system", "integrations", "--domain", "sonos"])
+        assert result.exit_code == 0
+        mock_service.get_integrations.assert_called_once_with(
+            domain="sonos",
+            unhealthy_only=False,
+        )
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_integrations_unhealthy_only(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test filtering for unhealthy integrations only."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_integrations = AsyncMock(
+            return_value=[
+                {
+                    "entry_id": "ghi789",
+                    "domain": "broken_integration",
+                    "title": "Broken",
+                    "state": "setup_error",
+                    "disabled_by": None,
+                },
+            ]
+        )
+
+        result = runner.invoke(app, ["system", "integrations", "--unhealthy"])
+        assert result.exit_code == 0
+        mock_service.get_integrations.assert_called_once_with(
+            domain=None,
+            unhealthy_only=True,
+        )
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_integrations_no_unhealthy_shows_healthy_message(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test that no unhealthy integrations shows healthy message."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_integrations = AsyncMock(return_value=[])
+
+        result = runner.invoke(app, ["system", "integrations", "--unhealthy"])
+        assert result.exit_code == 0
+        assert "healthy" in result.stdout.lower()
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_integrations_json_output(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test integrations with JSON output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_integrations = AsyncMock(
+            return_value=[
+                {
+                    "entry_id": "abc123",
+                    "domain": "sonos",
+                    "title": "Living Room",
+                    "state": "loaded",
+                    "disabled_by": None,
+                },
+            ]
+        )
+
+        result = runner.invoke(app, ["system", "integrations", "--json"])
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert "integrations" in output
+        assert output["count"] == 1
+        assert output["state_summary"]["loaded"] == 1
+        assert output["integrations"][0]["domain"] == "sonos"
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_integrations_porcelain_output(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test integrations with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_integrations = AsyncMock(
+            return_value=[
+                {
+                    "entry_id": "abc123",
+                    "domain": "zha",
+                    "title": "Zigbee",
+                    "state": "loaded",
+                    "disabled_by": None,
+                },
+            ]
+        )
+
+        result = runner.invoke(app, ["system", "integrations", "--porcelain"])
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert output["data"]["count"] == 1
+        assert "metadata" in output
+        assert "suggestions" in output
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_integrations_error_handling(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test integrations error handling."""
+        from ha_cli.common.exceptions import HAAutomationError
+
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_integrations = AsyncMock(
+            side_effect=HAAutomationError("Connection failed")
+        )
+
+        result = runner.invoke(app, ["system", "integrations"])
+        assert result.exit_code != 0
+        assert "failed" in result.stdout.lower()
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_integrations_mixed_states(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test integrations with mixed states show unhealthy first."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_integrations = AsyncMock(
+            return_value=[
+                {
+                    "entry_id": "abc",
+                    "domain": "good",
+                    "title": "Good Integration",
+                    "state": "loaded",
+                    "disabled_by": None,
+                },
+                {
+                    "entry_id": "def",
+                    "domain": "bad",
+                    "title": "Bad Integration",
+                    "state": "setup_error",
+                    "disabled_by": None,
+                },
+            ]
+        )
+
+        result = runner.invoke(app, ["system", "integrations"])
+        assert result.exit_code == 0
+        # setup_error should appear before loaded in output
+        stdout = result.stdout
+        error_pos = stdout.find("setup_error")
+        loaded_pos = stdout.find("loaded")
+        assert error_pos < loaded_pos  # Error states shown first
+
+
 class TestSystemVersion:
     """Test system version command."""
 

@@ -482,3 +482,66 @@ class SystemService:
             installation_type=info.get("machine", "unknown"),
             host=self.host,
         )
+
+    async def get_integrations(
+        self,
+        domain: str | None = None,
+        unhealthy_only: bool = False,
+    ) -> list[dict]:
+        """Get integration/config entry status via WebSocket API.
+
+        Args:
+            domain: Filter by integration domain (e.g., "sonos", "zha")
+            unhealthy_only: If True, only return entries with state != "loaded"
+
+        Returns:
+            List of config entry dicts with keys:
+            - entry_id: Unique ID
+            - domain: Integration domain
+            - title: Entry title/name
+            - state: Entry state (loaded, not_loaded, failed_unload, etc.)
+            - disabled_by: Why disabled (if applicable)
+
+        Raises:
+            HAAutomationError: If no API client available
+        """
+        from ...common.exceptions import HAAutomationError
+
+        if not self.client:
+            raise HAAutomationError("No API client available")
+
+        try:
+            result = await self.client._ws_call("config_entries/get")
+
+            if not isinstance(result, list):
+                logger.warning(f"Unexpected config_entries/get result: {type(result)}")
+                return []
+
+            entries: list[dict] = []
+            for entry in result:
+                if not isinstance(entry, dict):
+                    continue
+
+                entry_domain = entry.get("domain", "")
+                entry_state = entry.get("state", "unknown")
+
+                # Apply domain filter
+                if domain and entry_domain != domain:
+                    continue
+
+                # Apply unhealthy filter
+                if unhealthy_only and entry_state == "loaded":
+                    continue
+
+                entries.append({
+                    "entry_id": entry.get("entry_id", ""),
+                    "domain": entry_domain,
+                    "title": entry.get("title", ""),
+                    "state": entry_state,
+                    "disabled_by": entry.get("disabled_by"),
+                })
+
+            return entries
+
+        except Exception as e:
+            raise HAAutomationError(f"Failed to get integrations: {e}") from e

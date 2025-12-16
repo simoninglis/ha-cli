@@ -759,6 +759,154 @@ def template(
     asyncio.run(run_async_command(_template()))
 
 
+@app.command("integrations")
+def integrations(
+    domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by integration domain"),
+    unhealthy: bool = typer.Option(False, "--unhealthy", help="Show only non-loaded entries"),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """List integration (config entry) status.
+
+    Shows all configured integrations with their current state.
+
+    States:
+        loaded         - Integration is running normally
+        not_loaded     - Integration not loaded (may be disabled)
+        setup_error    - Failed during setup
+        setup_retry    - Setup failed, will retry
+        migration_error - Migration failed
+        failed_unload  - Failed to unload
+
+    Examples:
+        ha-cli system integrations                     # List all integrations
+        ha-cli system integrations --domain sonos     # Filter by domain
+        ha-cli system integrations --unhealthy        # Show only unhealthy entries
+        ha-cli system integrations --porcelain        # Machine-readable output
+    """
+    setup_logging(debug)
+
+    async def _integrations() -> None:
+        formatter = PorcelainFormatter("system integrations") if porcelain else None
+
+        url_final, token_final = get_client_config(url, token)
+
+        async with HAClient(url_final, token_final) as client:
+            service = SystemService(client=client)
+
+            try:
+                entries = await service.get_integrations(
+                    domain=domain,
+                    unhealthy_only=unhealthy,
+                )
+
+                # Summarize by state
+                state_counts: dict[str, int] = {}
+                for entry in entries:
+                    state = entry.get("state", "unknown")
+                    state_counts[state] = state_counts.get(state, 0) + 1
+
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.success(
+                        {
+                            "integrations": entries,
+                            "count": len(entries),
+                            "state_summary": state_counts,
+                        },
+                        metadata={
+                            "domain_filter": domain,
+                            "unhealthy_filter": unhealthy,
+                        },
+                        suggestions={
+                            "common_actions": [
+                                "Filter by domain: ha-cli system integrations --domain <domain>",
+                                "Show unhealthy: ha-cli system integrations --unhealthy",
+                            ],
+                            "related_commands": [
+                                "ha-cli system logs",
+                                "ha-cli system restart",
+                            ],
+                        },
+                    )
+                    write_output(output)
+                elif json_output:
+                    write_output(
+                        json.dumps(
+                            {
+                                "integrations": entries,
+                                "count": len(entries),
+                                "state_summary": state_counts,
+                            },
+                            indent=2,
+                        )
+                    )
+                else:
+                    # Human-readable output
+                    if not entries:
+                        if unhealthy:
+                            console.print("[green]✓[/green] All integrations are healthy")
+                        else:
+                            console.print("[yellow]No integrations found[/yellow]")
+                        return
+
+                    # Group by state for display
+                    by_state: dict[str, list[dict]] = {}
+                    for entry in entries:
+                        state = entry.get("state", "unknown")
+                        if state not in by_state:
+                            by_state[state] = []
+                        by_state[state].append(entry)
+
+                    # Display summary
+                    console.print(f"\n[bold cyan]Integration Status[/bold cyan] ({len(entries)} entries)")
+                    if domain:
+                        console.print(f"[dim]Filtered by domain: {domain}[/dim]")
+
+                    # Show unhealthy first if mixed
+                    for state in sorted(by_state.keys(), key=lambda s: (s == "loaded", s)):
+                        state_entries = by_state[state]
+                        if state == "loaded":
+                            style = "green"
+                            icon = "✓"
+                        else:
+                            style = "red" if state in ("setup_error", "migration_error") else "yellow"
+                            icon = "✗" if style == "red" else "⚠"
+
+                        console.print(f"\n[{style}]{icon} {state}[/{style}] ({len(state_entries)})")
+                        for entry in state_entries[:10]:  # Limit displayed per state
+                            title = entry.get("title", "")
+                            entry_domain = entry.get("domain", "")
+                            disabled = entry.get("disabled_by")
+                            disabled_note = f" [dim](disabled by: {disabled})[/dim]" if disabled else ""
+                            console.print(f"  • {entry_domain}: {title}{disabled_note}")
+                        if len(state_entries) > 10:
+                            console.print(f"  [dim]... and {len(state_entries) - 10} more[/dim]")
+
+            except Exception as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="INTEGRATIONS_ERROR")
+                    write_output(output)
+                elif json_output:
+                    write_output(
+                        json.dumps(
+                            {"success": False, "error": str(e)},
+                            indent=2,
+                        )
+                    )
+                else:
+                    console.print(f"[red]✗[/red] Failed to get integrations: {e}")
+                sys.exit(EXIT_HA_ERROR)
+
+    asyncio.run(run_async_command(_integrations()))
+
+
 @app.command("version")
 def version() -> None:
     """Show system domain version."""
