@@ -221,6 +221,35 @@ class SystemService:
 
         return False, f"Unknown component: {component}. Use: {', '.join(reload_services.keys())}"
 
+    async def render_template(self, template_str: str) -> str:
+        """Render a Jinja2 template against Home Assistant state.
+
+        Args:
+            template_str: The Jinja2 template string to evaluate
+
+        Returns:
+            Rendered template result as string
+
+        Raises:
+            HAAutomationError: If no API client or template fails to render
+        """
+        from ...common.exceptions import HAAutomationError
+
+        if not self.client:
+            raise HAAutomationError("No API client available")
+
+        try:
+            # POST /api/template returns plain text, not JSON
+            result = await self.client._rest(
+                "POST",
+                "/api/template",
+                json_data={"template": template_str},
+                expect_json=False,
+            )
+            return str(result) if result else ""
+        except Exception as e:
+            raise HAAutomationError(f"Template rendering failed: {e}") from e
+
     async def get_error_log_via_api(self) -> str:
         """Get error log via REST API.
 

@@ -767,6 +767,158 @@ class TestSystemCall:
         assert "failed" in result.stdout.lower()
 
 
+class TestSystemTemplate:
+    """Test system template (Jinja2 evaluation) command."""
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_template_basic(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test basic template evaluation."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.render_template = AsyncMock(return_value="2025-12-16 10:00:00")
+
+        result = runner.invoke(app, ["system", "template", "{{ now() }}"])
+        assert result.exit_code == 0
+        assert "2025-12-16 10:00:00" in result.stdout
+        mock_service.render_template.assert_called_once_with("{{ now() }}")
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_template_raw_output(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test template with raw output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.render_template = AsyncMock(return_value="on")
+
+        result = runner.invoke(
+            app, ["system", "template", "{{ states('light.office') }}", "--raw"]
+        )
+        assert result.exit_code == 0
+        # Raw should output just the result
+        assert result.stdout.strip() == "on"
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_template_json_output(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test template with JSON output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.render_template = AsyncMock(return_value="test result")
+
+        result = runner.invoke(
+            app, ["system", "template", "{{ now() }}", "--json"]
+        )
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["success"] is True
+        assert output["result"] == "test result"
+        assert output["template"] == "{{ now() }}"
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_template_porcelain_output(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test template with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.render_template = AsyncMock(return_value="42")
+
+        result = runner.invoke(
+            app, ["system", "template", "{{ 40 + 2 }}", "--porcelain"]
+        )
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert output["data"]["result"] == "42"
+        assert output["data"]["template"] == "{{ 40 + 2 }}"
+        assert "metadata" in output
+
+    def test_template_no_input(self) -> None:
+        """Test error when no template provided."""
+        result = runner.invoke(app, ["system", "template"])
+        assert result.exit_code != 0
+        assert "Must provide template argument or --file" in result.stdout
+
+    def test_template_both_arg_and_file(self) -> None:
+        """Test error when both template arg and --file provided."""
+        result = runner.invoke(
+            app, ["system", "template", "{{ now() }}", "--file", "test.j2"]
+        )
+        assert result.exit_code != 0
+        assert "Cannot use both template argument and --file" in result.stdout
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_template_error(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test template rendering error."""
+        from ha_cli.common.exceptions import HAAutomationError
+
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.render_template = AsyncMock(
+            side_effect=HAAutomationError("Undefined variable 'foo'")
+        )
+
+        result = runner.invoke(app, ["system", "template", "{{ foo }}"])
+        assert result.exit_code != 0
+        assert "failed" in result.stdout.lower()
+
+
 class TestSystemVersion:
     """Test system version command."""
 

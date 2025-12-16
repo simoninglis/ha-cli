@@ -636,6 +636,129 @@ def call(
     asyncio.run(run_async_command(_call()))
 
 
+@app.command("template")
+def template(
+    template_str: str | None = typer.Argument(None, help="Jinja2 template to evaluate"),
+    file: str | None = typer.Option(None, "--file", "-f", help="Read template from file (- for stdin)"),
+    raw: bool = typer.Option(False, "--raw", help="Output without formatting"),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Evaluate a Jinja2 template against Home Assistant state.
+
+    Examples:
+        ha-cli system template "{{ states('light.office') }}"
+        ha-cli system template "{{ now() }}"
+        ha-cli system template "{{ states | selectattr('entity_id', 'match', 'light.*') | list | length }} lights"
+        echo "{{ now() }}" | ha-cli system template --file -
+        ha-cli system template --file template.j2
+    """
+    setup_logging(debug)
+
+    # Validate input: must provide template_str OR --file, but not both, not neither
+    if template_str and file:
+        console.print("[red]Error:[/red] Cannot use both template argument and --file")
+        sys.exit(1)
+
+    if not template_str and not file:
+        console.print("[red]Error:[/red] Must provide template argument or --file")
+        sys.exit(1)
+
+    # Read template from file/stdin if needed
+    actual_template: str
+    if file:
+        try:
+            if file == "-":
+                # Read from stdin
+                actual_template = sys.stdin.read()
+            else:
+                # Read from file
+                with open(file) as f:
+                    actual_template = f.read()
+        except Exception as e:
+            console.print(f"[red]Error:[/red] Failed to read template: {e}")
+            sys.exit(1)
+    else:
+        actual_template = template_str or ""
+
+    # Remove trailing newline from stdin/file input (common issue)
+    actual_template = actual_template.rstrip("\n")
+
+    async def _template() -> None:
+        formatter = PorcelainFormatter("system template") if porcelain else None
+
+        url_final, token_final = get_client_config(url, token)
+
+        async with HAClient(url_final, token_final) as client:
+            service = SystemService(client=client)
+
+            try:
+                result = await service.render_template(actual_template)
+
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.success(
+                        {
+                            "result": result,
+                            "template": actual_template,
+                        },
+                        metadata={
+                            "template_length": len(actual_template),
+                            "result_length": len(result),
+                        },
+                        suggestions={
+                            "common_actions": [
+                                "Test time: ha-cli system template \"{{ now() }}\"",
+                                "Count entities: ha-cli system template \"{{ states | list | length }}\"",
+                            ],
+                            "related_commands": [
+                                "ha-cli entities state <entity_id>",
+                            ],
+                        },
+                    )
+                    write_output(output)
+                elif json_output:
+                    write_output(
+                        json.dumps(
+                            {
+                                "success": True,
+                                "template": actual_template,
+                                "result": result,
+                            },
+                            indent=2,
+                        )
+                    )
+                elif raw:
+                    # Raw output - just the result, no formatting
+                    write_output(result)
+                else:
+                    # Human-readable output with some formatting
+                    console.print(f"[bold]Result:[/bold] {result}")
+
+            except Exception as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="TEMPLATE_ERROR")
+                    write_output(output)
+                elif json_output:
+                    write_output(
+                        json.dumps(
+                            {"success": False, "error": str(e)},
+                            indent=2,
+                        )
+                    )
+                else:
+                    console.print(f"[red]✗[/red] Template failed: {e}")
+                sys.exit(EXIT_HA_ERROR)
+
+    asyncio.run(run_async_command(_template()))
+
+
 @app.command("version")
 def version() -> None:
     """Show system domain version."""
