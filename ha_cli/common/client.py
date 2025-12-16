@@ -85,15 +85,24 @@ class HAClient:
         
         # WebSocket state
         self._ws: WebSocketClientProtocol | None = None
-        self._ws_id = 0
         self._ws_lock = asyncio.Lock()
-        self._ws_message_id = 1
-        self._ws_subscriptions: dict[int, asyncio.Queue] = {}
-        self._ws_listeners: dict[str, list[Callable]] = {}
+
+        # Unified WebSocket message ID counter (v17 - replaces _ws_id and _ws_message_id)
+        self._ws_msg_id = 0
+
+        # Response routing for single reader + demux pattern (v17)
+        self._ws_pending: dict[int, asyncio.Future[dict[str, Any]]] = {}  # Request/response
+        self._ws_subscriptions: dict[int, asyncio.Queue[dict[str, Any]]] = {}  # Event subscriptions
+        self._ws_reader_task: asyncio.Task[None] | None = None
+
+        # Legacy (kept for compatibility during transition)
+        self._ws_listeners: dict[str, list[Callable[[dict[str, Any]], None]]] = {}
+
+        # Reconnection state
         self._ws_reconnect_interval = 1  # Start with 1 second
         self._ws_max_reconnect_interval = 30  # Max 30 seconds
-        self._ws_reconnect_task: asyncio.Task | None = None
-        self._ws_heartbeat_task: asyncio.Task | None = None
+        self._ws_reconnect_task: asyncio.Task[None] | None = None
+        self._ws_heartbeat_task: asyncio.Task[None] | None = None
         self._ws_last_heartbeat: float = 0
         self._ws_connected = asyncio.Event()
         
@@ -115,20 +124,37 @@ class HAClient:
     async def __aexit__(self, *args: Any) -> None:
         """Exit async context."""
         # Cancel background tasks
+        if self._ws_reader_task:
+            self._ws_reader_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._ws_reader_task
+
         if self._ws_heartbeat_task:
             self._ws_heartbeat_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._ws_heartbeat_task
-        
+
         if self._ws_reconnect_task:
             self._ws_reconnect_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._ws_reconnect_task
-        
+
+        # Signal all pending requests that connection is closing
+        for future in self._ws_pending.values():
+            if not future.done():
+                future.set_exception(WebSocketError("Connection closing"))
+        self._ws_pending.clear()
+        self._ws_subscriptions.clear()
+
         if self._client:
             await self._client.aclose()
         if self._ws:
             await self._ws.close()
+
+    def _next_ws_id(self) -> int:
+        """Generate globally unique WebSocket message ID."""
+        self._ws_msg_id += 1
+        return self._ws_msg_id
     
     async def _rest(
         self,
@@ -249,14 +275,21 @@ class HAClient:
                         raise WebSocketError(f"Auth failed: {data}")
                     
                     logger.debug("WebSocket connected and authenticated")
-                    self._ws_id = 0
+                    self._ws_msg_id = 0  # Reset unified ID counter
                     self._ws_connected.set()
-                    
+
+                    # Start reader task (single reader + demux pattern)
+                    if self._ws_reader_task:
+                        self._ws_reader_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await self._ws_reader_task
+                    self._ws_reader_task = asyncio.create_task(self._ws_reader())
+
                     # Start heartbeat task
                     if self._ws_heartbeat_task:
                         self._ws_heartbeat_task.cancel()
                     self._ws_heartbeat_task = asyncio.create_task(self._ws_heartbeat())
-                    
+
                     return
                     
                 except (websockets.exceptions.WebSocketException, ConnectionError, ssl.SSLError, asyncio.TimeoutError) as e:
@@ -285,15 +318,78 @@ class HAClient:
                         break
         except asyncio.CancelledError:
             pass
+
+    async def _ws_reader(self) -> None:
+        """Single reader task that demuxes incoming WebSocket messages.
+
+        Routes messages to appropriate consumers:
+        - Messages with 'id' matching _ws_pending → complete the Future
+        - Messages with 'id' matching _ws_subscriptions → put in Queue
+        - Event messages → route to subscription queues by subscription ID
+
+        This ensures only ONE task calls recv() at a time, preventing
+        concurrent recv issues and message misrouting.
+        """
+        try:
+            while self._ws and not self._ws.closed:
+                try:
+                    message = await self._ws.recv()
+                    data = json.loads(message)
+                    msg_id = data.get("id")
+
+                    if msg_id is not None:
+                        # Request/response message - check pending first
+                        if msg_id in self._ws_pending:
+                            future = self._ws_pending.get(msg_id)
+                            if future and not future.done():
+                                future.set_result(data)
+                        # Subscription messages (confirmation or event with id)
+                        elif msg_id in self._ws_subscriptions:
+                            queue = self._ws_subscriptions.get(msg_id)
+                            if queue:
+                                await queue.put(data)
+                    elif data.get("type") == "event":
+                        # Event from subscription - route by subscription ID
+                        sub_id = data.get("id")  # HA events include subscription id in "id" field
+                        if sub_id in self._ws_subscriptions:
+                            queue = self._ws_subscriptions.get(sub_id)
+                            if queue:
+                                await queue.put(data)
+
+                except (ConnectionClosed, ConnectionClosedError) as e:
+                    logger.error(f"WebSocket connection lost in reader: {e}")
+                    # Signal all pending requests
+                    for future in self._ws_pending.values():
+                        if not future.done():
+                            future.set_exception(WebSocketError(f"Connection closed: {e}"))
+                    # Signal all subscriptions with a sentinel
+                    for queue in self._ws_subscriptions.values():
+                        await queue.put({"type": "_connection_closed", "error": str(e)})
+                    # Mark connection as not connected (but don't call _handle_ws_disconnect
+                    # from inside reader to avoid recursive self-cancellation)
+                    self._ws_connected.clear()
+                    break
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Invalid JSON in WebSocket message: {e}")
+                    continue
+
+        except asyncio.CancelledError:
+            pass
     
     async def _handle_ws_disconnect(self) -> None:
         """Handle WebSocket disconnection and trigger reconnection."""
         self._ws_connected.clear()
-        
+
+        # Cancel reader task
+        if self._ws_reader_task:
+            self._ws_reader_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._ws_reader_task
+
         # Cancel heartbeat
         if self._ws_heartbeat_task:
             self._ws_heartbeat_task.cancel()
-        
+
         # Close the WebSocket
         if self._ws:
             try:
@@ -301,7 +397,7 @@ class HAClient:
             except Exception as e:
                 logger.debug(f"Error closing WebSocket during disconnect: {e}")
             self._ws = None
-        
+
         # Start reconnection task if not already running
         if not self._ws_reconnect_task or self._ws_reconnect_task.done():
             self._ws_reconnect_task = asyncio.create_task(self._auto_reconnect())
@@ -349,57 +445,59 @@ class HAClient:
         msg_type: str,
         **kwargs: Any,
     ) -> Any:
-        """Make WebSocket call.
+        """Make WebSocket call using demux pattern.
 
         Args:
             msg_type: Message type
             **kwargs: Additional message fields
-            
+
         Returns:
             Response data
-            
+
         Raises:
             WebSocketError: On error
         """
         await self._ensure_ws_connected()
-        
+
         if not self._ws:
             raise WebSocketError("WebSocket not connected")
-        
-        # Increment message ID
-        self._ws_id += 1
-        msg_id = self._ws_id
-        
-        # Build message
-        message = {
-            "id": msg_id,
-            "type": msg_type,
-            **kwargs,
-        }
-        
-        # Send message
-        await self._ws.send(json.dumps(message))
-        
-        # Wait for response
+
+        # Get unique message ID
+        msg_id = self._next_ws_id()
+
+        # Create Future for response routing
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        self._ws_pending[msg_id] = future
+
         try:
-            while True:
-                msg = await self._ws.recv()
-                data = json.loads(msg)
-                
-                if data.get("id") == msg_id:
-                    if data["type"] == "result":
-                        if not data["success"]:
-                            error = data.get("error", {})
-                            raise WebSocketError(
-                                f"{error.get('code', 'unknown')}: {error.get('message', 'Unknown error')}"
-                            )
-                        return data.get("result", {})
-                    else:
-                        raise WebSocketError(f"Unexpected response type: {data['type']}")
-        except (ConnectionClosed, ConnectionClosedError) as e:
-            logger.error(f"WebSocket connection lost during call: {e}")
-            await self._handle_ws_disconnect()
-            raise WebSocketError("Connection lost during WebSocket call") from e
+            # Build and send message
+            message = {
+                "id": msg_id,
+                "type": msg_type,
+                **kwargs,
+            }
+            await self._ws.send(json.dumps(message))
+
+            # Wait for response (routed by _ws_reader)
+            data = await asyncio.wait_for(future, timeout=30)
+
+            # Process response
+            if data.get("type") == "result":
+                if not data.get("success"):
+                    error = data.get("error", {})
+                    raise WebSocketError(
+                        f"{error.get('code', 'unknown')}: {error.get('message', 'Unknown error')}"
+                    )
+                return data.get("result", {})
+            else:
+                raise WebSocketError(f"Unexpected response type: {data.get('type')}")
+
+        except asyncio.TimeoutError as e:
+            raise WebSocketError("WebSocket call timed out after 30s") from e
+        finally:
+            # Always clean up pending entry
+            self._ws_pending.pop(msg_id, None)
     
     # Automation methods
     # Note: The REST API /api/config/automation/config requires the 'config'
@@ -586,75 +684,76 @@ class HAClient:
         )
     
     # Enhanced WebSocket methods for real-time features
-    
+
     async def subscribe_events(
-        self, 
+        self,
         event_type: str | None = None,
         event_filter: Callable[[dict[str, Any]], bool] | None = None
     ) -> AsyncIterator[dict[str, Any]]:
-        """Subscribe to Home Assistant events.
-        
+        """Subscribe to Home Assistant events using demux pattern.
+
         Args:
             event_type: Type of events to subscribe to (e.g., "state_changed")
             event_filter: Optional filter function for events
-            
+
         Yields:
             Event data dictionaries
         """
         await self._ensure_ws_connected()
-        
+
         if not self._ws:
             raise WebSocketError("WebSocket not connected")
-        
-        # Subscribe to events
-        sub_id = self._ws_message_id
-        self._ws_message_id += 1
-        
-        message = {
-            "id": sub_id,
-            "type": "subscribe_events",
-        }
-        if event_type:
-            message["event_type"] = event_type
-            
-        await self._ws.send(json.dumps(message))
-        
-        # Wait for subscription confirmation
-        while True:
-            msg = await self._ws.recv()
-            data = json.loads(msg)
-            
-            if data.get("id") == sub_id:
-                if data["type"] == "result" and data["success"]:
-                    break
-                elif data["type"] == "result" and not data["success"]:
-                    error = data.get("error", {})
-                    raise WebSocketError(f"Subscription failed: {error}")
-        
-        # Yield events as they come
+
+        # Get unique subscription ID and create queue for routing
+        sub_id = self._next_ws_id()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._ws_subscriptions[sub_id] = queue
+
         try:
+            # Send subscription request
+            message: dict[str, Any] = {
+                "id": sub_id,
+                "type": "subscribe_events",
+            }
+            if event_type:
+                message["event_type"] = event_type
+
+            await self._ws.send(json.dumps(message))
+
+            # Wait for subscription confirmation (routed by _ws_reader)
+            confirm = await asyncio.wait_for(queue.get(), timeout=30)
+            if confirm.get("type") == "_connection_closed":
+                raise WebSocketError(f"Connection closed: {confirm.get('error')}")
+            if not confirm.get("success"):
+                error = confirm.get("error", {})
+                raise WebSocketError(f"Subscription failed: {error}")
+
+            # Yield events from queue (routed by _ws_reader)
             while True:
-                try:
-                    msg = await self._ws.recv()
-                    data = json.loads(msg)
-                    
-                    if data.get("id") == sub_id and data["type"] == "event":
-                        event = data.get("event", {})
-                        if event_filter is None or event_filter(event):
-                            yield event
-                except (ConnectionClosed, ConnectionClosedError) as e:
-                    logger.error(f"WebSocket connection lost during event subscription: {e}")
-                    await self._handle_ws_disconnect()
-                    raise
+                data = await queue.get()
+
+                # Check for connection closed sentinel
+                if data.get("type") == "_connection_closed":
+                    logger.error(f"WebSocket connection lost during event subscription: {data.get('error')}")
+                    raise WebSocketError(f"Connection closed: {data.get('error')}")
+
+                if data.get("type") == "event":
+                    event = data.get("event", {})
+                    if event_filter is None or event_filter(event):
+                        yield event
+
         finally:
+            # Clean up subscription from routing table
+            self._ws_subscriptions.pop(sub_id, None)
+
             # Unsubscribe when done
             if self._ws and not self._ws.closed:
+                unsub_id = self._next_ws_id()
                 unsub_message = {
-                    "id": self._ws_message_id,
+                    "id": unsub_id,
                     "type": "unsubscribe_events",
                     "subscription": sub_id,
                 }
-                self._ws_message_id += 1
                 try:
                     await self._ws.send(json.dumps(unsub_message))
                 except Exception as e:
@@ -679,69 +778,69 @@ class HAClient:
         self,
         trigger_config: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
-        """Subscribe to a specific trigger for testing.
-        
+        """Subscribe to a specific trigger for testing using demux pattern.
+
         Args:
             trigger_config: Trigger configuration to test
-            
+
         Yields:
             Trigger events when the trigger fires
         """
         await self._ensure_ws_connected()
-        
+
         if not self._ws:
             raise WebSocketError("WebSocket not connected")
-        
-        # Subscribe to trigger
-        sub_id = self._ws_message_id
-        self._ws_message_id += 1
-        
-        message = {
-            "id": sub_id,
-            "type": "subscribe_trigger",
-            "trigger": trigger_config,
-        }
-        
-        await self._ws.send(json.dumps(message))
-        
-        # Wait for subscription confirmation
-        while True:
-            msg = await self._ws.recv()
-            data = json.loads(msg)
-            
-            if data.get("id") == sub_id:
-                if data["type"] == "result" and data["success"]:
-                    break
-                elif data["type"] == "result" and not data["success"]:
-                    error = data.get("error", {})
-                    raise WebSocketError(f"Trigger subscription failed: {error}")
-        
-        # Yield trigger events
+
+        # Get unique subscription ID and create queue for routing
+        sub_id = self._next_ws_id()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._ws_subscriptions[sub_id] = queue
+
         try:
+            # Send subscription request
+            message = {
+                "id": sub_id,
+                "type": "subscribe_trigger",
+                "trigger": trigger_config,
+            }
+            await self._ws.send(json.dumps(message))
+
+            # Wait for subscription confirmation (routed by _ws_reader)
+            confirm = await asyncio.wait_for(queue.get(), timeout=30)
+            if confirm.get("type") == "_connection_closed":
+                raise WebSocketError(f"Connection closed: {confirm.get('error')}")
+            if not confirm.get("success"):
+                error = confirm.get("error", {})
+                raise WebSocketError(f"Trigger subscription failed: {error}")
+
+            # Yield trigger events from queue (routed by _ws_reader)
             while True:
-                try:
-                    msg = await self._ws.recv()
-                    data = json.loads(msg)
-                    
-                    if data.get("id") == sub_id and data["type"] == "event":
-                        yield data.get("event", {})
-                except (ConnectionClosed, ConnectionClosedError) as e:
-                    logger.error(f"WebSocket connection lost during trigger subscription: {e}")
-                    await self._handle_ws_disconnect()
-                    raise
+                data = await queue.get()
+
+                # Check for connection closed sentinel
+                if data.get("type") == "_connection_closed":
+                    logger.error(f"WebSocket connection lost during trigger subscription: {data.get('error')}")
+                    raise WebSocketError(f"Connection closed: {data.get('error')}")
+
+                if data.get("type") == "event":
+                    yield data.get("event", {})
+
         finally:
+            # Clean up subscription from routing table
+            self._ws_subscriptions.pop(sub_id, None)
+
             # Unsubscribe when done
             if self._ws and not self._ws.closed:
+                unsub_id = self._next_ws_id()
                 unsub_message = {
-                    "id": self._ws_message_id,
+                    "id": unsub_id,
                     "type": "unsubscribe_events",
                     "subscription": sub_id,
                 }
-                self._ws_message_id += 1
                 try:
                     await self._ws.send(json.dumps(unsub_message))
                 except Exception as e:
-                    logger.debug(f"Error unsubscribing from state changes during cleanup: {e}")
+                    logger.debug(f"Error unsubscribing from trigger during cleanup: {e}")
 
     def _sanitize_value(self, value: Any) -> Any:
         """Recursively sanitize a value by removing control characters from strings."""

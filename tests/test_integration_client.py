@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import httpx
 import websockets
+from websockets.exceptions import ConnectionClosedError
 
 from ha_automation.client import HAClient
 from ha_automation.exceptions import (
@@ -189,36 +190,41 @@ class TestHAClientIntegration:
     async def test_websocket_call_success(self, client):
         """Test successful WebSocket service call."""
         mock_ws = AsyncMock()
-        
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+
         # Mock authentication flow
         auth_required = json.dumps({"type": "auth_required"})
         auth_ok = json.dumps({"type": "auth_ok"})
-        
+
         # Mock service call response
         result_response = json.dumps({
             "id": 1,
-            "type": "result", 
+            "type": "result",
             "success": True,
             "result": {"test": "success"}
         })
-        
-        mock_ws.recv.side_effect = [auth_required, auth_ok, result_response]
-        
+
+        # Add terminator for reader task graceful exit
+        mock_ws.recv.side_effect = [auth_required, auth_ok, result_response, ConnectionClosedError(None, None)]
+
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws):
             async with client:
                 result = await client._ws_call("call_service", domain="test", service="test")
-                
+
                 assert result == {"test": "success"}
     
     @pytest.mark.asyncio
     async def test_websocket_call_error(self, client):
         """Test WebSocket service call error."""
         mock_ws = AsyncMock()
-        
+        mock_ws.closed = False
+        mock_ws.close = AsyncMock()
+
         # Mock authentication flow
         auth_required = json.dumps({"type": "auth_required"})
         auth_ok = json.dumps({"type": "auth_ok"})
-        
+
         # Mock service call error response
         error_response = json.dumps({
             "id": 1,
@@ -226,9 +232,10 @@ class TestHAClientIntegration:
             "success": False,
             "error": {"code": "test_error", "message": "Test error message"}
         })
-        
-        mock_ws.recv.side_effect = [auth_required, auth_ok, error_response]
-        
+
+        # Add terminator for reader task graceful exit
+        mock_ws.recv.side_effect = [auth_required, auth_ok, error_response, ConnectionClosedError(None, None)]
+
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws):
             async with client:
                 with pytest.raises(WebSocketError, match="test_error: Test error message"):

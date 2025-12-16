@@ -5,7 +5,7 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
 from ha_cli.common.client import HAClient
 from ha_cli.common.exceptions import NotFoundError, ValidationError, WebSocketError
@@ -20,6 +20,12 @@ class TestHAClientDashboardMethods:
         client = HAClient("http://test:8123", "test-token")
         yield client
         # Cleanup tasks
+        if hasattr(client, '_ws_reader_task') and client._ws_reader_task:
+            client._ws_reader_task.cancel()
+            try:
+                await client._ws_reader_task
+            except (asyncio.CancelledError, Exception):
+                pass
         if hasattr(client, '_ws_heartbeat_task') and client._ws_heartbeat_task:
             client._ws_heartbeat_task.cancel()
             try:
@@ -50,6 +56,11 @@ class TestHAClientDashboardMethods:
             json.dumps({"type": "auth_required", "ha_version": "2025.6.0"}),
             json.dumps({"type": "auth_ok", "ha_version": "2025.6.0"}),
         ]
+
+    @pytest.fixture
+    def ws_terminator(self):
+        """Terminator for WebSocket reader task graceful exit."""
+        return ConnectionClosedError(None, None)
 
 
 class TestListDashboards(TestHAClientDashboardMethods):
@@ -84,7 +95,7 @@ class TestListDashboards(TestHAClientDashboardMethods):
             ]
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [dashboards_response]
+        mock_websocket.recv.side_effect = auth_responses + [dashboards_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -106,7 +117,7 @@ class TestListDashboards(TestHAClientDashboardMethods):
             "result": []
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [empty_response]
+        mock_websocket.recv.side_effect = auth_responses + [empty_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -124,7 +135,7 @@ class TestListDashboards(TestHAClientDashboardMethods):
             "result": None  # Sometimes HA returns null instead of empty list
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [invalid_response]
+        mock_websocket.recv.side_effect = auth_responses + [invalid_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -158,7 +169,7 @@ class TestGetDashboardConfig(TestHAClientDashboardMethods):
             }
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [config_response]
+        mock_websocket.recv.side_effect = auth_responses + [config_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -181,7 +192,7 @@ class TestGetDashboardConfig(TestHAClientDashboardMethods):
             }
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [config_response]
+        mock_websocket.recv.side_effect = auth_responses + [config_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -208,7 +219,7 @@ class TestGetDashboardConfig(TestHAClientDashboardMethods):
             }
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [error_response]
+        mock_websocket.recv.side_effect = auth_responses + [error_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -225,7 +236,7 @@ class TestGetDashboardConfig(TestHAClientDashboardMethods):
             "result": None  # Sometimes HA returns null
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [empty_response]
+        mock_websocket.recv.side_effect = auth_responses + [empty_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -248,7 +259,7 @@ class TestSaveDashboardConfig(TestHAClientDashboardMethods):
             "result": None
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [save_response]
+        mock_websocket.recv.side_effect = auth_responses + [save_response, ConnectionClosedError(None, None)]
 
         config = {
             "title": "Updated Dashboard",
@@ -277,7 +288,7 @@ class TestSaveDashboardConfig(TestHAClientDashboardMethods):
             "result": None
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [save_response]
+        mock_websocket.recv.side_effect = auth_responses + [save_response, ConnectionClosedError(None, None)]
 
         config = {"title": "Default", "views": []}
 
@@ -304,7 +315,7 @@ class TestSaveDashboardConfig(TestHAClientDashboardMethods):
             }
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [error_response]
+        mock_websocket.recv.side_effect = auth_responses + [error_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -324,7 +335,7 @@ class TestSaveDashboardConfig(TestHAClientDashboardMethods):
             }
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [error_response]
+        mock_websocket.recv.side_effect = auth_responses + [error_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -345,7 +356,7 @@ class TestDeleteDashboard(TestHAClientDashboardMethods):
             "result": None
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [delete_response]
+        mock_websocket.recv.side_effect = auth_responses + [delete_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -371,7 +382,7 @@ class TestDeleteDashboard(TestHAClientDashboardMethods):
             }
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [error_response]
+        mock_websocket.recv.side_effect = auth_responses + [error_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -391,7 +402,7 @@ class TestDeleteDashboard(TestHAClientDashboardMethods):
             }
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [error_response]
+        mock_websocket.recv.side_effect = auth_responses + [error_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -412,7 +423,7 @@ class TestCreateDashboard(TestHAClientDashboardMethods):
             "result": None
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [create_response]
+        mock_websocket.recv.side_effect = auth_responses + [create_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -446,7 +457,7 @@ class TestCreateDashboard(TestHAClientDashboardMethods):
             "result": None
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [create_response]
+        mock_websocket.recv.side_effect = auth_responses + [create_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -476,7 +487,7 @@ class TestCreateDashboard(TestHAClientDashboardMethods):
             }
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [error_response]
+        mock_websocket.recv.side_effect = auth_responses + [error_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -500,7 +511,7 @@ class TestCreateDashboard(TestHAClientDashboardMethods):
             }
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [error_response]
+        mock_websocket.recv.side_effect = auth_responses + [error_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -525,7 +536,7 @@ class TestUpdateDashboard(TestHAClientDashboardMethods):
             "result": None
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [update_response]
+        mock_websocket.recv.side_effect = auth_responses + [update_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -555,7 +566,7 @@ class TestUpdateDashboard(TestHAClientDashboardMethods):
             "result": None
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [update_response]
+        mock_websocket.recv.side_effect = auth_responses + [update_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -589,7 +600,7 @@ class TestUpdateDashboard(TestHAClientDashboardMethods):
             }
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [error_response]
+        mock_websocket.recv.side_effect = auth_responses + [error_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -612,7 +623,7 @@ class TestUpdateDashboard(TestHAClientDashboardMethods):
             }
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [error_response]
+        mock_websocket.recv.side_effect = auth_responses + [error_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -632,7 +643,7 @@ class TestUpdateDashboard(TestHAClientDashboardMethods):
             "result": None
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [update_response]
+        mock_websocket.recv.side_effect = auth_responses + [update_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
@@ -655,7 +666,7 @@ class TestUpdateDashboard(TestHAClientDashboardMethods):
             "result": None
         })
 
-        mock_websocket.recv.side_effect = auth_responses + [update_response]
+        mock_websocket.recv.side_effect = auth_responses + [update_response, ConnectionClosedError(None, None)]
 
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:

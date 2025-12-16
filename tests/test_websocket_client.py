@@ -21,6 +21,12 @@ class TestWebSocketClient:
         client = HAClient("http://test:8123", "test-token")
         yield client
         # Cleanup tasks
+        if hasattr(client, '_ws_reader_task') and client._ws_reader_task:
+            client._ws_reader_task.cancel()
+            try:
+                await client._ws_reader_task
+            except (asyncio.CancelledError, Exception):
+                pass
         if hasattr(client, '_ws_heartbeat_task') and client._ws_heartbeat_task:
             client._ws_heartbeat_task.cancel()
             try:
@@ -277,7 +283,7 @@ class TestWebSocketClient:
             json.dumps({"type": "auth_required"}),
             json.dumps({"type": "auth_ok"}),
         ]
-        
+
         states_response = json.dumps({
             "id": 1,
             "type": "result",
@@ -295,13 +301,14 @@ class TestWebSocketClient:
                 }
             ]
         })
-        
-        mock_websocket.recv.side_effect = auth_responses + [states_response]
-        
+
+        # Add terminator for reader task graceful exit
+        mock_websocket.recv.side_effect = auth_responses + [states_response, ConnectionClosedError(None, None)]
+
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
                 states = await client.get_states()
-                
+
                 assert len(states) == 2
                 assert states[0]["entity_id"] == "automation.test"
                 assert states[1]["entity_id"] == "light.living_room"
@@ -313,7 +320,7 @@ class TestWebSocketClient:
             json.dumps({"type": "auth_required"}),
             json.dumps({"type": "auth_ok"}),
         ]
-        
+
         states_response = json.dumps({
             "id": 1,
             "type": "result",
@@ -325,13 +332,14 @@ class TestWebSocketClient:
                 {"entity_id": "switch.bedroom", "state": "on"},
             ]
         })
-        
-        mock_websocket.recv.side_effect = auth_responses + [states_response]
-        
+
+        # Add terminator for reader task graceful exit
+        mock_websocket.recv.side_effect = auth_responses + [states_response, ConnectionClosedError(None, None)]
+
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
                 states = await client.get_automation_states()
-                
+
                 assert len(states) == 2
                 assert all(s["entity_id"].startswith("automation.") for s in states)
     
@@ -342,27 +350,28 @@ class TestWebSocketClient:
             json.dumps({"type": "auth_required"}),
             json.dumps({"type": "auth_ok"}),
         ]
-        
+
         service_response = json.dumps({
             "id": 1,
             "type": "result",
             "success": True,
             "result": {"context": {"id": "test123"}}
         })
-        
-        mock_websocket.recv.side_effect = auth_responses + [service_response]
-        
+
+        # Add terminator for reader task graceful exit
+        mock_websocket.recv.side_effect = auth_responses + [service_response, ConnectionClosedError(None, None)]
+
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
                 await client.call_automation_service(
                     "turn_on",
                     ["automation.test", "automation.test2"]
                 )
-                
+
                 # Check the service call
                 service_call = mock_websocket.send.call_args_list[-1]
                 msg = json.loads(service_call[0][0])
-                
+
                 assert msg["type"] == "call_service"
                 assert msg["domain"] == "automation"
                 assert msg["service"] == "turn_on"
@@ -375,24 +384,25 @@ class TestWebSocketClient:
             json.dumps({"type": "auth_required"}),
             json.dumps({"type": "auth_ok"}),
         ]
-        
+
         service_response = json.dumps({
             "id": 1,
             "type": "result",
             "success": True,
             "result": {}
         })
-        
-        mock_websocket.recv.side_effect = auth_responses + [service_response]
-        
+
+        # Add terminator for reader task graceful exit
+        mock_websocket.recv.side_effect = auth_responses + [service_response, ConnectionClosedError(None, None)]
+
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
                 await client.call_automation_service("trigger", "automation.test")
-                
+
                 # Check service call
                 service_call = mock_websocket.send.call_args_list[-1]
                 msg = json.loads(service_call[0][0])
-                
+
                 assert msg["service"] == "trigger"
                 assert msg["service_data"]["entity_id"] == ["automation.test"]
     
@@ -403,22 +413,24 @@ class TestWebSocketClient:
             json.dumps({"type": "auth_required"}),
             json.dumps({"type": "auth_ok"}),
         ]
-        
+
         sub_response = json.dumps({
             "id": 1,
             "type": "result",
             "success": True,
         })
-        
+
         # Simulate connection closed during iteration
+        # With demux pattern, reader catches ConnectionClosedError and sends sentinel to queue
         mock_websocket.recv.side_effect = auth_responses + [sub_response, ConnectionClosedError(None, None)]
-        
+
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             events_received = 0
-            with pytest.raises(ConnectionClosedError):
+            # With demux pattern, WebSocketError is raised instead of ConnectionClosedError
+            with pytest.raises(WebSocketError, match="Connection closed"):
                 async for _ in client.subscribe_events():
                     events_received += 1
-            
+
             # Connection was lost, so no unsubscribe should be sent
             # (since the connection is gone)
             assert events_received == 0  # No events were yielded before error
@@ -512,15 +524,17 @@ class TestWebSocketClient:
             json.dumps({"type": "auth_required"}),
             json.dumps({"type": "auth_ok"}),
         ]
-        
+
         # Connection fails during call
+        # With demux pattern, reader catches ConnectionClosedError and signals pending futures
         mock_websocket.recv.side_effect = auth_responses + [
             ConnectionClosedError(None, None),  # Connection lost during call
         ]
-        
+
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             async with client:
-                with pytest.raises(WebSocketError, match="Connection lost during WebSocket call"):
+                # With demux pattern, WebSocketError is raised with "Connection closed" message
+                with pytest.raises(WebSocketError, match="Connection closed"):
                     await client.enable_automation("test")
 
 
