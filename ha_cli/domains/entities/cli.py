@@ -259,6 +259,112 @@ def list(
 
 
 @app.command()
+def state(
+    entity_id: str = typer.Argument(..., help="Entity ID to query"),
+    attributes: bool = typer.Option(False, "--attributes", "-a", help="Show all attributes"),
+    value_only: bool = typer.Option(False, "--value-only", "-v", help="Output state value only"),
+    porcelain: bool = typer.Option(False, "--porcelain", help="Structured JSON output"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Get current state of an entity.
+
+    Examples:
+        ha-cli entities state light.office
+        ha-cli entities state sensor.temperature --attributes
+        ha-cli entities state switch.pump --value-only
+        ha-cli entities state climate.lounge --porcelain
+    """
+    setup_logging(debug)
+
+    # Validate mutually exclusive flags
+    if value_only and porcelain:
+        console.print("[red]Error:[/red] Cannot use --value-only and --porcelain together")
+        sys.exit(EXIT_USAGE_ERROR)
+
+    # Validate entity_id format (must contain exactly one dot)
+    if "." not in entity_id or entity_id.count(".") != 1:
+        console.print(f"[red]Error:[/red] Invalid entity_id format: '{entity_id}'. Expected format: domain.name")
+        sys.exit(EXIT_USAGE_ERROR)
+
+    async def _state() -> None:
+        formatter = PorcelainFormatter("entities state") if porcelain else None
+
+        try:
+            url_final, token_final = get_client_config(url, token)
+
+            async with HAClient(url_final, token_final, timeout) as client:
+                service = EntityService(client)
+                state_data = await service.get_state(entity_id)
+
+                if porcelain:
+                    assert formatter is not None  # Type narrowing for mypy
+                    # Build porcelain response
+                    data = {
+                        "entity_id": state_data.get("entity_id"),
+                        "state": state_data.get("state"),
+                        "last_changed": state_data.get("last_changed"),
+                        "last_updated": state_data.get("last_updated"),
+                    }
+                    if attributes:
+                        data["attributes"] = state_data.get("attributes", {})
+
+                    metadata = {
+                        "entity_id": entity_id,
+                        "domain": entity_id.split(".")[0],
+                        "home_assistant": create_home_assistant_metadata(url_final, "rest")
+                    }
+
+                    suggestions: dict[str, Any] = {
+                        "common_actions": [
+                            f"List all {entity_id.split('.')[0]} entities: ha-cli entities list --domain {entity_id.split('.')[0]}",
+                            f"Analyze entity: ha-cli entities analyze {entity_id}",
+                        ],
+                        "related_commands": [
+                            "ha-cli entities list --porcelain",
+                        ]
+                    }
+
+                    porcelain_output = formatter.success(data, metadata, suggestions)
+                    write_output(porcelain_output)
+
+                elif value_only:
+                    # Output just the state value (for scripting)
+                    write_output(state_data.get("state", ""))
+
+                else:
+                    # Human-readable output
+                    entity_state = state_data.get("state", "unknown")
+                    friendly_name = state_data.get("attributes", {}).get("friendly_name", entity_id)
+
+                    console.print(f"[bold]Entity:[/bold] {entity_id}")
+                    console.print(f"[bold]Name:[/bold] {friendly_name}")
+                    console.print(f"[bold]State:[/bold] [cyan]{entity_state}[/cyan]")
+                    console.print(f"[bold]Last changed:[/bold] {state_data.get('last_changed', 'N/A')}")
+
+                    if attributes:
+                        attrs = state_data.get("attributes", {})
+                        if attrs:
+                            console.print("\n[bold yellow]Attributes:[/bold yellow]")
+                            for key, value in sorted(attrs.items()):
+                                console.print(f"  {key}: {value}")
+                        else:
+                            console.print("\n[yellow]No attributes[/yellow]")
+
+        except Exception as e:
+            if porcelain and formatter:
+                error_output = formatter.error(e)
+                print(error_output)
+                sys.exit(EXIT_HA_ERROR)
+            else:
+                raise
+
+    asyncio.run(run_async_command(_state()))
+
+
+@app.command()
 def export(
     output: str = typer.Argument(..., help="Output CSV file path"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),

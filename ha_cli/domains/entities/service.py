@@ -163,10 +163,10 @@ class EntityService:
 
     async def get_entity(self, entity_id: str) -> Entity | None:
         """Get a specific entity by ID.
-        
+
         Args:
             entity_id: The entity ID to retrieve
-            
+
         Returns:
             Entity object or None if not found
         """
@@ -180,6 +180,25 @@ class EntityService:
         except Exception as e:
             logger.debug("Failed to get entity %s: %s", entity_id, e)
             return None
+
+    async def get_state(self, entity_id: str) -> dict[str, Any]:
+        """Get current state of an entity via REST API.
+
+        Uses REST API GET /api/states/<entity_id> which is more efficient
+        than scanning all states via WebSocket.
+
+        Args:
+            entity_id: The entity ID to query
+
+        Returns:
+            State data dict with entity_id, state, attributes, etc.
+
+        Raises:
+            HAAutomationError: If entity not found or API error
+        """
+        endpoint = f"/api/states/{entity_id}"
+        result = await self.client._rest("GET", endpoint)
+        return dict(result) if isinstance(result, dict) else {}
     
     def preview_rename(
         self, 

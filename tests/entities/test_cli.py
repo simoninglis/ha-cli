@@ -77,6 +77,133 @@ def sample_impact_analysis():
     )
 
 
+class TestStateCommand:
+    """Tests for the state command."""
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_state_basic(self, mock_service_class, mock_client_class, runner):
+        """Test basic state query."""
+        mock_service = AsyncMock()
+        mock_service.get_state.return_value = {
+            "entity_id": "light.office",
+            "state": "on",
+            "attributes": {"brightness": 255, "friendly_name": "Office Light"},
+            "last_changed": "2025-12-16T10:00:00Z",
+            "last_updated": "2025-12-16T10:05:00Z",
+        }
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(cli.app, ["state", "light.office"])
+
+        assert result.exit_code == 0
+        assert "light.office" in result.output
+        assert "on" in result.output
+        assert "Office Light" in result.output
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_state_with_attributes(self, mock_service_class, mock_client_class, runner):
+        """Test state query with attributes flag."""
+        mock_service = AsyncMock()
+        mock_service.get_state.return_value = {
+            "entity_id": "light.office",
+            "state": "on",
+            "attributes": {"brightness": 255, "color_temp": 370, "friendly_name": "Office Light"},
+            "last_changed": "2025-12-16T10:00:00Z",
+        }
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(cli.app, ["state", "light.office", "--attributes"])
+
+        assert result.exit_code == 0
+        assert "brightness" in result.output
+        assert "255" in result.output
+        assert "color_temp" in result.output
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_state_value_only(self, mock_service_class, mock_client_class, runner):
+        """Test state query with value-only flag."""
+        mock_service = AsyncMock()
+        mock_service.get_state.return_value = {
+            "entity_id": "sensor.temperature",
+            "state": "22.5",
+            "attributes": {"unit_of_measurement": "°C"},
+        }
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(cli.app, ["state", "sensor.temperature", "--value-only"])
+
+        assert result.exit_code == 0
+        # Output should be just the state value with newline
+        assert result.output.strip() == "22.5"
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_state_porcelain(self, mock_service_class, mock_client_class, runner):
+        """Test state query with porcelain output."""
+        mock_service = AsyncMock()
+        mock_service.get_state.return_value = {
+            "entity_id": "light.office",
+            "state": "on",
+            "attributes": {"brightness": 255},
+            "last_changed": "2025-12-16T10:00:00Z",
+            "last_updated": "2025-12-16T10:05:00Z",
+        }
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(cli.app, ["state", "light.office", "--porcelain"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["status"] == "success"
+        assert output["data"]["entity_id"] == "light.office"
+        assert output["data"]["state"] == "on"
+        assert "metadata" in output
+
+    def test_state_mutually_exclusive_flags(self, runner):
+        """Test that --value-only and --porcelain are mutually exclusive."""
+        result = runner.invoke(cli.app, ["state", "light.office", "--value-only", "--porcelain"])
+
+        assert result.exit_code != 0
+        assert "Cannot use --value-only and --porcelain together" in result.output
+
+    def test_state_invalid_entity_id_format(self, runner):
+        """Test error on invalid entity_id format."""
+        result = runner.invoke(cli.app, ["state", "invalid_entity"])
+
+        assert result.exit_code != 0
+        assert "Invalid entity_id format" in result.output
+
+    def test_state_invalid_entity_id_format_multiple_dots(self, runner):
+        """Test error on entity_id with multiple dots."""
+        result = runner.invoke(cli.app, ["state", "light.office.extra"])
+
+        assert result.exit_code != 0
+        assert "Invalid entity_id format" in result.output
+
+
 class TestListCommand:
     """Tests for the list command."""
 
