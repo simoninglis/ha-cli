@@ -1061,7 +1061,32 @@ class TestSystemIntegrations:
 
         result = runner.invoke(app, ["system", "integrations", "--unhealthy"])
         assert result.exit_code == 0
-        assert "healthy" in result.stdout.lower()
+        assert "no unhealthy" in result.stdout.lower()
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_integrations_empty_with_domain_filter_shows_domain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test that empty results with domain filter shows the domain in message."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_integrations = AsyncMock(return_value=[])
+
+        result = runner.invoke(
+            app, ["system", "integrations", "--domain", "nonexistent"]
+        )
+        assert result.exit_code == 0
+        assert "nonexistent" in result.stdout.lower()
 
     @patch("ha_cli.domains.system.cli.get_client_config")
     @patch("ha_cli.domains.system.cli.HAClient")
@@ -1147,7 +1172,7 @@ class TestSystemIntegrations:
         mock_config: MagicMock,
     ) -> None:
         """Test integrations error handling."""
-        from ha_cli.common.exceptions import HAAutomationError
+        from ha_cli.common.exceptions import EXIT_HA_ERROR, HAAutomationError
 
         mock_config.return_value = ("http://test:8123", "test-token")
         mock_client = AsyncMock()
@@ -1161,7 +1186,7 @@ class TestSystemIntegrations:
         )
 
         result = runner.invoke(app, ["system", "integrations"])
-        assert result.exit_code != 0
+        assert result.exit_code == EXIT_HA_ERROR
         assert "failed" in result.stdout.lower()
 
     @patch("ha_cli.domains.system.cli.get_client_config")
@@ -1203,10 +1228,12 @@ class TestSystemIntegrations:
         result = runner.invoke(app, ["system", "integrations"])
         assert result.exit_code == 0
         # setup_error should appear before loaded in output
+        # Use newline-prefix to avoid substring matches (e.g., "not_loaded" contains "loaded")
         stdout = result.stdout
         error_pos = stdout.find("setup_error")
-        loaded_pos = stdout.find("loaded")
-        assert error_pos < loaded_pos  # Error states shown first
+        # Look for "loaded" as a state heading (with newline prefix to avoid "not_loaded")
+        loaded_heading_pos = stdout.find("\nloaded") if "\nloaded" in stdout else stdout.find(" loaded")
+        assert error_pos < loaded_heading_pos  # Error states shown first
 
 
 class TestSystemVersion:

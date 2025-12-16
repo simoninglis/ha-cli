@@ -559,3 +559,170 @@ class TestSSHCommandSecurity:
         call_args = mock_exec.call_args[0]
         # The remote command should be the last argument as a single string
         assert call_args[-1] == "ha core info && echo done"
+
+
+class TestSystemServiceIntegrations:
+    """Test get_integrations() method."""
+
+    @pytest.mark.asyncio
+    async def test_get_integrations_no_client(self) -> None:
+        """Test get_integrations without client raises error."""
+        from ha_cli.common.exceptions import HAAutomationError
+
+        service = SystemService()
+        with pytest.raises(HAAutomationError, match="No API client available"):
+            await service.get_integrations()
+
+    @pytest.mark.asyncio
+    async def test_get_integrations_success(self) -> None:
+        """Test get_integrations returns correctly mapped entries."""
+        mock_client = MagicMock()
+        mock_client._ws_call = AsyncMock(
+            return_value=[
+                {
+                    "entry_id": "abc123",
+                    "domain": "sonos",
+                    "title": "Living Room",
+                    "state": "loaded",
+                    "disabled_by": None,
+                },
+                {
+                    "entry_id": "def456",
+                    "domain": "zha",
+                    "title": "Zigbee",
+                    "state": "loaded",
+                    "disabled_by": None,
+                },
+            ]
+        )
+
+        service = SystemService(client=mock_client)
+        entries = await service.get_integrations()
+
+        # Verify WS call was made with correct message type
+        mock_client._ws_call.assert_called_once_with("config_entries/get")
+
+        assert len(entries) == 2
+        assert entries[0]["entry_id"] == "abc123"
+        assert entries[0]["domain"] == "sonos"
+        assert entries[1]["entry_id"] == "def456"
+        assert entries[1]["domain"] == "zha"
+
+    @pytest.mark.asyncio
+    async def test_get_integrations_domain_filter(self) -> None:
+        """Test get_integrations filters by domain."""
+        mock_client = MagicMock()
+        mock_client._ws_call = AsyncMock(
+            return_value=[
+                {"entry_id": "abc", "domain": "sonos", "title": "S1", "state": "loaded"},
+                {"entry_id": "def", "domain": "zha", "title": "Z1", "state": "loaded"},
+                {"entry_id": "ghi", "domain": "sonos", "title": "S2", "state": "loaded"},
+            ]
+        )
+
+        service = SystemService(client=mock_client)
+        entries = await service.get_integrations(domain="sonos")
+
+        assert len(entries) == 2
+        assert all(e["domain"] == "sonos" for e in entries)
+
+    @pytest.mark.asyncio
+    async def test_get_integrations_unhealthy_filter(self) -> None:
+        """Test get_integrations filters unhealthy only."""
+        mock_client = MagicMock()
+        mock_client._ws_call = AsyncMock(
+            return_value=[
+                {"entry_id": "abc", "domain": "good", "title": "G", "state": "loaded"},
+                {"entry_id": "def", "domain": "bad", "title": "B", "state": "setup_error"},
+                {"entry_id": "ghi", "domain": "retry", "title": "R", "state": "setup_retry"},
+            ]
+        )
+
+        service = SystemService(client=mock_client)
+        entries = await service.get_integrations(unhealthy_only=True)
+
+        assert len(entries) == 2
+        assert entries[0]["state"] == "setup_error"
+        assert entries[1]["state"] == "setup_retry"
+
+    @pytest.mark.asyncio
+    async def test_get_integrations_unexpected_response_type(self) -> None:
+        """Test get_integrations raises error on non-list response."""
+        from ha_cli.common.exceptions import HAAutomationError
+
+        mock_client = MagicMock()
+        mock_client._ws_call = AsyncMock(return_value={"error": "unexpected"})
+
+        service = SystemService(client=mock_client)
+        with pytest.raises(HAAutomationError, match="Unexpected response"):
+            await service.get_integrations()
+
+    @pytest.mark.asyncio
+    async def test_get_integrations_type_coercion(self) -> None:
+        """Test get_integrations handles None/non-string values safely."""
+        mock_client = MagicMock()
+        mock_client._ws_call = AsyncMock(
+            return_value=[
+                {
+                    "entry_id": "abc123",
+                    "domain": None,  # Should become ""
+                    "title": None,   # Should become ""
+                    "state": None,   # Should become "unknown"
+                },
+                {
+                    "entry_id": "def456",
+                    "domain": 123,   # Should become "123"
+                    "title": "Test",
+                    "state": "loaded",
+                },
+            ]
+        )
+
+        service = SystemService(client=mock_client)
+        entries = await service.get_integrations()
+
+        assert len(entries) == 2
+        # First entry with None values
+        assert entries[0]["domain"] == ""
+        assert entries[0]["title"] == ""
+        assert entries[0]["state"] == "unknown"
+        # Second entry with numeric domain
+        assert entries[1]["domain"] == "123"
+
+    @pytest.mark.asyncio
+    async def test_get_integrations_skips_invalid_entries(self) -> None:
+        """Test get_integrations skips entries without valid entry_id."""
+        mock_client = MagicMock()
+        mock_client._ws_call = AsyncMock(
+            return_value=[
+                {"entry_id": "", "domain": "bad1", "title": "No ID", "state": "loaded"},
+                {"entry_id": None, "domain": "bad2", "title": "Null ID", "state": "loaded"},
+                {"domain": "bad3", "title": "Missing ID", "state": "loaded"},
+                {"entry_id": "valid", "domain": "good", "title": "Valid", "state": "loaded"},
+                "not_a_dict",  # Should be skipped
+            ]
+        )
+
+        service = SystemService(client=mock_client)
+        entries = await service.get_integrations()
+
+        assert len(entries) == 1
+        assert entries[0]["entry_id"] == "valid"
+
+    @pytest.mark.asyncio
+    async def test_get_integrations_preserves_haautomation_error(self) -> None:
+        """Test that HAAutomationError is not double-wrapped."""
+        from ha_cli.common.exceptions import HAAutomationError
+
+        mock_client = MagicMock()
+        original_error = HAAutomationError("Original error", details={"key": "value"})
+        mock_client._ws_call = AsyncMock(side_effect=original_error)
+
+        service = SystemService(client=mock_client)
+
+        with pytest.raises(HAAutomationError) as exc_info:
+            await service.get_integrations()
+
+        # Should be the exact same error, not wrapped
+        assert exc_info.value is original_error
+        assert exc_info.value.details == {"key": "value"}

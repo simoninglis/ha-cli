@@ -850,9 +850,15 @@ def integrations(
                     # Human-readable output
                     if not entries:
                         if unhealthy:
-                            console.print("[green]✓[/green] All integrations are healthy")
+                            msg = "No unhealthy integrations found"
+                            if domain:
+                                msg += f" for domain: {domain}"
+                            console.print(f"[green]✓[/green] {msg}")
                         else:
-                            console.print("[yellow]No integrations found[/yellow]")
+                            msg = "No integrations found"
+                            if domain:
+                                msg += f" for domain: {domain}"
+                            console.print(f"[yellow]{msg}[/yellow]")
                         return
 
                     # Group by state for display

@@ -503,7 +503,7 @@ class SystemService:
             - disabled_by: Why disabled (if applicable)
 
         Raises:
-            HAAutomationError: If no API client available
+            HAAutomationError: If no API client available or unexpected response
         """
         from ...common.exceptions import HAAutomationError
 
@@ -513,17 +513,35 @@ class SystemService:
         try:
             result = await self.client._ws_call("config_entries/get")
 
+            # Validate response type - don't silently return empty on unexpected payload
             if not isinstance(result, list):
-                logger.warning(f"Unexpected config_entries/get result: {type(result)}")
-                return []
+                raise HAAutomationError(
+                    "Unexpected response from config_entries/get",
+                    details={"result_type": type(result).__name__},
+                )
 
             entries: list[dict] = []
             for entry in result:
                 if not isinstance(entry, dict):
                     continue
 
-                entry_domain = entry.get("domain", "")
-                entry_state = entry.get("state", "unknown")
+                # Skip entries without valid entry_id
+                entry_id = entry.get("entry_id")
+                if not isinstance(entry_id, str) or not entry_id:
+                    continue
+
+                # Type-safe extraction with coercion to prevent TypeError in CLI sorting
+                entry_domain = entry.get("domain") or ""
+                if not isinstance(entry_domain, str):
+                    entry_domain = str(entry_domain)
+
+                entry_state = entry.get("state") or "unknown"
+                if not isinstance(entry_state, str):
+                    entry_state = str(entry_state)
+
+                entry_title = entry.get("title") or ""
+                if not isinstance(entry_title, str):
+                    entry_title = str(entry_title)
 
                 # Apply domain filter
                 if domain and entry_domain != domain:
@@ -534,14 +552,17 @@ class SystemService:
                     continue
 
                 entries.append({
-                    "entry_id": entry.get("entry_id", ""),
+                    "entry_id": entry_id,
                     "domain": entry_domain,
-                    "title": entry.get("title", ""),
+                    "title": entry_title,
                     "state": entry_state,
                     "disabled_by": entry.get("disabled_by"),
                 })
 
             return entries
 
+        except HAAutomationError:
+            # Don't double-wrap HAAutomationError
+            raise
         except Exception as e:
             raise HAAutomationError(f"Failed to get integrations: {e}") from e
