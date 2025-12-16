@@ -531,17 +531,15 @@ class SystemService:
                     continue
 
                 # Type-safe extraction with coercion to prevent TypeError in CLI sorting
-                entry_domain = entry.get("domain") or ""
-                if not isinstance(entry_domain, str):
-                    entry_domain = str(entry_domain)
+                # Use explicit None check to avoid treating falsey values (0, False) as missing
+                raw_domain = entry.get("domain")
+                entry_domain = str(raw_domain) if raw_domain is not None else ""
 
-                entry_state = entry.get("state") or "unknown"
-                if not isinstance(entry_state, str):
-                    entry_state = str(entry_state)
+                raw_state = entry.get("state")
+                entry_state = str(raw_state) if raw_state is not None else "unknown"
 
-                entry_title = entry.get("title") or ""
-                if not isinstance(entry_title, str):
-                    entry_title = str(entry_title)
+                raw_title = entry.get("title")
+                entry_title = str(raw_title) if raw_title is not None else ""
 
                 # Apply domain filter
                 if domain and entry_domain != domain:

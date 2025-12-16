@@ -1192,6 +1192,76 @@ class TestSystemIntegrations:
     @patch("ha_cli.domains.system.cli.get_client_config")
     @patch("ha_cli.domains.system.cli.HAClient")
     @patch("ha_cli.domains.system.cli.SystemService")
+    def test_integrations_error_porcelain_preserves_details(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test that porcelain error output preserves HAAutomationError.details."""
+        from ha_cli.common.exceptions import EXIT_HA_ERROR, HAAutomationError
+
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_integrations = AsyncMock(
+            side_effect=HAAutomationError(
+                "Unexpected response",
+                details={"result_type": "dict", "extra": "info"},
+            )
+        )
+
+        result = runner.invoke(app, ["system", "integrations", "--porcelain"])
+        assert result.exit_code == EXIT_HA_ERROR
+        output = json.loads(result.stdout)
+        assert output["status"] == "error"
+        assert "Unexpected response" in output["error"]["message"]
+        # Verify details are preserved
+        assert output["error"]["details"]["result_type"] == "dict"
+        assert output["error"]["details"]["extra"] == "info"
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
+    def test_integrations_error_json_preserves_details(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test that JSON error output preserves HAAutomationError.details."""
+        from ha_cli.common.exceptions import EXIT_HA_ERROR, HAAutomationError
+
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_integrations = AsyncMock(
+            side_effect=HAAutomationError(
+                "API error",
+                details={"code": "WS_ERROR", "status": 500},
+            )
+        )
+
+        result = runner.invoke(app, ["system", "integrations", "--json"])
+        assert result.exit_code == EXIT_HA_ERROR
+        output = json.loads(result.stdout)
+        assert output["success"] is False
+        assert "API error" in output["error"]
+        # Verify details are preserved
+        assert output["details"]["code"] == "WS_ERROR"
+        assert output["details"]["status"] == 500
+
+    @patch("ha_cli.domains.system.cli.get_client_config")
+    @patch("ha_cli.domains.system.cli.HAClient")
+    @patch("ha_cli.domains.system.cli.SystemService")
     def test_integrations_mixed_states(
         self,
         mock_service_class: MagicMock,

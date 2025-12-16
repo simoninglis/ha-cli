@@ -690,6 +690,30 @@ class TestSystemServiceIntegrations:
         assert entries[1]["domain"] == "123"
 
     @pytest.mark.asyncio
+    async def test_get_integrations_falsey_values_preserved(self) -> None:
+        """Test get_integrations preserves falsey non-None values (0, False, empty string)."""
+        mock_client = MagicMock()
+        mock_client._ws_call = AsyncMock(
+            return_value=[
+                {
+                    "entry_id": "abc123",
+                    "domain": 0,       # Falsey but not None - should become "0"
+                    "title": False,    # Falsey but not None - should become "False"
+                    "state": "",       # Empty string - should stay ""
+                },
+            ]
+        )
+
+        service = SystemService(client=mock_client)
+        entries = await service.get_integrations()
+
+        assert len(entries) == 1
+        # Falsey values should be converted to their string representation, not default
+        assert entries[0]["domain"] == "0"
+        assert entries[0]["title"] == "False"
+        assert entries[0]["state"] == ""  # Empty string preserved (not "unknown")
+
+    @pytest.mark.asyncio
     async def test_get_integrations_skips_invalid_entries(self) -> None:
         """Test get_integrations skips entries without valid entry_id."""
         mock_client = MagicMock()

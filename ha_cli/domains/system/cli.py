@@ -897,15 +897,16 @@ def integrations(
             except Exception as e:
                 if porcelain:
                     assert formatter is not None
-                    output = formatter.error(str(e), error_code="INTEGRATIONS_ERROR")
+                    # Pass exception object directly to preserve HAAutomationError.details
+                    output = formatter.error(e, error_code="INTEGRATIONS_ERROR")
                     write_output(output)
                 elif json_output:
-                    write_output(
-                        json.dumps(
-                            {"success": False, "error": str(e)},
-                            indent=2,
-                        )
-                    )
+                    # Include details for HAAutomationError
+                    from ...common.exceptions import HAAutomationError
+                    error_data: dict = {"success": False, "error": str(e)}
+                    if isinstance(e, HAAutomationError) and e.details:
+                        error_data["details"] = e.details
+                    write_output(json.dumps(error_data, indent=2))
                 else:
                     console.print(f"[red]✗[/red] Failed to get integrations: {e}")
                 sys.exit(EXIT_HA_ERROR)
