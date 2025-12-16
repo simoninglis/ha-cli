@@ -10,7 +10,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
 
-from ...common.cli_utils import run_async_command, setup_logging, write_output
+from ...common.cli_utils import (
+    run_async_command,
+    set_porcelain_mode,
+    setup_logging,
+    write_output,
+)
 from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import EXIT_HA_ERROR
@@ -54,6 +59,7 @@ def restart(
     By default, it checks the configuration validity before restarting.
     """
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     async def _restart() -> None:
         formatter = PorcelainFormatter("system restart") if porcelain else None
@@ -177,7 +183,7 @@ def restart(
             if client:
                 await client.__aexit__(None, None, None)
 
-    asyncio.run(run_async_command(_restart()))
+    asyncio.run(run_async_command(_restart(), command="system restart"))
 
 
 @app.command("reload")
