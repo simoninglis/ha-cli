@@ -4,7 +4,7 @@ import json
 import logging
 import subprocess
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class DeconzDevice:
     model: str
     ieee: str
     device_type: str  # 'light' or 'sensor'
-    sensor_type: Optional[str] = None  # e.g., 'ZHASwitch', 'ZHAPresence'
+    sensor_type: str | None = None  # e.g., 'ZHASwitch', 'ZHAPresence'
 
 
 class DeconzService:
@@ -64,7 +64,7 @@ class DeconzService:
 
     def __init__(self, ssh_host: str = "homeassistant"):
         self.ssh_host = ssh_host
-        self._config: Optional[DeconzConfig] = None
+        self._config: DeconzConfig | None = None
 
     def _run_ssh(self, cmd: str, timeout: int = SSH_TIMEOUT) -> str:
         """Run command on Home Assistant via SSH.
@@ -126,7 +126,7 @@ class DeconzService:
 
         raise RuntimeError("deCONZ integration not found in Home Assistant config")
 
-    def _api_call(self, endpoint: str, method: str = "GET") -> dict:
+    def _api_call(self, endpoint: str, method: str = "GET") -> dict[str, Any]:
         """Make deCONZ REST API call.
 
         Args:
@@ -171,9 +171,12 @@ class DeconzService:
             if result and isinstance(result[0], dict) and "success" in result[0]:
                 return {"_success_list": result}
 
-        return result
+        # At this point result should be a dict (normal API response)
+        if isinstance(result, dict):
+            return result
+        return {}
 
-    def list_lights(self, search: Optional[str] = None) -> list[DeconzDevice]:
+    def list_lights(self, search: str | None = None) -> list[DeconzDevice]:
         """List all lights from deCONZ."""
         lights = self._api_call("lights")
         result = []
@@ -195,7 +198,7 @@ class DeconzService:
 
         return sorted(result, key=lambda d: int(d.id))
 
-    def list_sensors(self, search: Optional[str] = None) -> list[DeconzDevice]:
+    def list_sensors(self, search: str | None = None) -> list[DeconzDevice]:
         """List all sensors from deCONZ."""
         sensors = self._api_call("sensors")
         result = []
@@ -234,7 +237,7 @@ class DeconzService:
 
         return sorted(result, key=lambda g: int(g["id"]))
 
-    def get_device(self, device_type: str, device_id: str) -> Optional[DeconzDevice]:
+    def get_device(self, device_type: str, device_id: str) -> DeconzDevice | None:
         """Get a specific device by type and ID."""
         endpoint = f"{device_type}s/{device_id}"
         try:

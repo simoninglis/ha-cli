@@ -100,6 +100,41 @@ poetry run ha-cli audit integrations            # Per-integration health summary
 poetry run ha-cli audit all                     # Run all checks with combined summary
 ```
 
+### deCONZ Commands (ZHA Migration)
+```bash
+poetry run ha-cli deconz list lights            # List deCONZ lights
+poetry run ha-cli deconz list sensors           # List deCONZ sensors
+poetry run ha-cli deconz list groups            # List deCONZ groups
+poetry run ha-cli deconz list all               # List all deCONZ devices
+poetry run ha-cli deconz search <query>         # Search devices by name
+poetry run ha-cli deconz delete light <id>      # Delete light (with confirmation)
+poetry run ha-cli deconz delete sensor <id> -f  # Delete sensor (skip confirmation)
+```
+
+**deCONZ Migration Workflow:**
+1. `ha-cli deconz search "device name"` - Find device IEEE address and ID
+2. `ha-cli deconz delete light|sensor <id>` - Remove from deCONZ
+3. Factory reset device (varies by manufacturer)
+4. Enable ZHA pairing in Home Assistant
+5. Rename new ZHA entity to match naming conventions
+
+### Labels Commands (Semantic Grouping)
+```bash
+poetry run ha-cli labels list                   # List all labels
+poetry run ha-cli labels create <name>          # Create new label
+poetry run ha-cli labels create <name> --icon mdi:lightbulb-group --color orange
+poetry run ha-cli labels delete <label_id>      # Delete label (with confirmation)
+poetry run ha-cli labels delete <label_id> -f   # Delete label (skip confirmation)
+poetry run ha-cli labels assign <entity_id> <label_id>  # Add label to entity
+poetry run ha-cli labels remove <entity_id> <label_id>  # Remove label from entity
+poetry run ha-cli labels entities <label_id>    # List entities with label
+```
+
+**Label Workflow (per ADR-0006):**
+1. `ha-cli labels create routine_kitchen_remote --icon mdi:lightbulb-group --color orange`
+2. `ha-cli labels assign light.kitchen_ceiling routine_kitchen_remote`
+3. Use in automations: `target: { label_id: routine_kitchen_remote }`
+
 **Exit codes:**
 - `0` = No issues found
 - `1` = Issues found (warnings/errors)
@@ -248,6 +283,9 @@ ha_cli/
 │   ├── areas/                # Area management (with CRUD operations)
 │   ├── audit/                # Tech debt auditing (dead entities, unused automations, etc.)
 │   ├── dashboards/           # Dashboard management
+│   ├── deconz/               # deCONZ device management (ZHA migration)
+│   │   ├── cli.py            # List, search, delete commands
+│   │   └── service.py        # SSH-based deCONZ API interactions
 │   └── entities/             # Entity management
 └── __main__.py               # CLI entry point
 ```
@@ -266,6 +304,37 @@ WebSocket connection constants are defined in `ha_cli/common/client.py`:
 - `WS_HEARTBEAT_INTERVAL = 30` - Seconds between heartbeat pings
 - `WS_PING_TIMEOUT = 10` - Seconds to wait for pong response
 - `WS_MAX_MESSAGE_SIZE = 10MB` - Maximum WebSocket message size
+
+### SSH Safety Pattern
+
+When implementing SSH-based commands (like deconz or system domains), use this pattern:
+
+```python
+# SSH connection options for safety
+SSH_OPTIONS = [
+    "-o", "BatchMode=yes",           # Never prompt for password
+    "-o", "ConnectTimeout=10",       # Connection timeout
+    "-o", "StrictHostKeyChecking=accept-new",
+]
+SSH_TIMEOUT = 30  # Command timeout in seconds
+
+def _run_ssh(self, cmd: str, timeout: int = SSH_TIMEOUT) -> str:
+    ssh_args = ["ssh", *SSH_OPTIONS, self.ssh_host, cmd]
+    try:
+        result = subprocess.run(ssh_args, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise SSHError(f"SSH command timed out after {timeout}s")
+
+    if result.returncode == 255:  # SSH connection error
+        raise SSHError(f"SSH connection error: {result.stderr.strip()}")
+    return result.stdout
+```
+
+**Key points:**
+- Always use `BatchMode=yes` to prevent interactive prompts
+- Set both connection timeout (`ConnectTimeout`) and command timeout (`timeout=`)
+- Check for return code 255 (SSH-specific connection errors)
+- Create domain-specific exceptions (`SSHError`, `APIError`) for structured handling
 
 ### Security Features
 

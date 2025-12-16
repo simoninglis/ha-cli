@@ -524,3 +524,112 @@ class TestHAClientIntegration:
                 call_args = mock_client_instance.request.call_args
                 assert call_args[1]["method"] == "GET"
                 assert "/api/config/automation/config/1234567890123" in str(call_args)
+
+    # REST API expect_json parameter tests (Phase 0.1)
+
+    @pytest.mark.asyncio
+    async def test_rest_api_text_response(self, client):
+        """Test REST API call returning text (expect_json=False)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b'Hello World'
+        mock_response.text = 'Hello World'
+
+        with patch('httpx.AsyncClient') as mock_httpx:
+            mock_client = AsyncMock()
+            mock_client.request.return_value = mock_response
+            mock_httpx.return_value = mock_client
+
+            async with client:
+                result = await client._rest("POST", "/api/template", expect_json=False)
+
+                assert result == "Hello World"
+                assert isinstance(result, str)
+
+    @pytest.mark.asyncio
+    async def test_rest_api_json_decode_error(self, client):
+        """Test REST API call when JSON decode fails but expect_json=True."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b'Not JSON content'
+        mock_response.text = 'Not JSON content'
+        mock_response.json.side_effect = json.JSONDecodeError("msg", "doc", 0)
+
+        with patch('httpx.AsyncClient') as mock_httpx:
+            mock_client = AsyncMock()
+            mock_client.request.return_value = mock_response
+            mock_httpx.return_value = mock_client
+
+            async with client:
+                with pytest.raises(ValidationError, match="Expected JSON response"):
+                    await client._rest("GET", "/api/test")
+
+    @pytest.mark.asyncio
+    async def test_rest_api_default_expect_json(self, client):
+        """Test REST API call defaults to expect_json=True."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b'{"key": "value"}'
+        mock_response.json.return_value = {"key": "value"}
+
+        with patch('httpx.AsyncClient') as mock_httpx:
+            mock_client = AsyncMock()
+            mock_client.request.return_value = mock_response
+            mock_httpx.return_value = mock_client
+
+            async with client:
+                result = await client._rest("GET", "/api/test")
+
+                assert result == {"key": "value"}
+                mock_response.json.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_rest_api_empty_content(self, client):
+        """Test REST API call with empty content returns None."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b''
+
+        with patch('httpx.AsyncClient') as mock_httpx:
+            mock_client = AsyncMock()
+            mock_client.request.return_value = mock_response
+            mock_httpx.return_value = mock_client
+
+            async with client:
+                result = await client._rest("DELETE", "/api/test")
+
+                assert result is None
+
+    @pytest.mark.asyncio
+    async def test_rest_api_error_message_extraction_json(self, client):
+        """Test error message is extracted from JSON response body."""
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.text = '{"message": "Template syntax error: unexpected end"}'
+        mock_response.json.return_value = {"message": "Template syntax error: unexpected end"}
+
+        with patch('httpx.AsyncClient') as mock_httpx:
+            mock_client = AsyncMock()
+            mock_client.request.return_value = mock_response
+            mock_httpx.return_value = mock_client
+
+            async with client:
+                with pytest.raises(ValidationError, match="Template syntax error"):
+                    await client._rest("POST", "/api/template")
+
+    @pytest.mark.asyncio
+    async def test_rest_api_error_message_extraction_text(self, client):
+        """Test error message is extracted from plain text response."""
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.text = "Plain text error message"
+        mock_response.json.side_effect = json.JSONDecodeError("msg", "doc", 0)
+
+        with patch('httpx.AsyncClient') as mock_httpx:
+            mock_client = AsyncMock()
+            mock_client.request.return_value = mock_response
+            mock_httpx.return_value = mock_client
+
+            async with client:
+                with pytest.raises(ValidationError, match="Plain text error message"):
+                    await client._rest("POST", "/api/test")

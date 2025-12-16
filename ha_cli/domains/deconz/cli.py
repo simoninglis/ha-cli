@@ -1,8 +1,6 @@
 """deCONZ CLI commands for migration management."""
 
-import json
 import sys
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -37,7 +35,7 @@ def list_devices(
         ...,
         help="Type of devices to list: lights, sensors, groups, or all",
     ),
-    search: Optional[str] = typer.Option(
+    search: str | None = typer.Option(
         None,
         "--search",
         "-s",

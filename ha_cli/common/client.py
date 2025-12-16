@@ -34,6 +34,24 @@ WS_PING_TIMEOUT = 10  # Seconds to wait for pong response
 WS_MAX_MESSAGE_SIZE = 10 * 1024 * 1024  # 10MB max message size
 
 
+def _extract_error_message(response: httpx.Response) -> str:
+    """Extract error message from response body (JSON or text).
+
+    Args:
+        response: httpx Response object
+
+    Returns:
+        Error message string extracted from response body
+    """
+    try:
+        body = response.json()
+        fallback = response.text or f"HTTP {response.status_code}"
+        result = body.get("message", body.get("error", fallback))
+        return str(result)
+    except (json.JSONDecodeError, ValueError):
+        return response.text or f"HTTP {response.status_code}"
+
+
 class HAClient:
     """Home Assistant client with REST and WebSocket support."""
     
@@ -118,26 +136,29 @@ class HAClient:
         endpoint: str,
         json_data: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
+        expect_json: bool = True,
     ) -> Any:
         """Make REST API request.
-        
+
         Args:
             method: HTTP method
             endpoint: API endpoint
             json_data: Request body
             params: Query parameters
-            
+            expect_json: If True, parse response as JSON; if False, return raw text.
+                        Defaults to True for backward compatibility.
+
         Returns:
-            Response data
-            
+            Response data (dict/list for JSON, str for text)
+
         Raises:
             Various exceptions based on status code
         """
         if not self._client:
             raise ConnectionError("Client not initialized. Use async context manager.")
-        
+
         url = urljoin(self.url, endpoint)
-        
+
         try:
             response = await self._client.request(
                 method=method,
@@ -145,29 +166,47 @@ class HAClient:
                 json=json_data,
                 params=params,
             )
-            
-            # Map status codes to exceptions
+
+            # Map status codes to exceptions with improved error message extraction
             if response.status_code == 401:
                 raise AuthenticationError("Invalid or expired access token")
             elif response.status_code == 404:
-                raise NotFoundError(f"Resource not found: {endpoint}")
+                error_msg = _extract_error_message(response)
+                http_fallback = f"HTTP {response.status_code}"
+                msg = f"Resource not found: {endpoint}"
+                if error_msg != http_fallback:
+                    msg = f"{msg} - {error_msg}"
+                raise NotFoundError(msg)
             elif response.status_code == 400:
-                raise ValidationError(f"Bad request: {response.text}")
+                error_msg = _extract_error_message(response)
+                raise ValidationError(f"Bad request: {error_msg}")
             elif response.status_code >= 500:
-                raise HAServerError(f"Server error: {response.status_code}")
-            
+                error_msg = _extract_error_message(response)
+                http_fallback = f"HTTP {response.status_code}"
+                msg = f"Server error: {response.status_code}"
+                if error_msg != http_fallback:
+                    msg = f"{msg} - {error_msg}"
+                raise HAServerError(msg)
+
             response.raise_for_status()
-            
-            # Return JSON if available
-            if response.content:
-                return response.json()
-            return None
-            
+
+            # Return based on expect_json flag
+            if not response.content:
+                return None
+            if expect_json:
+                try:
+                    return response.json()
+                except (json.JSONDecodeError, ValueError) as e:
+                    # Caller expected JSON but got something else
+                    raise ValidationError(f"Expected JSON response, got: {response.text[:100]}") from e
+            return response.text  # httpx property (not method)
+
         except httpx.TimeoutException as e:
             raise TimeoutError(f"Request timed out: {e}") from e
         except httpx.ConnectError as e:
             raise ConnectionError(f"Failed to connect: {e}") from e
-    
+
+
     async def _ensure_ws_connected(self) -> None:
         """Ensure WebSocket is connected and authenticated."""
         async with self._ws_lock:

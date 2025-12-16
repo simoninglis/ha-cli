@@ -146,7 +146,7 @@ def restart(
             if porcelain:
                 assert formatter is not None
                 if success:
-                    metadata = {"host": host, "message": message}
+                    metadata: dict[str, str | bool] = {"host": host, "message": message}
                     if config_check_skipped:
                         metadata["config_check_skipped"] = True
                     output = formatter.success(
