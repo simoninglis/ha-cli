@@ -262,17 +262,18 @@ class PorcelainFormatter:
         if isinstance(error, HAAutomationError):
             error_type = error.__class__.__name__
             error_message = error.message
-            error_details = error.details or {}
+            # Copy to avoid mutating the original exception's details
+            error_details = dict(error.details) if error.details else {}
             if details:
                 error_details.update(details)
         elif isinstance(error, Exception):
             error_type = error.__class__.__name__
             error_message = str(error)
-            error_details = details or {}
+            error_details = dict(details) if details else {}
         else:
             error_type = "Error"
             error_message = str(error)
-            error_details = details or {}
+            error_details = dict(details) if details else {}
         
         # Create error object
         porcelain_error = PorcelainError(

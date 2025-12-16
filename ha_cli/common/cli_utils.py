@@ -3,6 +3,7 @@
 import json
 import logging
 import sys
+import time
 from collections.abc import Awaitable
 from datetime import UTC, datetime
 from typing import TypeVar
@@ -40,13 +41,20 @@ def _emit_porcelain_error(
     command: str,
     error_type: str,
     message: str,
-    details: dict | None = None
+    details: dict | None = None,
+    response_time_ms: int | None = None,
+    error_code: str | None = None,
 ) -> None:
-    """Emit a structured JSON error for porcelain mode."""
+    """Emit a structured JSON error for porcelain mode.
+
+    Output format matches PorcelainFormatter.error() for consistency.
+    """
     error_obj: dict[str, str | dict | None] = {
         "type": error_type,
         "message": message,
     }
+    if error_code:
+        error_obj["code"] = error_code
     if details:
         error_obj["details"] = details
 
@@ -54,6 +62,9 @@ def _emit_porcelain_error(
         "command": command,
         "timestamp": datetime.now(UTC).isoformat(),
         "status": "error",
+        "metadata": {
+            "response_time_ms": response_time_ms,
+        },
         "error": error_obj,
         "suggestions": {
             "troubleshooting": [
@@ -113,15 +124,18 @@ async def run_async_command(coro: Awaitable[T], command: str = "unknown") -> T:
         SystemExit: On HAAutomationError (exit code 2) or other exceptions (exit code 3).
     """
     logger = logging.getLogger(__name__)
+    start_time = time.time()
     try:
         return await coro
     except HAAutomationError as e:
+        response_time_ms = int((time.time() - start_time) * 1000)
         if _porcelain_mode:
             _emit_porcelain_error(
                 command=command,
                 error_type=e.__class__.__name__,
                 message=e.message,
-                details=e.details
+                details=e.details,
+                response_time_ms=response_time_ms,
             )
         else:
             console.print(f"[red]Error:[/red] {e.message}")
@@ -129,11 +143,13 @@ async def run_async_command(coro: Awaitable[T], command: str = "unknown") -> T:
                 logger.debug(f"Error details: {e.details}")
         sys.exit(EXIT_HA_ERROR)
     except Exception as e:
+        response_time_ms = int((time.time() - start_time) * 1000)
         if _porcelain_mode:
             _emit_porcelain_error(
                 command=command,
                 error_type=e.__class__.__name__,
-                message=str(e)
+                message=str(e),
+                response_time_ms=response_time_ms,
             )
         else:
             console.print(f"[red]Unexpected error:[/red] {e}")

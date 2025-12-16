@@ -8,7 +8,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...common.cli_utils import run_async_command, setup_logging, write_output
+from ...common.cli_utils import run_async_command, set_porcelain_mode, setup_logging, write_output
 from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import EXIT_USAGE_ERROR
@@ -140,6 +140,7 @@ def dead_entities(
 ) -> None:
     """Find dead/unavailable entities."""
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     async def _check() -> int:
         formatter = PorcelainFormatter("audit dead-entities") if porcelain else None
@@ -166,7 +167,7 @@ def dead_entities(
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = asyncio.run(run_async_command(_check()))
+    exit_code = asyncio.run(run_async_command(_check(), command="audit dead-entities"))
     sys.exit(exit_code)
 
 
@@ -458,6 +459,7 @@ def all_checks(
 ) -> None:
     """Run all audit checks."""
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     # Parse severity filter
     severity_filter: AuditSeverity | None = None
@@ -554,5 +556,5 @@ def all_checks(
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = asyncio.run(run_async_command(_check()))
+    exit_code = asyncio.run(run_async_command(_check(), command="audit all"))
     sys.exit(exit_code)

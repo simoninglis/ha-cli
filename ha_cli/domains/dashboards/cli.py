@@ -11,7 +11,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...common.cli_utils import run_async_command, setup_logging, write_output
+from ...common.cli_utils import run_async_command, set_porcelain_mode, setup_logging, write_output
 from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import (
@@ -54,7 +54,8 @@ def list(
 ) -> None:
     """List all dashboards."""
     setup_logging(debug)
-    
+    set_porcelain_mode(porcelain)
+
     # Validate mutually exclusive flags
     output_flags = sum([json_output, porcelain])
     if output_flags > 1:
@@ -178,7 +179,7 @@ def list(
             else:
                 raise
     
-    asyncio.run(run_async_command(_list()))
+    asyncio.run(run_async_command(_list(), command="dashboards list"))
 
 
 @app.command()
@@ -314,7 +315,8 @@ def entities(
 ) -> None:
     """List all entities referenced in a dashboard."""
     setup_logging(debug)
-    
+    set_porcelain_mode(porcelain)
+
     # Validate mutually exclusive flags
     output_flags = sum([json_output, porcelain])
     if output_flags > 1:
@@ -500,7 +502,7 @@ def entities(
             else:
                 raise
     
-    asyncio.run(run_async_command(_entities()))
+    asyncio.run(run_async_command(_entities(), command="dashboards entities"))
 
 
 @app.command()

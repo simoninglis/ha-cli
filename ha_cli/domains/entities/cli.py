@@ -12,7 +12,7 @@ from rich import print
 from rich.console import Console
 from rich.table import Table
 
-from ...common.cli_utils import run_async_command, setup_logging, write_output
+from ...common.cli_utils import run_async_command, set_porcelain_mode, setup_logging, write_output
 from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import (
@@ -56,7 +56,8 @@ def list(
 ) -> None:
     """List entities with optional filtering."""
     setup_logging(debug)
-    
+    set_porcelain_mode(porcelain)
+
     # Validate mutually exclusive flags
     output_flags = sum([json_output, porcelain])
     if output_flags > 1:
@@ -255,7 +256,7 @@ def list(
             else:
                 raise
     
-    asyncio.run(run_async_command(_list()))
+    asyncio.run(run_async_command(_list(), command="entities list"))
 
 
 @app.command()

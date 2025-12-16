@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.markup import escape as rich_escape
 from rich.table import Table
 
-from ...common.cli_utils import run_async_command, setup_logging, write_output
+from ...common.cli_utils import run_async_command, set_porcelain_mode, setup_logging, write_output
 from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import (
@@ -90,6 +90,7 @@ def list_labels(
 ) -> None:
     """List all labels in the registry."""
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     async def _list() -> None:
         formatter = PorcelainFormatter("labels list") if porcelain else None
@@ -141,7 +142,7 @@ def list_labels(
         except Exception as e:
             _handle_error(e, porcelain, formatter)
 
-    asyncio.run(run_async_command(_list()))
+    asyncio.run(run_async_command(_list(), command="labels list"))
 
 
 @app.command("create")

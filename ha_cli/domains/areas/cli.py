@@ -8,7 +8,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...common.cli_utils import run_async_command, setup_logging, write_output
+from ...common.cli_utils import run_async_command, set_porcelain_mode, setup_logging, write_output
 from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import EXIT_USAGE_ERROR, NotFoundError, ValidationError
@@ -39,6 +39,7 @@ def list_areas(
 ) -> None:
     """List all areas with device and entity counts."""
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     async def _list() -> None:
         formatter = PorcelainFormatter("areas list") if porcelain else None
@@ -105,7 +106,7 @@ def list_areas(
                 console.print(table)
                 console.print(f"\nTotal: {len(areas)} areas")
 
-    asyncio.run(run_async_command(_list()))
+    asyncio.run(run_async_command(_list(), command="areas list"))
 
 
 @app.command("show")

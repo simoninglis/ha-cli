@@ -211,6 +211,7 @@ def reload(
         ha-cli system reload all          # Full restart
     """
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     async def _reload() -> None:
         formatter = PorcelainFormatter("system reload") if porcelain else None
@@ -261,7 +262,7 @@ def reload(
                     console.print(f"[red]✗[/red] {message}")
                     sys.exit(EXIT_HA_ERROR)
 
-    asyncio.run(run_async_command(_reload()))
+    asyncio.run(run_async_command(_reload(), command="system reload"))
 
 
 @app.command("check")
@@ -279,6 +280,7 @@ def check_config(
     Validates the configuration without restarting.
     """
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     async def _check() -> None:
         formatter = PorcelainFormatter("system check") if porcelain else None
@@ -326,7 +328,7 @@ def check_config(
                 console.print(f"[red]✗[/red] Configuration invalid: {message}")
                 sys.exit(EXIT_HA_ERROR)
 
-    asyncio.run(run_async_command(_check()))
+    asyncio.run(run_async_command(_check(), command="system check"))
 
 
 @app.command("logs")
@@ -361,6 +363,7 @@ def logs(
         ha-cli system logs --errors-only  # Use API, no SSH needed
     """
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     async def _logs() -> None:
         formatter = PorcelainFormatter("system logs") if porcelain else None
@@ -456,7 +459,7 @@ def logs(
             )
             console.print(panel)
 
-    asyncio.run(run_async_command(_logs()))
+    asyncio.run(run_async_command(_logs(), command="system logs"))
 
 
 @app.command("info")
@@ -471,6 +474,7 @@ def info(
 ) -> None:
     """Show Home Assistant system information."""
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     async def _info() -> None:
         formatter = PorcelainFormatter("system info") if porcelain else None
@@ -513,7 +517,7 @@ def info(
             console.print(f"  Machine: {sys_info.installation_type}")
             console.print(f"  Host: {sys_info.host}")
 
-    asyncio.run(run_async_command(_info()))
+    asyncio.run(run_async_command(_info(), command="system info"))
 
 
 @app.command("call")
@@ -541,6 +545,7 @@ def call(
         ha-cli system call notify.mobile_app_iphone --data '{"message": "Hello"}'
     """
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     # Parse service spec
     if "." not in service_spec:
@@ -639,7 +644,7 @@ def call(
                     console.print(f"[red]✗[/red] Service call failed: {e}")
                 sys.exit(EXIT_HA_ERROR)
 
-    asyncio.run(run_async_command(_call()))
+    asyncio.run(run_async_command(_call(), command="system call"))
 
 
 @app.command("template")
@@ -665,6 +670,7 @@ def template(
         ha-cli system template --file template.j2
     """
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     # Validate input: must provide template_str OR --file, but not both, not neither
     if template_str and file:
@@ -762,7 +768,7 @@ def template(
                     console.print(f"[red]✗[/red] Template failed: {e}")
                 sys.exit(EXIT_HA_ERROR)
 
-    asyncio.run(run_async_command(_template()))
+    asyncio.run(run_async_command(_template(), command="system template"))
 
 
 @app.command("integrations")
@@ -796,6 +802,7 @@ def integrations(
         ha-cli system integrations --porcelain        # Machine-readable output
     """
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     async def _integrations() -> None:
         formatter = PorcelainFormatter("system integrations") if porcelain else None
@@ -917,7 +924,7 @@ def integrations(
                     console.print(f"[red]✗[/red] Failed to get integrations: {e}")
                 sys.exit(EXIT_HA_ERROR)
 
-    asyncio.run(run_async_command(_integrations()))
+    asyncio.run(run_async_command(_integrations(), command="system integrations"))
 
 
 @app.command("version")

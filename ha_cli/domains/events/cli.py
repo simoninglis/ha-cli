@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
-from ...common.cli_utils import run_async_command, setup_logging
+from ...common.cli_utils import run_async_command, set_porcelain_mode, setup_logging
 from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import (
@@ -88,6 +88,7 @@ def listen(
         ha-cli events listen zha_event --filter "device_id=abc123"
     """
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     async def _listen() -> None:
         formatter = StreamingPorcelainFormatter("events listen") if porcelain else None
@@ -188,7 +189,7 @@ def listen(
         if not porcelain:
             console.print(f"\n[dim]Received {events_seen} events[/dim]")
 
-    asyncio.run(run_async_command(_listen()))
+    asyncio.run(run_async_command(_listen(), command="events listen"))
 
 
 @app.command("version")
