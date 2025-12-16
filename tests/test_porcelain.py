@@ -809,3 +809,213 @@ class TestHomeAssistantMetadataWithHealthInfo:
         )
 
         assert result["version"] == "2024.12.0"
+
+
+class TestStreamingPorcelainFormatter:
+    """Tests for StreamingPorcelainFormatter JSONL output."""
+
+    def test_init_sets_up_counters(self):
+        """Test that initialization sets up tracking state."""
+        from ha_cli.common.porcelain import StreamingPorcelainFormatter
+
+        formatter = StreamingPorcelainFormatter("events listen")
+
+        assert formatter.command == "events listen"
+        assert formatter.event_count == 0
+        assert formatter.error_count == 0
+        assert formatter._summary_emitted is False
+        assert formatter.start_time is not None
+
+    def test_emit_metadata_structure(self, capsys):
+        """Test metadata line has required fields."""
+        from ha_cli.common.porcelain import StreamingPorcelainFormatter
+
+        formatter = StreamingPorcelainFormatter("events listen")
+        formatter.emit_metadata(event_type="deconz_event")
+
+        output = capsys.readouterr().out.strip()
+        data = json.loads(output)
+
+        assert data["schema_version"] == 1
+        assert data["type"] == "metadata"
+        assert data["command"] == "events listen"
+        assert "started_at" in data
+        assert data["event_type"] == "deconz_event"
+
+    def test_emit_event_structure(self, capsys):
+        """Test event line has required fields."""
+        from ha_cli.common.porcelain import StreamingPorcelainFormatter
+
+        formatter = StreamingPorcelainFormatter("events listen")
+        formatter.emit_event({"unique_id": "abc123", "value": 42}, event_type="deconz_event")
+
+        output = capsys.readouterr().out.strip()
+        data = json.loads(output)
+
+        assert data["type"] == "event"
+        assert "timestamp" in data
+        assert data["data"]["unique_id"] == "abc123"
+        assert data["data"]["value"] == 42
+        assert data["event_type"] == "deconz_event"
+
+    def test_emit_event_increments_counter(self, capsys):
+        """Test event emission increments counter."""
+        from ha_cli.common.porcelain import StreamingPorcelainFormatter
+
+        formatter = StreamingPorcelainFormatter("events listen")
+        assert formatter.event_count == 0
+
+        formatter.emit_event({"key": "value1"})
+        assert formatter.event_count == 1
+
+        formatter.emit_event({"key": "value2"})
+        assert formatter.event_count == 2
+
+    def test_emit_event_without_event_type(self, capsys):
+        """Test event line without optional event_type."""
+        from ha_cli.common.porcelain import StreamingPorcelainFormatter
+
+        formatter = StreamingPorcelainFormatter("events listen")
+        formatter.emit_event({"data": "test"})
+
+        output = capsys.readouterr().out.strip()
+        data = json.loads(output)
+
+        assert data["type"] == "event"
+        assert "event_type" not in data
+
+    def test_emit_error_structure(self, capsys):
+        """Test error line has required fields."""
+        from ha_cli.common.porcelain import StreamingPorcelainFormatter
+
+        formatter = StreamingPorcelainFormatter("events listen")
+        formatter.emit_error("Connection lost", recoverable=True, error_type="connection")
+
+        output = capsys.readouterr().out.strip()
+        data = json.loads(output)
+
+        assert data["type"] == "error"
+        assert "timestamp" in data
+        assert data["message"] == "Connection lost"
+        assert data["recoverable"] is True
+        assert data["error_type"] == "connection"
+
+    def test_emit_error_increments_counter(self, capsys):
+        """Test error emission increments counter."""
+        from ha_cli.common.porcelain import StreamingPorcelainFormatter
+
+        formatter = StreamingPorcelainFormatter("events listen")
+        assert formatter.error_count == 0
+
+        formatter.emit_error("Error 1", recoverable=True)
+        assert formatter.error_count == 1
+
+        formatter.emit_error("Error 2", recoverable=False)
+        assert formatter.error_count == 2
+
+    def test_emit_summary_structure(self, capsys):
+        """Test summary line has required fields."""
+        from ha_cli.common.porcelain import StreamingPorcelainFormatter
+        import time
+
+        formatter = StreamingPorcelainFormatter("events listen")
+
+        # Simulate some events and errors
+        formatter.event_count = 5
+        formatter.error_count = 2
+
+        # Small delay to get non-zero duration
+        time.sleep(0.01)
+
+        formatter.emit_summary(exit_reason="timeout")
+
+        output = capsys.readouterr().out.strip()
+        data = json.loads(output)
+
+        assert data["type"] == "summary"
+        assert data["event_count"] == 5
+        assert data["error_count"] == 2
+        assert data["exit_reason"] == "timeout"
+        assert "duration_seconds" in data
+        assert data["duration_seconds"] >= 0
+        assert "ended_at" in data
+
+    def test_emit_summary_idempotent(self, capsys):
+        """Test summary can only be emitted once."""
+        from ha_cli.common.porcelain import StreamingPorcelainFormatter
+
+        formatter = StreamingPorcelainFormatter("events listen")
+
+        formatter.emit_summary(exit_reason="completed")
+        formatter.emit_summary(exit_reason="error")  # Should be ignored
+        formatter.emit_summary(exit_reason="interrupted")  # Should be ignored
+
+        output = capsys.readouterr().out
+        lines = [line for line in output.strip().split("\n") if line]
+
+        assert len(lines) == 1
+        data = json.loads(lines[0])
+        assert data["exit_reason"] == "completed"  # First call wins
+
+    def test_compact_json_separators(self, capsys):
+        """Test that output uses compact JSON separators."""
+        from ha_cli.common.porcelain import StreamingPorcelainFormatter
+
+        formatter = StreamingPorcelainFormatter("events listen")
+        formatter.emit_metadata(key="value")
+
+        output = capsys.readouterr().out.strip()
+
+        # Compact separators: no spaces after : or ,
+        assert ": " not in output or '": "' in output  # Allow space in strings
+        assert ", " not in output
+
+    def test_complete_session_output(self, capsys):
+        """Test complete JSONL session output."""
+        from ha_cli.common.porcelain import StreamingPorcelainFormatter
+
+        formatter = StreamingPorcelainFormatter("events listen")
+
+        # Emit a complete session
+        formatter.emit_metadata(event_type="state_changed")
+        formatter.emit_event({"entity_id": "light.office", "old_state": "off", "new_state": "on"}, event_type="state_changed")
+        formatter.emit_error("WebSocket ping timeout", recoverable=True, error_type="connection")
+        formatter.emit_event({"entity_id": "light.bedroom", "old_state": "on", "new_state": "off"}, event_type="state_changed")
+        formatter.emit_summary(exit_reason="count_reached")
+
+        output = capsys.readouterr().out
+        lines = [line for line in output.strip().split("\n") if line]
+
+        assert len(lines) == 5
+
+        # Verify each line is valid JSON
+        parsed_lines = [json.loads(line) for line in lines]
+
+        assert parsed_lines[0]["type"] == "metadata"
+        assert parsed_lines[1]["type"] == "event"
+        assert parsed_lines[2]["type"] == "error"
+        assert parsed_lines[3]["type"] == "event"
+        assert parsed_lines[4]["type"] == "summary"
+
+        # Verify counters
+        assert parsed_lines[4]["event_count"] == 2
+        assert parsed_lines[4]["error_count"] == 1
+        assert parsed_lines[4]["exit_reason"] == "count_reached"
+
+    def test_exit_reason_values(self, capsys):
+        """Test all valid exit reason values."""
+        from ha_cli.common.porcelain import StreamingPorcelainFormatter
+
+        exit_reasons = ["completed", "interrupted", "timeout", "count_reached", "error"]
+
+        for reason in exit_reasons:
+            formatter = StreamingPorcelainFormatter("test")
+            formatter.emit_summary(exit_reason=reason)
+
+        output = capsys.readouterr().out
+        lines = [line for line in output.strip().split("\n") if line]
+
+        assert len(lines) == 5
+        for i, line in enumerate(lines):
+            data = json.loads(line)
+            assert data["exit_reason"] == exit_reasons[i]

@@ -3,11 +3,137 @@
 import json
 import logging
 import re
+import sys
 import time
 from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+class StreamingPorcelainFormatter:
+    """JSONL streaming formatter for real-time event output.
+
+    This formatter is designed for commands that stream data (like events listen).
+    It outputs one JSON object per line (JSONL format) with immediate flushing
+    for real-time output.
+
+    JSONL Schema v1:
+    - metadata: Required first line with schema_version, type, command, started_at
+    - event: Data events with timestamp and data fields
+    - error: Error notifications with message, recoverable flag, and error_type
+    - summary: Final line with event_count, error_count, duration_seconds, exit_reason
+
+    Exit Reasons:
+    - completed: Natural end (duration/count reached normally)
+    - interrupted: User cancelled (Ctrl+C)
+    - timeout: Duration limit reached
+    - count_reached: Event count limit reached
+    - error: Fatal error occurred
+    """
+
+    SCHEMA_VERSION = 1
+
+    def __init__(self, command: str) -> None:
+        """Initialize streaming formatter.
+
+        Args:
+            command: The command being executed (e.g., "events listen")
+        """
+        self.command = command
+        self.event_count = 0
+        self.error_count = 0
+        self.start_time = datetime.now(UTC)
+        self._summary_emitted = False  # Idempotent guard
+
+    def emit_metadata(self, **kwargs: Any) -> None:
+        """Emit metadata line (must be called first).
+
+        Args:
+            **kwargs: Additional metadata fields (e.g., event_type="deconz_event")
+        """
+        self._write_line({
+            "schema_version": self.SCHEMA_VERSION,
+            "type": "metadata",
+            "command": self.command,
+            "started_at": self.start_time.isoformat(),
+            **kwargs
+        })
+
+    def emit_event(self, data: dict[str, Any], event_type: str | None = None) -> None:
+        """Emit event line.
+
+        Args:
+            data: The event data payload
+            event_type: Optional event type (e.g., "state_changed", "deconz_event")
+        """
+        self.event_count += 1
+        line: dict[str, Any] = {
+            "type": "event",
+            "timestamp": datetime.now(UTC).isoformat(),
+            "data": data
+        }
+        if event_type:
+            line["event_type"] = event_type
+        self._write_line(line)
+
+    def emit_error(
+        self,
+        message: str,
+        recoverable: bool,
+        error_type: str = "unknown"
+    ) -> None:
+        """Emit error line for non-fatal (or fatal in porcelain mode) errors.
+
+        Args:
+            message: Human-readable error message
+            recoverable: True if stream can continue, False for fatal errors
+            error_type: Category of error (e.g., "connection", "validation", "ha_error")
+        """
+        self.error_count += 1
+        self._write_line({
+            "type": "error",
+            "timestamp": datetime.now(UTC).isoformat(),
+            "message": message,
+            "recoverable": recoverable,
+            "error_type": error_type
+        })
+
+    def emit_summary(self, exit_reason: str = "completed") -> None:
+        """Emit summary line (idempotent - only emits once).
+
+        Args:
+            exit_reason: Reason for ending stream. One of:
+                - "completed": Natural end
+                - "interrupted": User cancelled (Ctrl+C)
+                - "timeout": Duration limit reached
+                - "count_reached": Event count limit reached
+                - "error": Fatal error occurred
+        """
+        if self._summary_emitted:
+            return  # Guard against double-emit on cleanup
+        self._summary_emitted = True
+
+        self._write_line({
+            "type": "summary",
+            "event_count": self.event_count,
+            "error_count": self.error_count,
+            "duration_seconds": round(
+                (datetime.now(UTC) - self.start_time).total_seconds(), 2
+            ),
+            "exit_reason": exit_reason,
+            "ended_at": datetime.now(UTC).isoformat()
+        })
+
+    def _write_line(self, obj: dict[str, Any]) -> None:
+        """Write JSON line to stdout with immediate flush.
+
+        Args:
+            obj: Dictionary to serialize as JSON
+        """
+        # Use compact separators (no extra whitespace) for streaming
+        sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
+        sys.stdout.flush()
 
 from pydantic import BaseModel, ConfigDict
 
