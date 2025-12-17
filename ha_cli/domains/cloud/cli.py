@@ -19,7 +19,6 @@ from ...common.config import get_client_config
 from ...common.exceptions import (
     EXIT_HA_ERROR,
     EXIT_NETWORK_ERROR,
-    EXIT_SUCCESS,
     EXIT_USAGE_ERROR,
     AuthenticationError,
     ConfigurationError,
@@ -149,7 +148,7 @@ def cloud_status(
                     # Account info
                     console.print(f"[green]✓ Logged in[/green] as {rich_escape(status.email or 'unknown')}")
                     if status.subscription_expiration:
-                        console.print(f"  Subscription expires: {status.subscription_expiration}")
+                        console.print(f"  Subscription expires: {rich_escape(status.subscription_expiration)}")
 
                     # Cloud connection
                     if status.cloud_connected:
@@ -160,7 +159,7 @@ def cloud_status(
                     # Remote UI
                     if status.remote_enabled:
                         if status.remote_connected:
-                            console.print(f"[green]✓ Remote UI enabled[/green] ({status.remote_domain})")
+                            console.print(f"[green]✓ Remote UI enabled[/green] ({rich_escape(status.remote_domain or '')})")
                         else:
                             console.print("[yellow]⚠ Remote UI enabled but not connected[/yellow]")
                     else:

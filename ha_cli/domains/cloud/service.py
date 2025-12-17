@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...common.client import HAClient
+from ...common.exceptions import WebSocketError
 
 
 @dataclass
@@ -72,6 +73,10 @@ class CloudService:
         """
         result = await self.client._ws_call("cloud/status")
 
+        # Validate result type
+        if not isinstance(result, dict):
+            raise WebSocketError(f"Unexpected cloud/status response type: {type(result).__name__}")
+
         # Handle not logged in case
         if not result.get("logged_in", False):
             return CloudStatus(
@@ -111,8 +116,14 @@ class CloudService:
         """
         result = await self.client._ws_call("cloud/alexa/entities")
 
+        # Validate result type
+        if not isinstance(result, list):
+            raise WebSocketError(f"Unexpected cloud/alexa/entities response type: {type(result).__name__}")
+
         entities = []
         for item in result:
+            if not isinstance(item, dict):
+                continue  # Skip malformed entries
             entities.append(
                 AlexaEntity(
                     entity_id=item.get("entity_id", ""),
