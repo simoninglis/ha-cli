@@ -110,7 +110,7 @@ class TestAlexaEntity:
         assert result["display_categories"] == ["LIGHT"]
 
 
-@pytest.fixture
+@pytest.fixture()
 def mock_client():
     """Create a mock HA client."""
     client = AsyncMock()
@@ -122,7 +122,7 @@ def mock_client():
 class TestCloudServiceGetStatus:
     """Tests for CloudService.get_status()."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_status_logged_in(self, mock_client):
         """Test get_status when logged in."""
         mock_client._ws_call.return_value = {
@@ -156,7 +156,7 @@ class TestCloudServiceGetStatus:
         assert status.alexa_entity_count == 2
         mock_client._ws_call.assert_called_once_with("cloud/status")
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_status_not_logged_in(self, mock_client):
         """Test get_status when not logged in."""
         mock_client._ws_call.return_value = {
@@ -170,7 +170,7 @@ class TestCloudServiceGetStatus:
         assert status.cloud_connected is False
         assert status.alexa_enabled is False
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_status_cloud_boolean_true(self, mock_client):
         """Test get_status handles cloud as boolean True."""
         mock_client._ws_call.return_value = {
@@ -185,7 +185,7 @@ class TestCloudServiceGetStatus:
 
         assert status.cloud_connected is True
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_status_cloud_disconnected(self, mock_client):
         """Test get_status handles disconnected cloud."""
         mock_client._ws_call.return_value = {
@@ -200,7 +200,7 @@ class TestCloudServiceGetStatus:
 
         assert status.cloud_connected is False
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_status_malformed_prefs(self, mock_client):
         """Test get_status handles malformed prefs (not a dict)."""
         mock_client._ws_call.return_value = {
@@ -217,7 +217,7 @@ class TestCloudServiceGetStatus:
         assert status.remote_enabled is False
         assert status.alexa_enabled is False
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_status_malformed_alexa_entities(self, mock_client):
         """Test get_status handles malformed alexa_entities."""
         mock_client._ws_call.return_value = {
@@ -232,7 +232,7 @@ class TestCloudServiceGetStatus:
 
         assert status.alexa_entity_count == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_status_invalid_response_type(self, mock_client):
         """Test get_status raises on invalid response type."""
         mock_client._ws_call.return_value = ["invalid", "list"]
@@ -242,7 +242,7 @@ class TestCloudServiceGetStatus:
         with pytest.raises(WebSocketError, match="Unexpected cloud/status response type"):
             await service.get_status()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_status_validates_string_fields(self, mock_client):
         """Test get_status validates email/domain are strings."""
         mock_client._ws_call.return_value = {
@@ -261,11 +261,36 @@ class TestCloudServiceGetStatus:
         assert status.email is None
         assert status.remote_domain is None
 
+    @pytest.mark.asyncio()
+    async def test_get_status_alexa_entity_count_validates_strings(self, mock_client):
+        """Test alexa_entity_count only counts valid non-empty strings."""
+        mock_client._ws_call.return_value = {
+            "logged_in": True,
+            "cloud": "connected",
+            "prefs": {},
+            "alexa_entities": {
+                "include_entities": [
+                    "light.valid_one",
+                    "light.valid_two",
+                    123,  # Not a string
+                    "",  # Empty string
+                    None,  # None
+                    "light.valid_three",
+                ],
+            },
+        }
+
+        service = CloudService(mock_client)
+        status = await service.get_status()
+
+        # Should only count the 3 valid non-empty strings
+        assert status.alexa_entity_count == 3
+
 
 class TestCloudServiceGetAlexaEntities:
     """Tests for CloudService.get_alexa_entities()."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_alexa_entities_success(self, mock_client):
         """Test get_alexa_entities returns parsed entities."""
         mock_client._ws_call.return_value = [
@@ -290,7 +315,7 @@ class TestCloudServiceGetAlexaEntities:
         assert entities[1].should_expose is False
         mock_client._ws_call.assert_called_once_with("cloud/alexa/entities")
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_alexa_entities_skips_invalid_entity_id(self, mock_client):
         """Test get_alexa_entities skips entries with invalid entity_id."""
         mock_client._ws_call.return_value = [
@@ -308,7 +333,7 @@ class TestCloudServiceGetAlexaEntities:
         assert entities[0].entity_id == "light.valid"
         assert entities[1].entity_id == "light.another"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_alexa_entities_handles_should_expose_strings(self, mock_client):
         """Test get_alexa_entities only accepts bool for should_expose."""
         mock_client._ws_call.return_value = [
@@ -325,7 +350,7 @@ class TestCloudServiceGetAlexaEntities:
         assert entities[1].should_expose is False
         assert entities[2].should_expose is False
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_alexa_entities_normalizes_categories(self, mock_client):
         """Test get_alexa_entities normalizes display_categories."""
         mock_client._ws_call.return_value = [
@@ -343,7 +368,7 @@ class TestCloudServiceGetAlexaEntities:
         assert entities[2].display_categories == ["VALID"]  # Non-string filtered
         assert entities[3].display_categories == []
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_alexa_entities_skips_non_dict_items(self, mock_client):
         """Test get_alexa_entities skips non-dict items in list."""
         mock_client._ws_call.return_value = [
@@ -359,7 +384,7 @@ class TestCloudServiceGetAlexaEntities:
 
         assert len(entities) == 2
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_alexa_entities_invalid_response_type(self, mock_client):
         """Test get_alexa_entities raises on invalid response type."""
         mock_client._ws_call.return_value = {"not": "a list"}
@@ -373,7 +398,7 @@ class TestCloudServiceGetAlexaEntities:
 class TestCloudServiceSyncAlexa:
     """Tests for CloudService.sync_alexa()."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_sync_alexa_success_with_dict(self, mock_client):
         """Test sync_alexa returns dict response."""
         mock_client._ws_call.return_value = {"status": "ok"}
@@ -384,7 +409,7 @@ class TestCloudServiceSyncAlexa:
         assert result == {"status": "ok"}
         mock_client._ws_call.assert_called_once_with("cloud/alexa/sync")
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_sync_alexa_success_with_none(self, mock_client):
         """Test sync_alexa handles None response."""
         mock_client._ws_call.return_value = None
@@ -394,7 +419,7 @@ class TestCloudServiceSyncAlexa:
 
         assert result == {}
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_sync_alexa_invalid_response_type(self, mock_client):
         """Test sync_alexa raises on invalid response type."""
         mock_client._ws_call.return_value = ["invalid", "list"]

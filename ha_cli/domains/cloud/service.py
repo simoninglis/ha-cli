@@ -90,8 +90,9 @@ class CloudService:
         if not isinstance(result, dict):
             raise WebSocketError(f"Unexpected cloud/status response type: {type(result).__name__}")
 
-        # Handle not logged in case
-        if not result.get("logged_in", False):
+        # Handle not logged in case (validate as bool, don't trust truthy strings)
+        logged_in = _as_bool(result.get("logged_in"), False)
+        if not logged_in:
             return CloudStatus(
                 logged_in=False,
                 cloud_connected=False,
@@ -115,14 +116,15 @@ class CloudService:
         include_entities = alexa_entities.get("include_entities", [])
         if not isinstance(include_entities, list):
             include_entities = []
-        alexa_entity_count = len(include_entities)
+        # Count only valid non-empty strings
+        alexa_entity_count = sum(1 for e in include_entities if isinstance(e, str) and e)
 
         # Parse cloud connection status (handles both bool and string)
         cloud_val = result.get("cloud")
         cloud_connected = cloud_val is True or cloud_val == "connected"
 
         return CloudStatus(
-            logged_in=_as_bool(result.get("logged_in"), False),
+            logged_in=logged_in,
             cloud_connected=cloud_connected,
             remote_enabled=_as_bool(prefs.get("remote_enabled"), False),
             remote_connected=_as_bool(result.get("remote_connected"), False),

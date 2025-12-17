@@ -127,8 +127,8 @@ def cloud_status(
                             "issues_count": len(issues),
                         },
                         suggestions={
-                            "detected_issues": issues if issues else None,
-                            "next_steps": suggestions if suggestions else None,
+                            "detected_issues": issues,
+                            "next_steps": suggestions,
                             "common_actions": [
                                 "ha-cli cloud alexa entities",
                                 "ha-cli cloud alexa sync",
@@ -160,8 +160,11 @@ def cloud_status(
                     # Remote UI
                     if status.remote_enabled:
                         if status.remote_connected:
-                            domain = rich_escape(status.remote_domain or "")
-                            console.print(f"[green]✓ Remote UI enabled[/green] ({domain})")
+                            if status.remote_domain:
+                                domain = rich_escape(status.remote_domain)
+                                console.print(f"[green]✓ Remote UI enabled[/green] ({domain})")
+                            else:
+                                console.print("[green]✓ Remote UI enabled[/green]")
                         else:
                             console.print("[yellow]⚠ Remote UI enabled but not connected[/yellow]")
                     else:

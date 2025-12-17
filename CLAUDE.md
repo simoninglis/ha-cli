@@ -135,6 +135,21 @@ poetry run ha-cli labels entities <label_id>    # List entities with label
 2. `ha-cli labels assign light.kitchen_ceiling routine_kitchen_remote`
 3. Use in automations: `target: { label_id: routine_kitchen_remote }`
 
+### Cloud Commands (Nabu Casa)
+```bash
+poetry run ha-cli cloud status                  # Show cloud connection status
+poetry run ha-cli cloud alexa entities          # List entities available to Alexa
+poetry run ha-cli cloud alexa entities --exposed # Show only exposed entities
+poetry run ha-cli cloud alexa sync              # Trigger Alexa device discovery
+```
+
+**Cloud Status Output:**
+- Login state, email, subscription expiration
+- Cloud connection status
+- Remote UI state (domain shown if connected)
+- Alexa/Google Assistant enabled/linked state
+- Alexa entity count from filter
+
 **Exit codes:**
 - `0` = No issues found
 - `1` = Issues found (warnings/errors)
