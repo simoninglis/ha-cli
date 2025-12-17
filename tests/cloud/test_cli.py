@@ -389,8 +389,8 @@ class TestCloudAlexaEntitiesCLI:
         assert "data" in output
         # Validate metadata
         assert output["metadata"]["total_count"] == 2
+        assert output["metadata"]["total_exposed"] == 1
         assert output["metadata"]["filtered_count"] == 2
-        assert output["metadata"]["exposed_count"] == 1
         # Validate data content
         assert len(output["data"]) == 2
         assert output["data"][0]["entity_id"] == "light.living_room"
@@ -603,3 +603,31 @@ class TestCloudCLIErrors:
         assert result.exit_code != 0
         output = json.loads(result.stdout)
         assert output["status"] == "error"
+
+    @patch("ha_cli.domains.cloud.cli.get_client_config")
+    @patch("ha_cli.domains.cloud.cli.HAClient")
+    @patch("ha_cli.domains.cloud.cli.CloudService")
+    def test_error_message_with_markup_is_escaped(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test error messages with Rich markup are escaped in output."""
+        from ha_cli.common.exceptions import WebSocketError
+
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        # Error message contains Rich markup that should be escaped
+        mock_service.get_status = AsyncMock(
+            side_effect=WebSocketError("[bold]Malicious[/bold] error")
+        )
+
+        result = runner.invoke(app, ["cloud", "status"])
+        assert result.exit_code != 0
+        # Markup should be escaped, not rendered
+        assert "[bold]" in result.stdout or "\\[bold\\]" in result.stdout

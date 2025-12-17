@@ -20,6 +20,13 @@ def _as_str(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _as_str_list(value: object) -> list[str]:
+    """Safely extract a list of non-empty strings, filtering invalid items."""
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item]
+
+
 @dataclass
 class CloudStatus:
     """Cloud connection status."""
@@ -113,11 +120,8 @@ class CloudService:
         if not isinstance(alexa_entities, dict):
             alexa_entities = {}
 
-        include_entities = alexa_entities.get("include_entities", [])
-        if not isinstance(include_entities, list):
-            include_entities = []
-        # Count only valid non-empty strings
-        alexa_entity_count = sum(1 for e in include_entities if isinstance(e, str) and e)
+        # Count only valid non-empty strings in include_entities
+        alexa_entity_count = len(_as_str_list(alexa_entities.get("include_entities")))
 
         # Parse cloud connection status (handles both bool and string)
         cloud_val = result.get("cloud")
@@ -163,14 +167,12 @@ class CloudService:
                 skipped_count += 1
                 continue  # Skip entries without valid entity_id
 
-            # Normalize display_categories to list of strings (only accept actual strings)
+            # Normalize display_categories to list of non-empty strings
             raw_categories = item.get("display_categories", [])
-            if isinstance(raw_categories, list):
-                categories = [c for c in raw_categories if isinstance(c, str) and c]
-            elif isinstance(raw_categories, str) and raw_categories:
-                categories = [raw_categories]
+            if isinstance(raw_categories, str) and raw_categories:
+                categories = [raw_categories]  # Single string -> list of one
             else:
-                categories = []
+                categories = _as_str_list(raw_categories)
 
             entities.append(
                 AlexaEntity(
@@ -183,6 +185,8 @@ class CloudService:
         if skipped_count > 0:
             logger.debug("Skipped %d malformed entries in cloud/alexa/entities response", skipped_count)
 
+        # Sort by entity_id for deterministic output
+        entities.sort(key=lambda e: e.entity_id)
         return entities
 
     async def sync_alexa(self) -> dict[str, Any]:

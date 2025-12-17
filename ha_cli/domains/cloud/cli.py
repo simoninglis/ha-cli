@@ -217,8 +217,8 @@ def alexa_entities(
 ) -> None:
     """List entities available to Alexa.
 
-    Shows all entities that can be exposed to Alexa and their current state.
-    Use --exposed to show only currently exposed entities.
+    Shows all entities that can be exposed to Alexa, their exposure status,
+    and Alexa display categories. Use --exposed to filter to only exposed entities.
     """
     setup_logging(debug)
     set_porcelain_mode(porcelain)
@@ -233,6 +233,8 @@ def alexa_entities(
                 service = CloudService(client)
                 all_entities = await service.get_alexa_entities()
                 total_count = len(all_entities)
+                # Compute total exposed from unfiltered list
+                total_exposed = sum(1 for e in all_entities if e.should_expose)
 
                 # Apply filter if requested
                 entities = (
@@ -245,13 +247,12 @@ def alexa_entities(
                 entities.sort(key=lambda e: e.entity_id)
 
                 if porcelain and formatter:
-                    exposed_count = sum(1 for e in entities if e.should_expose)
                     output = formatter.success(
                         data=[e.to_dict() for e in entities],
                         metadata={
                             "total_count": total_count,
+                            "total_exposed": total_exposed,
                             "filtered_count": len(entities),
-                            "exposed_count": exposed_count,
                             "filters_applied": ["exposed_only"] if exposed_only else [],
                         },
                         suggestions={
@@ -263,8 +264,6 @@ def alexa_entities(
                     )
                     write_output(output)
                 else:
-                    exposed_count = sum(1 for e in entities if e.should_expose)
-
                     table = Table(title="Alexa Entities")
                     table.add_column("Entity ID", style="cyan")
                     table.add_column("Exposed", justify="center")
@@ -281,8 +280,12 @@ def alexa_entities(
                         )
 
                     console.print(table)
-                    total = len(entities)
-                    console.print(f"\n[dim]Total: {total} entities, {exposed_count} exposed[/dim]")
+                    shown = len(entities)
+                    summary = f"\n[dim]Showing: {shown} entities, {total_exposed} exposed"
+                    if exposed_only:
+                        summary += f" (of {total_count} total)"
+                    summary += "[/dim]"
+                    console.print(summary)
 
         except Exception as e:
             _handle_error(e, porcelain, formatter)

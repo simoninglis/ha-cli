@@ -11,6 +11,7 @@ from ha_cli.domains.cloud.service import (
     CloudStatus,
     _as_bool,
     _as_str,
+    _as_str_list,
 )
 
 
@@ -64,6 +65,25 @@ class TestHelperFunctions:
     def test_as_str_with_dict(self):
         """Test _as_str returns None for dict."""
         assert _as_str({"key": "value"}) is None
+
+    def test_as_str_list_with_valid_list(self):
+        """Test _as_str_list returns filtered list of strings."""
+        assert _as_str_list(["one", "two", "three"]) == ["one", "two", "three"]
+
+    def test_as_str_list_filters_non_strings(self):
+        """Test _as_str_list filters out non-string items."""
+        assert _as_str_list(["valid", 123, None, "also_valid"]) == ["valid", "also_valid"]
+
+    def test_as_str_list_filters_empty_strings(self):
+        """Test _as_str_list filters out empty strings."""
+        assert _as_str_list(["one", "", "two", ""]) == ["one", "two"]
+
+    def test_as_str_list_with_non_list(self):
+        """Test _as_str_list returns empty list for non-list input."""
+        assert _as_str_list("not a list") == []
+        assert _as_str_list({"key": "value"}) == []
+        assert _as_str_list(None) == []
+        assert _as_str_list(123) == []
 
 
 class TestCloudStatus:
@@ -286,6 +306,45 @@ class TestCloudServiceGetStatus:
         # Should only count the 3 valid non-empty strings
         assert status.alexa_entity_count == 3
 
+    @pytest.mark.asyncio()
+    async def test_get_status_include_entities_non_list(self, mock_client):
+        """Test alexa_entity_count is 0 when include_entities is string/dict/None."""
+        for invalid_value in ["entity.one", {"entity": "value"}, None]:
+            mock_client._ws_call.return_value = {
+                "logged_in": True,
+                "cloud": "connected",
+                "prefs": {},
+                "alexa_entities": {
+                    "include_entities": invalid_value,
+                },
+            }
+
+            service = CloudService(mock_client)
+            status = await service.get_status()
+
+            assert status.alexa_entity_count == 0
+
+    @pytest.mark.asyncio()
+    async def test_get_status_registered_fields_non_bool(self, mock_client):
+        """Test registered fields default to False when not booleans."""
+        mock_client._ws_call.return_value = {
+            "logged_in": True,
+            "cloud": "connected",
+            "remote_connected": "yes",  # String, not bool
+            "alexa_registered": 1,  # Int, not bool
+            "google_registered": "true",  # String, not bool
+            "prefs": {},
+            "alexa_entities": {},
+        }
+
+        service = CloudService(mock_client)
+        status = await service.get_status()
+
+        # Non-bool values should default to False
+        assert status.remote_connected is False
+        assert status.alexa_registered is False
+        assert status.google_registered is False
+
 
 class TestCloudServiceGetAlexaEntities:
     """Tests for CloudService.get_alexa_entities()."""
@@ -330,8 +389,9 @@ class TestCloudServiceGetAlexaEntities:
         entities = await service.get_alexa_entities()
 
         assert len(entities) == 2
-        assert entities[0].entity_id == "light.valid"
-        assert entities[1].entity_id == "light.another"
+        # Results are sorted by entity_id
+        assert entities[0].entity_id == "light.another"
+        assert entities[1].entity_id == "light.valid"
 
     @pytest.mark.asyncio()
     async def test_get_alexa_entities_handles_should_expose_strings(self, mock_client):
@@ -363,10 +423,25 @@ class TestCloudServiceGetAlexaEntities:
         service = CloudService(mock_client)
         entities = await service.get_alexa_entities()
 
+        # Results are sorted by entity_id: four, one, three, two
+        assert entities[0].display_categories == []  # light.four - missing
+        assert entities[1].display_categories == ["LIGHT", "SWITCH"]  # light.one
+        assert entities[2].display_categories == ["VALID"]  # light.three - non-string filtered
+        assert entities[3].display_categories == ["LIGHT"]  # light.two - single string
+
+    @pytest.mark.asyncio()
+    async def test_get_alexa_entities_filters_empty_string_categories(self, mock_client):
+        """Test display_categories filters out empty strings."""
+        mock_client._ws_call.return_value = [
+            {"entity_id": "light.test", "display_categories": ["LIGHT", "", "SWITCH", ""]},
+        ]
+
+        service = CloudService(mock_client)
+        entities = await service.get_alexa_entities()
+
+        assert len(entities) == 1
+        # Empty strings should be filtered out
         assert entities[0].display_categories == ["LIGHT", "SWITCH"]
-        assert entities[1].display_categories == ["LIGHT"]
-        assert entities[2].display_categories == ["VALID"]  # Non-string filtered
-        assert entities[3].display_categories == []
 
     @pytest.mark.asyncio()
     async def test_get_alexa_entities_skips_non_dict_items(self, mock_client):
