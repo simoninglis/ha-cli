@@ -32,7 +32,7 @@ from .service import CloudService
 
 app = typer.Typer(
     name="cloud",
-    help="Manage Home Assistant Cloud (Nabu Casa) - Alexa, Google, Remote UI",
+    help="Home Assistant Cloud (Nabu Casa) status and Alexa commands",
     no_args_is_help=True,
 )
 
@@ -127,7 +127,7 @@ def cloud_status(
                             "issues_count": len(issues),
                         },
                         suggestions={
-                            "issues": issues if issues else None,
+                            "detected_issues": issues if issues else None,
                             "next_steps": suggestions if suggestions else None,
                             "common_actions": [
                                 "ha-cli cloud alexa entities",
@@ -145,9 +145,11 @@ def cloud_status(
                         return
 
                     # Account info
-                    console.print(f"[green]✓ Logged in[/green] as {rich_escape(status.email or 'unknown')}")
+                    email = rich_escape(status.email or "unknown")
+                    console.print(f"[green]✓ Logged in[/green] as {email}")
                     if status.subscription_expiration:
-                        console.print(f"  Subscription expires: {rich_escape(status.subscription_expiration)}")
+                        expires = rich_escape(status.subscription_expiration)
+                        console.print(f"  Subscription expires: {expires}")
 
                     # Cloud connection
                     if status.cloud_connected:
@@ -158,7 +160,8 @@ def cloud_status(
                     # Remote UI
                     if status.remote_enabled:
                         if status.remote_connected:
-                            console.print(f"[green]✓ Remote UI enabled[/green] ({rich_escape(status.remote_domain or '')})")
+                            domain = rich_escape(status.remote_domain or "")
+                            console.print(f"[green]✓ Remote UI enabled[/green] ({domain})")
                         else:
                             console.print("[yellow]⚠ Remote UI enabled but not connected[/yellow]")
                     else:
@@ -178,7 +181,8 @@ def cloud_status(
                         console.print("[yellow]  ⚠ Skill not linked[/yellow] - Link in Alexa app")
 
                     if status.alexa_entity_count > 0:
-                        console.print(f"[green]  ✓ {status.alexa_entity_count} entities configured[/green] (filter)")
+                        count = status.alexa_entity_count
+                        console.print(f"[green]  ✓ {count} entities configured[/green]")
                     else:
                         console.print("[dim]  - No entities in filter[/dim]")
 
@@ -264,16 +268,18 @@ def alexa_entities(
                     table.add_column("Categories")
 
                     for entity in entities:
-                        exposed = "[green]✓[/green]" if entity.should_expose else "[dim]-[/dim]"
-                        categories = ", ".join(entity.display_categories) if entity.display_categories else "-"
+                        exposed_mark = "[green]✓[/green]" if entity.should_expose else "[dim]-[/dim]"
+                        cats = entity.display_categories
+                        categories_str = ", ".join(cats) if cats else "-"
                         table.add_row(
                             rich_escape(entity.entity_id),
-                            exposed,
-                            rich_escape(categories),
+                            exposed_mark,
+                            rich_escape(categories_str),
                         )
 
                     console.print(table)
-                    console.print(f"\n[dim]Total: {len(entities)} entities, {exposed_count} exposed[/dim]")
+                    total = len(entities)
+                    console.print(f"\n[dim]Total: {total} entities, {exposed_count} exposed[/dim]")
 
         except Exception as e:
             _handle_error(e, porcelain, formatter)

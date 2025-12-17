@@ -10,6 +10,16 @@ from ...common.exceptions import WebSocketError
 logger = logging.getLogger(__name__)
 
 
+def _as_bool(value: object, default: bool = False) -> bool:
+    """Safely extract a boolean value, returning default if not a bool."""
+    return value if isinstance(value, bool) else default
+
+
+def _as_str(value: object) -> str | None:
+    """Safely extract a string value, returning None if not a non-empty string."""
+    return value if isinstance(value, str) and value else None
+
+
 @dataclass
 class CloudStatus:
     """Cloud connection status."""
@@ -107,18 +117,22 @@ class CloudService:
             include_entities = []
         alexa_entity_count = len(include_entities)
 
+        # Parse cloud connection status (handles both bool and string)
+        cloud_val = result.get("cloud")
+        cloud_connected = cloud_val is True or cloud_val == "connected"
+
         return CloudStatus(
-            logged_in=result.get("logged_in", False),
-            cloud_connected=result.get("cloud", "disconnected") == "connected",
-            remote_enabled=prefs.get("remote_enabled", False),
-            remote_connected=result.get("remote_connected", False),
-            alexa_enabled=prefs.get("alexa_enabled", False),
-            alexa_registered=result.get("alexa_registered", False),
-            google_enabled=prefs.get("google_enabled", False),
-            google_registered=result.get("google_registered", False),
-            email=result.get("email"),
-            subscription_expiration=result.get("subscription_expiration"),
-            remote_domain=result.get("remote_domain"),
+            logged_in=_as_bool(result.get("logged_in"), False),
+            cloud_connected=cloud_connected,
+            remote_enabled=_as_bool(prefs.get("remote_enabled"), False),
+            remote_connected=_as_bool(result.get("remote_connected"), False),
+            alexa_enabled=_as_bool(prefs.get("alexa_enabled"), False),
+            alexa_registered=_as_bool(result.get("alexa_registered"), False),
+            google_enabled=_as_bool(prefs.get("google_enabled"), False),
+            google_registered=_as_bool(result.get("google_registered"), False),
+            email=_as_str(result.get("email")),
+            subscription_expiration=_as_str(result.get("subscription_expiration")),
+            remote_domain=_as_str(result.get("remote_domain")),
             alexa_entity_count=alexa_entity_count,
         )
 
@@ -159,7 +173,7 @@ class CloudService:
             entities.append(
                 AlexaEntity(
                     entity_id=entity_id,
-                    should_expose=bool(item.get("should_expose", False)),
+                    should_expose=_as_bool(item.get("should_expose"), False),
                     display_categories=categories,
                 )
             )
