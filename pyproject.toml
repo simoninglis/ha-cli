@@ -82,6 +82,8 @@ markers = [
     "e2e: end-to-end tests that require live Home Assistant instance",
     "smoke: critical smoke tests for deployment verification",
     "integration: tests that require a live Home Assistant instance",
+    "diagnostic: manual diagnostic tests for troubleshooting (not run in CI)",
+    "slow: tests that take a long time to run",
 ]
 
 [tool.coverage.run]
