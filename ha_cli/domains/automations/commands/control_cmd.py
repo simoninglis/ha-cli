@@ -61,7 +61,7 @@ def enable(
             else:
                 raise
 
-    asyncio.run(run_async_command(_enable()))
+    asyncio.run(run_async_command(_enable(), command="automations enable"))
 
 
 def disable(
@@ -109,7 +109,7 @@ def disable(
             else:
                 raise
 
-    asyncio.run(run_async_command(_disable()))
+    asyncio.run(run_async_command(_disable(), command="automations disable"))
 
 
 def reload(
@@ -155,4 +155,4 @@ def reload(
             else:
                 raise
 
-    asyncio.run(run_async_command(_reload()))
+    asyncio.run(run_async_command(_reload(), command="automations reload"))

@@ -362,7 +362,7 @@ def state(
             else:
                 raise
 
-    asyncio.run(run_async_command(_state()))
+    asyncio.run(run_async_command(_state(), command="entities state"))
 
 
 @app.command()
@@ -399,7 +399,7 @@ def export(
             for domain_name, count in sorted(domains.items()):
                 console.print(f"  {domain_name}: {count}")
     
-    asyncio.run(run_async_command(_export()))
+    asyncio.run(run_async_command(_export(), command="entities export"))
 
 
 @app.command()
@@ -442,7 +442,7 @@ def backup(
             for domain_name, count in sorted(domains.items()):
                 console.print(f"  {domain_name}: {count}")
     
-    asyncio.run(run_async_command(_backup()))
+    asyncio.run(run_async_command(_backup(), command="entities backup"))
 
 
 @app.command()
@@ -608,7 +608,7 @@ def rename(
             # Summary
             console.print(f"\n[cyan]Summary:[/cyan] {success_count} succeeded, {failure_count} failed")
     
-    asyncio.run(run_async_command(_rename()))
+    asyncio.run(run_async_command(_rename(), command="entities rename"))
 
 
 @app.command()
@@ -707,7 +707,7 @@ def import_operations(
                 console.print(f"[red]Error importing CSV file:[/red] {e}")
                 sys.exit(EXIT_HA_ERROR)
     
-    asyncio.run(run_async_command(_import()))
+    asyncio.run(run_async_command(_import(), command="entities import"))
 
 
 @app.command()
@@ -934,7 +934,7 @@ def analyze(
                         console.print("  • Backup configurations before making changes: 'ha-cli entities backup'")
                         console.print("  • Test automations after entity changes to ensure they still work correctly")
     
-    asyncio.run(run_async_command(_analyze()))
+    asyncio.run(run_async_command(_analyze(), command="entities analyze"))
 
 
 @app.command()
@@ -1181,7 +1181,7 @@ def delete(
             else:
                 raise
     
-    asyncio.run(run_async_command(_delete()))
+    asyncio.run(run_async_command(_delete(), command="entities delete"))
 
 
 @app.command()

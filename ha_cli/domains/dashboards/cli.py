@@ -230,7 +230,7 @@ def read(
                     yaml.dump(config_dict, stream)
                     write_output(stream.getvalue(), newline=False)
     
-    asyncio.run(run_async_command(_read()))
+    asyncio.run(run_async_command(_read(), command="dashboards read"))
 
 
 @app.command()
@@ -262,7 +262,7 @@ def backup(
             
             console.print(f"[green]✓ Dashboard backed up to: {backup_file}[/green]")
     
-    asyncio.run(run_async_command(_backup()))
+    asyncio.run(run_async_command(_backup(), command="dashboards backup"))
 
 
 @app.command()
@@ -300,7 +300,7 @@ def restore(
             else:
                 console.print("[green]✓ Dashboard restored successfully[/green]")
     
-    asyncio.run(run_async_command(_restore()))
+    asyncio.run(run_async_command(_restore(), command="dashboards restore"))
 
 
 @app.command()
@@ -539,7 +539,7 @@ def create(
             console.print(f"[green]✓ Dashboard '{dashboard_id}' created successfully[/green]")
             console.print(f"  URL: /lovelace/{url_path}")
     
-    asyncio.run(run_async_command(_create()))
+    asyncio.run(run_async_command(_create(), command="dashboards create"))
 
 
 @app.command()
@@ -569,7 +569,7 @@ def delete(
             
             console.print(f"[green]✓ Dashboard '{dashboard_id}' deleted successfully[/green]")
     
-    asyncio.run(run_async_command(_delete()))
+    asyncio.run(run_async_command(_delete(), command="dashboards delete"))
 
 
 @app.command()
@@ -647,7 +647,7 @@ def views(
                 console.print(f"\n[cyan]Total views:[/cyan] {len(views)}")
                 console.print(f"[cyan]Total entities:[/cyan] {sum(v['entities'] for v in views)}")
     
-    asyncio.run(run_async_command(_views()))
+    asyncio.run(run_async_command(_views(), command="dashboards views"))
 
 
 @app.command()

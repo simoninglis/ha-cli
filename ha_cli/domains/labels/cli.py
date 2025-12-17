@@ -214,7 +214,7 @@ def create_label(
         except Exception as e:
             _handle_error(e, porcelain, formatter)
 
-    asyncio.run(run_async_command(_create()))
+    asyncio.run(run_async_command(_create(), command="labels create"))
 
 
 @app.command("delete")
@@ -297,7 +297,7 @@ def delete_label(
         except Exception as e:
             _handle_error(e, porcelain, formatter)
 
-    asyncio.run(run_async_command(_delete()))
+    asyncio.run(run_async_command(_delete(), command="labels delete"))
 
 
 @app.command("assign")
@@ -345,7 +345,7 @@ def assign_label(
         except Exception as e:
             _handle_error(e, porcelain, formatter)
 
-    asyncio.run(run_async_command(_assign()))
+    asyncio.run(run_async_command(_assign(), command="labels assign"))
 
 
 @app.command("remove")
@@ -393,7 +393,7 @@ def remove_label(
         except Exception as e:
             _handle_error(e, porcelain, formatter)
 
-    asyncio.run(run_async_command(_remove()))
+    asyncio.run(run_async_command(_remove(), command="labels remove"))
 
 
 @app.command("entities")
@@ -456,4 +456,4 @@ def list_entities(
         except Exception as e:
             _handle_error(e, porcelain, formatter)
 
-    asyncio.run(run_async_command(_entities()))
+    asyncio.run(run_async_command(_entities(), command="labels entities"))

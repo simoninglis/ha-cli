@@ -207,7 +207,7 @@ def duplicates(
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = asyncio.run(run_async_command(_check()))
+    exit_code = asyncio.run(run_async_command(_check(), command="audit duplicates"))
     sys.exit(exit_code)
 
 
@@ -245,7 +245,7 @@ def broken_automations(
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = asyncio.run(run_async_command(_check()))
+    exit_code = asyncio.run(run_async_command(_check(), command="audit broken-automations"))
     sys.exit(exit_code)
 
 
@@ -283,7 +283,7 @@ def fragile_automations(
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = asyncio.run(run_async_command(_check()))
+    exit_code = asyncio.run(run_async_command(_check(), command="audit fragile-automations"))
     sys.exit(exit_code)
 
 
@@ -323,7 +323,7 @@ def unused_automations(
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = asyncio.run(run_async_command(_check()))
+    exit_code = asyncio.run(run_async_command(_check(), command="audit unused-automations"))
     sys.exit(exit_code)
 
 
@@ -363,7 +363,7 @@ def trigger_stats(
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = asyncio.run(run_async_command(_check()))
+    exit_code = asyncio.run(run_async_command(_check(), command="audit trigger-stats"))
     sys.exit(exit_code)
 
 
@@ -442,7 +442,7 @@ def integrations(
                 console.print(f"[red]Error:[/red] {e}")
             return 2
 
-    exit_code = asyncio.run(run_async_command(_check()))
+    exit_code = asyncio.run(run_async_command(_check(), command="audit integrations"))
     sys.exit(exit_code)
 
 

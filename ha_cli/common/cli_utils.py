@@ -74,7 +74,8 @@ def _emit_porcelain_error(
             ]
         }
     }
-    sys.stdout.write(json.dumps(error_response, indent=2))
+    # Use default=str to handle non-JSON-serializable values (e.g., exceptions)
+    sys.stdout.write(json.dumps(error_response, indent=2, default=str))
     sys.stdout.write('\n')
     sys.stdout.flush()
 

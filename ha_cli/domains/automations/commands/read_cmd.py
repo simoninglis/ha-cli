@@ -163,7 +163,7 @@ def read(
             else:
                 raise
 
-    asyncio.run(run_async_command(_read()))
+    asyncio.run(run_async_command(_read(), command="automations read"))
 
 
 def _build_read_suggestions(

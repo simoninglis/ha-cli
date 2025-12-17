@@ -89,7 +89,7 @@ def create(
                 sys.exit(EXIT_HA_ERROR)
             raise
 
-    asyncio.run(run_async_command(_create()))
+    asyncio.run(run_async_command(_create(), command="automations create"))
 
 
 def update(
@@ -140,7 +140,7 @@ def update(
                 sys.exit(EXIT_HA_ERROR)
             raise
 
-    asyncio.run(run_async_command(_update()))
+    asyncio.run(run_async_command(_update(), command="automations update"))
 
 
 def delete(
@@ -196,4 +196,4 @@ def delete(
                 sys.exit(EXIT_HA_ERROR)
             raise
 
-    asyncio.run(run_async_command(_delete()))
+    asyncio.run(run_async_command(_delete(), command="automations delete"))

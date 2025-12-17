@@ -189,7 +189,7 @@ def show_area(
                             f"    ... and {len(area.entities) - 10} more"
                         )
 
-    asyncio.run(run_async_command(_show()))
+    asyncio.run(run_async_command(_show(), command="areas show"))
 
 
 @app.command("floors")
@@ -246,7 +246,7 @@ def list_floors(
 
                 console.print(table)
 
-    asyncio.run(run_async_command(_list()))
+    asyncio.run(run_async_command(_list(), command="areas floors"))
 
 
 @app.command("labels")
@@ -303,7 +303,7 @@ def list_labels(
 
                 console.print(table)
 
-    asyncio.run(run_async_command(_list()))
+    asyncio.run(run_async_command(_list(), command="areas labels"))
 
 
 @app.command("audit")
@@ -441,7 +441,7 @@ def audit_areas(
             if has_issues:
                 sys.exit(EXIT_USAGE_ERROR)
 
-    asyncio.run(run_async_command(_audit()))
+    asyncio.run(run_async_command(_audit(), command="areas audit"))
 
 
 @app.command("create")
@@ -524,7 +524,7 @@ def create_area(
                     console.print(f"[red]Error:[/red] {e}")
                 sys.exit(EXIT_USAGE_ERROR)
 
-    asyncio.run(run_async_command(_create()))
+    asyncio.run(run_async_command(_create(), command="areas create"))
 
 
 @app.command("rename")
@@ -593,7 +593,7 @@ def rename_area(
                     console.print(f"[red]Error:[/red] {e}")
                 sys.exit(EXIT_USAGE_ERROR)
 
-    asyncio.run(run_async_command(_rename()))
+    asyncio.run(run_async_command(_rename(), command="areas rename"))
 
 
 @app.command("update")
@@ -693,7 +693,7 @@ def update_area(
                     console.print(f"[red]Error:[/red] {e}")
                 sys.exit(EXIT_USAGE_ERROR)
 
-    asyncio.run(run_async_command(_update()))
+    asyncio.run(run_async_command(_update(), command="areas update"))
 
 
 @app.command("delete")
@@ -760,7 +760,7 @@ def delete_area(
                     console.print(f"[red]Error:[/red] {e}")
                 sys.exit(EXIT_USAGE_ERROR)
 
-    asyncio.run(run_async_command(_delete()))
+    asyncio.run(run_async_command(_delete(), command="areas delete"))
 
 
 @app.command("version")

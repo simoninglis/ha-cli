@@ -311,7 +311,7 @@ class PorcelainFormatter:
         suggestions_map = {
             "AuthenticationError": {
                 "troubleshooting": [
-                    "Check token in .mcp.json file",
+                    "Check HA_TOKEN in .env file (or environment variable)",
                     "Verify Home Assistant URL is accessible",
                     "Generate new long-lived access token in HA Profile → Security",
                     "Ensure token has not expired"

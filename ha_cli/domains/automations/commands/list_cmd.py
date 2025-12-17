@@ -231,4 +231,4 @@ def list_automations(
             else:
                 raise
 
-    asyncio.run(run_async_command(_list()))
+    asyncio.run(run_async_command(_list(), command="automations list"))
