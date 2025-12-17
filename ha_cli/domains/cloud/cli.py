@@ -236,15 +236,12 @@ def alexa_entities(
                 # Compute total exposed from unfiltered list
                 total_exposed = sum(1 for e in all_entities if e.should_expose)
 
-                # Apply filter if requested
+                # Apply filter if requested (service already sorted by entity_id)
                 entities = (
                     [e for e in all_entities if e.should_expose]
                     if exposed_only
                     else all_entities
                 )
-
-                # Sort by entity_id
-                entities.sort(key=lambda e: e.entity_id)
 
                 if porcelain and formatter:
                     output = formatter.success(

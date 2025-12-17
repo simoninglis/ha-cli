@@ -1,11 +1,12 @@
 """Cloud service for interacting with Home Assistant Cloud (Nabu Casa)."""
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
 
 from ...common.client import HAClient
-from ...common.exceptions import WebSocketError
+from ...common.exceptions import ConnectionError, WebSocketError
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,7 @@ class CloudService:
                     exposure_map[entity_id] = should_expose
 
             return exposure_map
-        except WebSocketError as e:
+        except (WebSocketError, ConnectionError) as e:
             logger.warning("Failed to fetch entity registry for exposure status: %s", e)
             return {}
 
@@ -190,14 +191,15 @@ class CloudService:
         Note: The cloud/alexa/entities API doesn't include should_expose, so we
         join with the entity registry to get accurate exposure status.
         """
-        result = await self.client._ws_call("cloud/alexa/entities")
+        # Fetch both API responses concurrently for better performance
+        result, exposure_map = await asyncio.gather(
+            self.client._ws_call("cloud/alexa/entities"),
+            self._get_entity_registry_exposure(),
+        )
 
         # Validate result type
         if not isinstance(result, list):
             raise WebSocketError(f"Unexpected cloud/alexa/entities response type: {type(result).__name__}")
-
-        # Fetch exposure status from entity registry
-        exposure_map = await self._get_entity_registry_exposure()
 
         entities = []
         skipped_count = 0
@@ -215,10 +217,11 @@ class CloudService:
 
             # Normalize display_categories to list of non-empty strings
             raw_categories = item.get("display_categories", [])
-            if isinstance(raw_categories, str) and raw_categories:
-                categories = [raw_categories]  # Single string -> list of one
-            else:
-                categories = _as_str_list(raw_categories)
+            categories = (
+                [raw_categories]
+                if isinstance(raw_categories, str) and raw_categories
+                else _as_str_list(raw_categories)
+            )
 
             # Get exposure from registry, fall back to API response, then False
             should_expose = exposure_map.get(
