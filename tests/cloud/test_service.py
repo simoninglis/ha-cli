@@ -346,44 +346,67 @@ class TestCloudServiceGetStatus:
         assert status.google_registered is False
 
 
+def _make_registry_entry(entity_id: str, alexa_expose: bool | None = None) -> dict:
+    """Helper to create entity registry entries with Alexa exposure."""
+    entry = {"entity_id": entity_id, "options": {}}
+    if alexa_expose is not None:
+        entry["options"]["cloud.alexa"] = {"should_expose": alexa_expose}
+    return entry
+
+
 class TestCloudServiceGetAlexaEntities:
     """Tests for CloudService.get_alexa_entities()."""
 
     @pytest.mark.asyncio()
     async def test_get_alexa_entities_success(self, mock_client):
-        """Test get_alexa_entities returns parsed entities."""
-        mock_client._ws_call.return_value = [
-            {
-                "entity_id": "light.living_room",
-                "should_expose": True,
-                "display_categories": ["LIGHT"],
-            },
-            {
-                "entity_id": "switch.fan",
-                "should_expose": False,
-                "display_categories": ["SWITCH"],
-            },
-        ]
+        """Test get_alexa_entities returns parsed entities with registry exposure."""
+
+        def ws_call_handler(command):
+            if command == "cloud/alexa/entities":
+                return [
+                    {"entity_id": "light.living_room", "display_categories": ["LIGHT"]},
+                    {"entity_id": "switch.fan", "display_categories": ["SWITCH"]},
+                ]
+            elif command == "config/entity_registry/list":
+                return [
+                    _make_registry_entry("light.living_room", alexa_expose=True),
+                    _make_registry_entry("switch.fan", alexa_expose=False),
+                ]
+            return None
+
+        mock_client._ws_call.side_effect = ws_call_handler
 
         service = CloudService(mock_client)
         entities = await service.get_alexa_entities()
 
         assert len(entities) == 2
+        # Sorted by entity_id: light.living_room, switch.fan
         assert entities[0].entity_id == "light.living_room"
         assert entities[0].should_expose is True
+        assert entities[1].entity_id == "switch.fan"
         assert entities[1].should_expose is False
-        mock_client._ws_call.assert_called_once_with("cloud/alexa/entities")
 
     @pytest.mark.asyncio()
     async def test_get_alexa_entities_skips_invalid_entity_id(self, mock_client):
         """Test get_alexa_entities skips entries with invalid entity_id."""
-        mock_client._ws_call.return_value = [
-            {"entity_id": "light.valid", "should_expose": True},
-            {"entity_id": "", "should_expose": True},  # Empty
-            {"entity_id": 123, "should_expose": True},  # Not string
-            {"should_expose": True},  # Missing
-            {"entity_id": "light.another", "should_expose": False},
-        ]
+
+        def ws_call_handler(command):
+            if command == "cloud/alexa/entities":
+                return [
+                    {"entity_id": "light.valid"},
+                    {"entity_id": ""},  # Empty
+                    {"entity_id": 123},  # Not string
+                    {},  # Missing
+                    {"entity_id": "light.another"},
+                ]
+            elif command == "config/entity_registry/list":
+                return [
+                    _make_registry_entry("light.valid", alexa_expose=True),
+                    _make_registry_entry("light.another", alexa_expose=False),
+                ]
+            return None
+
+        mock_client._ws_call.side_effect = ws_call_handler
 
         service = CloudService(mock_client)
         entities = await service.get_alexa_entities()
@@ -394,31 +417,56 @@ class TestCloudServiceGetAlexaEntities:
         assert entities[1].entity_id == "light.valid"
 
     @pytest.mark.asyncio()
-    async def test_get_alexa_entities_handles_should_expose_strings(self, mock_client):
-        """Test get_alexa_entities only accepts bool for should_expose."""
-        mock_client._ws_call.return_value = [
-            {"entity_id": "light.one", "should_expose": True},
-            {"entity_id": "light.two", "should_expose": "true"},  # String, not bool
-            {"entity_id": "light.three", "should_expose": "false"},  # String
-        ]
+    async def test_get_alexa_entities_exposure_from_registry(self, mock_client):
+        """Test get_alexa_entities gets should_expose from entity registry."""
+
+        def ws_call_handler(command):
+            if command == "cloud/alexa/entities":
+                # API doesn't return should_expose
+                return [
+                    {"entity_id": "light.one"},
+                    {"entity_id": "light.two"},
+                    {"entity_id": "light.three"},
+                ]
+            elif command == "config/entity_registry/list":
+                # Registry has the actual exposure settings
+                return [
+                    _make_registry_entry("light.one", alexa_expose=True),
+                    _make_registry_entry("light.two", alexa_expose=False),
+                    # light.three not in registry - defaults to False
+                ]
+            return None
+
+        mock_client._ws_call.side_effect = ws_call_handler
 
         service = CloudService(mock_client)
         entities = await service.get_alexa_entities()
 
+        # Sorted by entity_id
+        assert entities[0].entity_id == "light.one"
         assert entities[0].should_expose is True
-        # Strings should default to False (not coerced)
-        assert entities[1].should_expose is False
+        assert entities[1].entity_id == "light.three"
+        assert entities[1].should_expose is False  # Not in registry
+        assert entities[2].entity_id == "light.two"
         assert entities[2].should_expose is False
 
     @pytest.mark.asyncio()
     async def test_get_alexa_entities_normalizes_categories(self, mock_client):
         """Test get_alexa_entities normalizes display_categories."""
-        mock_client._ws_call.return_value = [
-            {"entity_id": "light.one", "display_categories": ["LIGHT", "SWITCH"]},
-            {"entity_id": "light.two", "display_categories": "LIGHT"},  # Single string
-            {"entity_id": "light.three", "display_categories": [123, "VALID"]},  # Mixed
-            {"entity_id": "light.four"},  # Missing
-        ]
+
+        def ws_call_handler(command):
+            if command == "cloud/alexa/entities":
+                return [
+                    {"entity_id": "light.one", "display_categories": ["LIGHT", "SWITCH"]},
+                    {"entity_id": "light.two", "display_categories": "LIGHT"},  # Single string
+                    {"entity_id": "light.three", "display_categories": [123, "VALID"]},  # Mixed
+                    {"entity_id": "light.four"},  # Missing
+                ]
+            elif command == "config/entity_registry/list":
+                return []
+            return None
+
+        mock_client._ws_call.side_effect = ws_call_handler
 
         service = CloudService(mock_client)
         entities = await service.get_alexa_entities()
@@ -432,9 +480,17 @@ class TestCloudServiceGetAlexaEntities:
     @pytest.mark.asyncio()
     async def test_get_alexa_entities_filters_empty_string_categories(self, mock_client):
         """Test display_categories filters out empty strings."""
-        mock_client._ws_call.return_value = [
-            {"entity_id": "light.test", "display_categories": ["LIGHT", "", "SWITCH", ""]},
-        ]
+
+        def ws_call_handler(command):
+            if command == "cloud/alexa/entities":
+                return [
+                    {"entity_id": "light.test", "display_categories": ["LIGHT", "", "SWITCH", ""]},
+                ]
+            elif command == "config/entity_registry/list":
+                return []
+            return None
+
+        mock_client._ws_call.side_effect = ws_call_handler
 
         service = CloudService(mock_client)
         entities = await service.get_alexa_entities()
@@ -446,13 +502,21 @@ class TestCloudServiceGetAlexaEntities:
     @pytest.mark.asyncio()
     async def test_get_alexa_entities_skips_non_dict_items(self, mock_client):
         """Test get_alexa_entities skips non-dict items in list."""
-        mock_client._ws_call.return_value = [
-            {"entity_id": "light.valid", "should_expose": True},
-            "invalid_string",
-            123,
-            None,
-            {"entity_id": "light.another", "should_expose": False},
-        ]
+
+        def ws_call_handler(command):
+            if command == "cloud/alexa/entities":
+                return [
+                    {"entity_id": "light.valid"},
+                    "invalid_string",
+                    123,
+                    None,
+                    {"entity_id": "light.another"},
+                ]
+            elif command == "config/entity_registry/list":
+                return []
+            return None
+
+        mock_client._ws_call.side_effect = ws_call_handler
 
         service = CloudService(mock_client)
         entities = await service.get_alexa_entities()
@@ -468,6 +532,35 @@ class TestCloudServiceGetAlexaEntities:
 
         with pytest.raises(WebSocketError, match="Unexpected cloud/alexa/entities"):
             await service.get_alexa_entities()
+
+    @pytest.mark.asyncio()
+    async def test_get_alexa_entities_registry_failure_graceful(self, mock_client):
+        """Test get_alexa_entities handles registry fetch failure gracefully."""
+        from ha_cli.common.exceptions import WebSocketError as WSError
+
+        call_count = 0
+
+        async def ws_call_handler(command):
+            nonlocal call_count
+            call_count += 1
+            if command == "cloud/alexa/entities":
+                return [
+                    {"entity_id": "light.one"},
+                    {"entity_id": "light.two"},
+                ]
+            elif command == "config/entity_registry/list":
+                raise WSError("Registry unavailable")
+            return None
+
+        mock_client._ws_call.side_effect = ws_call_handler
+
+        service = CloudService(mock_client)
+        entities = await service.get_alexa_entities()
+
+        # Should still return entities, but exposure defaults to False
+        assert len(entities) == 2
+        assert entities[0].should_expose is False
+        assert entities[1].should_expose is False
 
 
 class TestCloudServiceSyncAlexa:

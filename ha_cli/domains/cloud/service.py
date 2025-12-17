@@ -142,16 +142,62 @@ class CloudService:
             alexa_entity_count=alexa_entity_count,
         )
 
-    async def get_alexa_entities(self) -> list[AlexaEntity]:
-        """Get all Alexa-compatible entities.
+    async def _get_entity_registry_exposure(self) -> dict[str, bool]:
+        """Get Alexa exposure status from entity registry.
 
-        Uses WebSocket command: cloud/alexa/entities
+        Returns a mapping of entity_id -> should_expose from the entity registry.
+        The cloud/alexa/entities API doesn't include exposure status, so we need
+        to fetch it from the entity registry where it's stored under
+        options['cloud.alexa']['should_expose'].
+        """
+        try:
+            registry = await self.client._ws_call("config/entity_registry/list")
+            if not isinstance(registry, list):
+                logger.warning("Entity registry returned unexpected type: %s", type(registry).__name__)
+                return {}
+
+            exposure_map: dict[str, bool] = {}
+            for entry in registry:
+                if not isinstance(entry, dict):
+                    continue
+                entity_id = entry.get("entity_id")
+                if not entity_id or not isinstance(entity_id, str):
+                    continue
+
+                # Extract exposure from options['cloud.alexa']['should_expose']
+                options = entry.get("options", {})
+                if not isinstance(options, dict):
+                    continue
+                alexa_opts = options.get("cloud.alexa", {})
+                if not isinstance(alexa_opts, dict):
+                    continue
+                should_expose = alexa_opts.get("should_expose")
+                if isinstance(should_expose, bool):
+                    exposure_map[entity_id] = should_expose
+
+            return exposure_map
+        except WebSocketError as e:
+            logger.warning("Failed to fetch entity registry for exposure status: %s", e)
+            return {}
+
+    async def get_alexa_entities(self) -> list[AlexaEntity]:
+        """Get all Alexa-compatible entities with exposure status.
+
+        Uses WebSocket commands:
+        - cloud/alexa/entities: Get Alexa-compatible entities and their categories
+        - config/entity_registry/list: Get exposure status from entity registry
+
+        Note: The cloud/alexa/entities API doesn't include should_expose, so we
+        join with the entity registry to get accurate exposure status.
         """
         result = await self.client._ws_call("cloud/alexa/entities")
 
         # Validate result type
         if not isinstance(result, list):
             raise WebSocketError(f"Unexpected cloud/alexa/entities response type: {type(result).__name__}")
+
+        # Fetch exposure status from entity registry
+        exposure_map = await self._get_entity_registry_exposure()
 
         entities = []
         skipped_count = 0
@@ -174,10 +220,16 @@ class CloudService:
             else:
                 categories = _as_str_list(raw_categories)
 
+            # Get exposure from registry, fall back to API response, then False
+            should_expose = exposure_map.get(
+                entity_id,
+                _as_bool(item.get("should_expose"), False)
+            )
+
             entities.append(
                 AlexaEntity(
                     entity_id=entity_id,
-                    should_expose=_as_bool(item.get("should_expose"), False),
+                    should_expose=should_expose,
                     display_categories=categories,
                 )
             )
