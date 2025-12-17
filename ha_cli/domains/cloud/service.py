@@ -90,9 +90,19 @@ class CloudService:
                 google_registered=False,
             )
 
+        # Defensively validate nested structures
         prefs = result.get("prefs", {})
+        if not isinstance(prefs, dict):
+            prefs = {}
+
         alexa_entities = result.get("alexa_entities", {})
-        alexa_entity_count = len(alexa_entities.get("include_entities", []))
+        if not isinstance(alexa_entities, dict):
+            alexa_entities = {}
+
+        include_entities = alexa_entities.get("include_entities", [])
+        if not isinstance(include_entities, list):
+            include_entities = []
+        alexa_entity_count = len(include_entities)
 
         return CloudStatus(
             logged_in=result.get("logged_in", False),
@@ -124,11 +134,24 @@ class CloudService:
         for item in result:
             if not isinstance(item, dict):
                 continue  # Skip malformed entries
+
+            # Validate entity_id is present and non-empty
+            entity_id = item.get("entity_id", "")
+            if not entity_id or not isinstance(entity_id, str):
+                continue  # Skip entries without valid entity_id
+
+            # Normalize display_categories to list of strings
+            raw_categories = item.get("display_categories", [])
+            if isinstance(raw_categories, list):
+                categories = [str(c) for c in raw_categories if c]
+            else:
+                categories = [str(raw_categories)] if raw_categories else []
+
             entities.append(
                 AlexaEntity(
-                    entity_id=item.get("entity_id", ""),
-                    should_expose=item.get("should_expose", False),
-                    display_categories=item.get("display_categories", []),
+                    entity_id=entity_id,
+                    should_expose=bool(item.get("should_expose", False)),
+                    display_categories=categories,
                 )
             )
 
@@ -139,6 +162,17 @@ class CloudService:
 
         Uses WebSocket command: cloud/alexa/sync
         This tells Alexa to rediscover devices from Home Assistant.
+
+        Raises:
+            WebSocketError: If sync fails or returns unexpected response type.
         """
         result = await self.client._ws_call("cloud/alexa/sync")
-        return result if isinstance(result, dict) else {}
+
+        # Validate result type - sync should return a dict or None on success
+        if result is None:
+            return {}  # Successful sync with no additional data
+        if not isinstance(result, dict):
+            raise WebSocketError(
+                f"Unexpected cloud/alexa/sync response type: {type(result).__name__}"
+            )
+        return result
