@@ -1,10 +1,13 @@
 """Cloud service for interacting with Home Assistant Cloud (Nabu Casa)."""
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from ...common.client import HAClient
 from ...common.exceptions import WebSocketError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -131,21 +134,27 @@ class CloudService:
             raise WebSocketError(f"Unexpected cloud/alexa/entities response type: {type(result).__name__}")
 
         entities = []
+        skipped_count = 0
+
         for item in result:
             if not isinstance(item, dict):
+                skipped_count += 1
                 continue  # Skip malformed entries
 
             # Validate entity_id is present and non-empty
             entity_id = item.get("entity_id", "")
             if not entity_id or not isinstance(entity_id, str):
+                skipped_count += 1
                 continue  # Skip entries without valid entity_id
 
-            # Normalize display_categories to list of strings
+            # Normalize display_categories to list of strings (only accept actual strings)
             raw_categories = item.get("display_categories", [])
             if isinstance(raw_categories, list):
-                categories = [str(c) for c in raw_categories if c]
+                categories = [c for c in raw_categories if isinstance(c, str) and c]
+            elif isinstance(raw_categories, str) and raw_categories:
+                categories = [raw_categories]
             else:
-                categories = [str(raw_categories)] if raw_categories else []
+                categories = []
 
             entities.append(
                 AlexaEntity(
@@ -154,6 +163,9 @@ class CloudService:
                     display_categories=categories,
                 )
             )
+
+        if skipped_count > 0:
+            logger.debug("Skipped %d malformed entries in cloud/alexa/entities response", skipped_count)
 
         return entities
 

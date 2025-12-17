@@ -105,8 +105,7 @@ def cloud_status(
                 service = CloudService(client)
                 status = await service.get_status()
 
-                if porcelain:
-                    assert formatter is not None
+                if porcelain and formatter:
                     issues = []
                     suggestions = []
 
@@ -179,9 +178,9 @@ def cloud_status(
                         console.print("[yellow]  ⚠ Skill not linked[/yellow] - Link in Alexa app")
 
                     if status.alexa_entity_count > 0:
-                        console.print(f"[green]  ✓ {status.alexa_entity_count} entities configured[/green] (YAML filter)")
+                        console.print(f"[green]  ✓ {status.alexa_entity_count} entities configured[/green] (filter)")
                     else:
-                        console.print("[dim]  - No entities in YAML filter[/dim]")
+                        console.print("[dim]  - No entities in filter[/dim]")
 
                     console.print()
                     console.print("[bold]Google Assistant[/bold]")
@@ -225,23 +224,28 @@ def alexa_entities(
 
             async with HAClient(url_final, token_final) as client:
                 service = CloudService(client)
-                entities = await service.get_alexa_entities()
+                all_entities = await service.get_alexa_entities()
+                total_count = len(all_entities)
 
-                if exposed_only:
-                    entities = [e for e in entities if e.should_expose]
+                # Apply filter if requested
+                entities = (
+                    [e for e in all_entities if e.should_expose]
+                    if exposed_only
+                    else all_entities
+                )
 
                 # Sort by entity_id
                 entities.sort(key=lambda e: e.entity_id)
 
-                if porcelain:
-                    assert formatter is not None
+                if porcelain and formatter:
                     exposed_count = sum(1 for e in entities if e.should_expose)
                     output = formatter.success(
                         data=[e.to_dict() for e in entities],
                         metadata={
-                            "total_count": len(entities),
+                            "total_count": total_count,
+                            "filtered_count": len(entities),
                             "exposed_count": exposed_count,
-                            "filter_applied": "exposed_only" if exposed_only else None,
+                            "filters_applied": ["exposed_only"] if exposed_only else [],
                         },
                         suggestions={
                             "next_steps": [
@@ -304,8 +308,7 @@ def alexa_sync(
                 service = CloudService(client)
                 result = await service.sync_alexa()
 
-                if porcelain:
-                    assert formatter is not None
+                if porcelain and formatter:
                     output = formatter.success(
                         data={"sync_triggered": True, "response": result},
                         suggestions={
