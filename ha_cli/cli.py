@@ -21,6 +21,7 @@ def version() -> None:
 from .domains.areas import cli as areas_cli
 from .domains.audit import cli as audit_cli
 from .domains.automations import cli as automations_cli
+from .domains.cloud import cli as cloud_cli
 from .domains.dashboards import cli as dashboards_cli
 from .domains.deconz import cli as deconz_cli
 from .domains.entities import cli as entities_cli
@@ -32,6 +33,7 @@ from .domains.system import cli as system_cli
 app.add_typer(areas_cli.app, name="areas")
 app.add_typer(audit_cli.app, name="audit")
 app.add_typer(automations_cli.app, name="automations")
+app.add_typer(cloud_cli.app, name="cloud")
 app.add_typer(dashboards_cli.app, name="dashboards")
 app.add_typer(deconz_cli.app, name="deconz")
 app.add_typer(entities_cli.app, name="entities")
