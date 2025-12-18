@@ -160,8 +160,10 @@ def list(
                     table.add_column("Admin Only", style="red")
                     
                     for dashboard in dashboards:
+                        # For YAML-mode dashboards, use url_path as ID
+                        display_id = dashboard.id or dashboard.url_path or "N/A"
                         table.add_row(
-                            dashboard.id,
+                            display_id,
                             dashboard.url_path or "(default)",
                             dashboard.title or "N/A",
                             dashboard.mode,

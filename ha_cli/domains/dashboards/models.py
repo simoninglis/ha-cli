@@ -7,14 +7,17 @@ from pydantic import BaseModel, Field
 
 class DashboardInfo(BaseModel):
     """Dashboard list item from lovelace/dashboards/list."""
-    
-    id: str
+
+    # id is optional for YAML-mode dashboards (they use url_path as identifier)
+    id: str | None = None
     url_path: str
-    require_admin: bool
-    show_in_sidebar: bool
+    require_admin: bool = False
+    show_in_sidebar: bool = True
     icon: str | None = None
     title: str | None = None
     mode: Literal["storage", "yaml"] = "storage"
+    # YAML-mode specific fields
+    filename: str | None = None
 
 
 class CardConfig(BaseModel):
