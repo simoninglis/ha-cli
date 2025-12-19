@@ -50,7 +50,7 @@ def load_yaml_with_includes(file_path: Path) -> dict[str, Any]:
         full_path = file_path.parent / include_path
         if full_path.exists():
             with open(full_path) as f:
-                return yaml.load(f, Loader=IncludeLoader)
+                return yaml.load(f, Loader=IncludeLoader)  # noqa: S506 - IncludeLoader inherits from SafeLoader
         else:
             # Return a placeholder indicating missing include
             return {"_include_error": str(full_path), "_include_missing": True}
@@ -58,7 +58,7 @@ def load_yaml_with_includes(file_path: Path) -> dict[str, Any]:
     IncludeLoader.add_constructor("!include", include_constructor)
 
     with open(file_path) as f:
-        return yaml.load(f, Loader=IncludeLoader)
+        return yaml.load(f, Loader=IncludeLoader)  # noqa: S506 - IncludeLoader inherits from SafeLoader
 
 
 def extract_entities_from_config(config: Any, entities: set[str] | None = None) -> set[str]:
