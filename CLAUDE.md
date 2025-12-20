@@ -85,6 +85,7 @@ poetry run ha-cli dashboards restore <file>     # Restore from backup
 poetry run ha-cli dashboards entities [url-path] # Extract entity references
 poetry run ha-cli dashboards create <id> <url> <title> # Create new dashboard
 poetry run ha-cli dashboards delete <id>        # Delete dashboard
+poetry run ha-cli dashboards screenshot <name>  # Capture dashboard screenshot
 ```
 
 ### Audit Commands (Tech Debt Detection)

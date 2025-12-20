@@ -653,8 +653,55 @@ def views(
 
 
 @app.command()
+def screenshot(
+    dashboard: str = typer.Argument(..., help="Dashboard URL path (e.g., room-lounge, mobile-home)"),
+    output: str | None = typer.Option(None, "--output", "-o", help="Output file path (default: /tmp/dashboard-{name}-{timestamp}.png)"),
+    width: int = typer.Option(1024, "--width", "-W", help="Viewport width in pixels"),
+    height: int = typer.Option(768, "--height", "-H", help="Viewport height in pixels"),
+    wait: int = typer.Option(5, "--wait", "-w", help="Seconds to wait for rendering after page load"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Capture a screenshot of a dashboard for visual verification.
+
+    This command navigates to the specified dashboard, waits for it to render,
+    and captures a screenshot. Useful for verifying dashboard changes after deployment.
+
+    Examples:
+        ha-cli dashboards screenshot room-lounge
+        ha-cli dashboards screenshot mobile-home --output /tmp/mobile.png
+        ha-cli dashboards screenshot room-office --width 1280 --height 800
+    """
+    setup_logging(debug)
+
+    from .screenshot import capture_dashboard_screenshot
+
+    async def _screenshot() -> None:
+        try:
+            output_path = await capture_dashboard_screenshot(
+                dashboard_name=dashboard,
+                output_path=output,
+                viewport_width=width,
+                viewport_height=height,
+                wait_seconds=wait,
+            )
+            console.print(f"[green]Screenshot saved:[/green] {output_path}")
+            console.print(f"\n[dim]View with: Read tool or 'open {output_path}'[/dim]")
+        except ValueError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            sys.exit(EXIT_USAGE_ERROR)
+        except Exception as e:
+            console.print(f"[red]Screenshot failed:[/red] {e}")
+            if debug:
+                import traceback
+                traceback.print_exc()
+            sys.exit(EXIT_HA_ERROR)
+
+    asyncio.run(run_async_command(_screenshot(), command="dashboards screenshot"))
+
+
+@app.command()
 def version() -> None:
     """Show version information."""
     from ... import __version__
-    
+
     console.print(f"ha-cli dashboards version {__version__}")
