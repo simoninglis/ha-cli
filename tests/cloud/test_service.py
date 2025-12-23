@@ -596,3 +596,166 @@ class TestCloudServiceSyncAlexa:
 
         with pytest.raises(WebSocketError, match="Unexpected cloud/alexa/sync"):
             await service.sync_alexa()
+
+
+class TestCloudServiceSetEntityExposure:
+    """Tests for CloudService.set_entity_exposure()."""
+
+    @pytest.mark.asyncio()
+    async def test_set_entity_exposure_enable_success(self, mock_client):
+        """Test set_entity_exposure enables exposure successfully."""
+        mock_client._ws_call.return_value = {
+            "entity_id": "light.lounge",
+            "options": {"cloud.alexa": {"should_expose": True}},
+        }
+
+        service = CloudService(mock_client)
+        result = await service.set_entity_exposure("light.lounge", True)
+
+        assert result["entity_id"] == "light.lounge"
+        mock_client._ws_call.assert_called_once_with(
+            "config/entity_registry/update",
+            entity_id="light.lounge",
+            options_domain="cloud.alexa",
+            options={"should_expose": True},
+        )
+
+    @pytest.mark.asyncio()
+    async def test_set_entity_exposure_disable_success(self, mock_client):
+        """Test set_entity_exposure disables exposure successfully."""
+        mock_client._ws_call.return_value = {
+            "entity_id": "light.lounge",
+            "options": {"cloud.alexa": {"should_expose": False}},
+        }
+
+        service = CloudService(mock_client)
+        result = await service.set_entity_exposure("light.lounge", False)
+
+        assert result["entity_id"] == "light.lounge"
+        mock_client._ws_call.assert_called_once_with(
+            "config/entity_registry/update",
+            entity_id="light.lounge",
+            options_domain="cloud.alexa",
+            options={"should_expose": False},
+        )
+
+    @pytest.mark.asyncio()
+    async def test_set_entity_exposure_not_found(self, mock_client):
+        """Test set_entity_exposure raises NotFoundError for unknown entity."""
+        from ha_cli.common.exceptions import NotFoundError
+
+        mock_client._ws_call.return_value = {
+            "error": {"code": "not_found", "message": "Entity not found"},
+        }
+
+        service = CloudService(mock_client)
+
+        with pytest.raises(NotFoundError, match="Entity not found: light.nonexistent"):
+            await service.set_entity_exposure("light.nonexistent", True)
+
+    @pytest.mark.asyncio()
+    async def test_set_entity_exposure_not_found_message(self, mock_client):
+        """Test set_entity_exposure detects 'not found' in error message."""
+        from ha_cli.common.exceptions import NotFoundError
+
+        mock_client._ws_call.return_value = {
+            "error": {"code": "unknown", "message": "Entity light.gone was not found"},
+        }
+
+        service = CloudService(mock_client)
+
+        with pytest.raises(NotFoundError):
+            await service.set_entity_exposure("light.gone", True)
+
+    @pytest.mark.asyncio()
+    async def test_set_entity_exposure_other_error(self, mock_client):
+        """Test set_entity_exposure raises WebSocketError for other errors."""
+        mock_client._ws_call.return_value = {
+            "error": {"code": "validation_error", "message": "Invalid entity_id format"},
+        }
+
+        service = CloudService(mock_client)
+
+        with pytest.raises(WebSocketError, match="Failed to update"):
+            await service.set_entity_exposure("invalid", True)
+
+    @pytest.mark.asyncio()
+    async def test_set_entity_exposure_invalid_response_type(self, mock_client):
+        """Test set_entity_exposure raises on invalid response type."""
+        mock_client._ws_call.return_value = ["invalid", "list"]
+
+        service = CloudService(mock_client)
+
+        with pytest.raises(WebSocketError, match="Unexpected response type"):
+            await service.set_entity_exposure("light.test", True)
+
+
+class TestCloudServiceSetEntitiesExposure:
+    """Tests for CloudService.set_entities_exposure()."""
+
+    @pytest.mark.asyncio()
+    async def test_set_entities_exposure_all_success(self, mock_client):
+        """Test set_entities_exposure when all entities succeed."""
+        mock_client._ws_call.return_value = {
+            "entity_id": "light.test",
+            "options": {"cloud.alexa": {"should_expose": True}},
+        }
+
+        service = CloudService(mock_client)
+        successful, failed = await service.set_entities_exposure(
+            ["light.one", "light.two", "light.three"], True
+        )
+
+        assert successful == ["light.one", "light.two", "light.three"]
+        assert failed == []
+        assert mock_client._ws_call.call_count == 3
+
+    @pytest.mark.asyncio()
+    async def test_set_entities_exposure_some_fail(self, mock_client):
+        """Test set_entities_exposure handles partial failures."""
+        call_count = 0
+
+        async def ws_call_handler(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            entity_id = kwargs.get("entity_id", "")
+            if entity_id == "light.missing":
+                return {"error": {"code": "not_found", "message": "Not found"}}
+            return {"entity_id": entity_id, "options": {}}
+
+        mock_client._ws_call.side_effect = ws_call_handler
+
+        service = CloudService(mock_client)
+        successful, failed = await service.set_entities_exposure(
+            ["light.good", "light.missing", "light.also_good"], True
+        )
+
+        assert successful == ["light.good", "light.also_good"]
+        assert len(failed) == 1
+        assert failed[0][0] == "light.missing"
+        assert "not found" in failed[0][1].lower()
+
+    @pytest.mark.asyncio()
+    async def test_set_entities_exposure_empty_list(self, mock_client):
+        """Test set_entities_exposure with empty list."""
+        service = CloudService(mock_client)
+        successful, failed = await service.set_entities_exposure([], True)
+
+        assert successful == []
+        assert failed == []
+        mock_client._ws_call.assert_not_called()
+
+    @pytest.mark.asyncio()
+    async def test_set_entities_exposure_all_fail(self, mock_client):
+        """Test set_entities_exposure when all entities fail."""
+        mock_client._ws_call.return_value = {
+            "error": {"code": "not_found", "message": "Not found"},
+        }
+
+        service = CloudService(mock_client)
+        successful, failed = await service.set_entities_exposure(
+            ["light.one", "light.two"], True
+        )
+
+        assert successful == []
+        assert len(failed) == 2

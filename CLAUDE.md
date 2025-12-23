@@ -142,6 +142,36 @@ poetry run ha-cli cloud status                  # Show cloud connection status
 poetry run ha-cli cloud alexa entities          # List entities available to Alexa
 poetry run ha-cli cloud alexa entities --exposed # Show only exposed entities
 poetry run ha-cli cloud alexa sync              # Trigger Alexa device discovery
+
+# Entity exposure management (Issue #68)
+poetry run ha-cli cloud alexa expose <entity_id>       # Expose single entity to Alexa
+poetry run ha-cli cloud alexa expose --from-file <yaml> # Expose entities from YAML file
+poetry run ha-cli cloud alexa hide <entity_id>         # Hide single entity from Alexa
+poetry run ha-cli cloud alexa hide --all-except <yaml> # Hide all except entities in file
+poetry run ha-cli cloud alexa sync-filter --file <yaml> # Sync exposure with YAML file
+poetry run ha-cli cloud alexa sync-filter --file <yaml> --dry-run # Preview changes
+```
+
+**Entity Exposure Management:**
+
+Nabu Casa Alexa uses intersection logic - entities must be BOTH:
+1. In the YAML filter (`integration_cloud.yaml` → `includes/voice_exposure_entities.yaml`)
+2. Have `should_expose: true` in the entity registry
+
+The `sync-filter` command is the "magic" command that syncs entity registry with YAML:
+- Enables exposure for all entities IN the YAML file
+- Disables exposure for all entities NOT in the YAML file
+
+**Example workflow:**
+```bash
+# Preview changes
+ha-cli cloud alexa sync-filter --file includes/voice_exposure_entities.yaml --dry-run
+
+# Apply changes
+ha-cli cloud alexa sync-filter --file includes/voice_exposure_entities.yaml
+
+# Tell Alexa to rediscover
+ha-cli cloud alexa sync
 ```
 
 **Cloud Status Output:**

@@ -2,8 +2,10 @@
 
 import asyncio
 import sys
+from pathlib import Path
 
 import typer
+import yaml
 from rich.console import Console
 from rich.markup import escape as rich_escape
 from rich.table import Table
@@ -338,3 +340,463 @@ def alexa_sync(
             _handle_error(e, porcelain, formatter)
 
     asyncio.run(run_async_command(_sync(), command="cloud alexa sync"))
+
+
+def _parse_entity_list_yaml(file_path: Path) -> list[str]:
+    """Parse a YAML file containing a list of entity IDs.
+
+    Supports format like voice_exposure_entities.yaml:
+    - light.lounge
+    - climate.office_ac
+    # Comments are ignored by YAML parser
+
+    Args:
+        file_path: Path to the YAML file
+
+    Returns:
+        List of entity IDs
+
+    Raises:
+        ValidationError: If file doesn't exist or content is not a list
+    """
+    if not file_path.exists():
+        raise ValidationError(f"File not found: {file_path}")
+
+    try:
+        with open(file_path) as f:
+            content = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        raise ValidationError(f"Invalid YAML in {file_path}: {e}") from e
+
+    if content is None:
+        return []
+
+    if not isinstance(content, list):
+        raise ValidationError(
+            f"Expected list of entities in {file_path}, got {type(content).__name__}"
+        )
+
+    # Filter to only valid non-empty strings
+    return [e for e in content if isinstance(e, str) and e.strip()]
+
+
+@alexa_app.command("expose")
+def alexa_expose(
+    entity_id: str | None = typer.Argument(None, help="Entity ID to expose"),
+    from_file: Path | None = typer.Option(
+        None, "--from-file", "-f", help="YAML file with entity list"
+    ),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Enable Alexa exposure for entity(ies).
+
+    Expose a single entity:
+        ha-cli cloud alexa expose light.lounge
+
+    Expose multiple entities from a YAML file:
+        ha-cli cloud alexa expose --from-file includes/voice_exposure_entities.yaml
+    """
+    setup_logging(debug)
+    set_porcelain_mode(porcelain)
+
+    async def _expose() -> None:
+        formatter = PorcelainFormatter("cloud alexa expose") if porcelain else None
+
+        try:
+            # Validate input
+            if entity_id is None and from_file is None:
+                raise ValidationError(
+                    "Provide either entity_id or --from-file, not neither"
+                )
+            if entity_id is not None and from_file is not None:
+                raise ValidationError(
+                    "Provide either entity_id or --from-file, not both"
+                )
+
+            # Get list of entities to expose
+            if from_file:
+                entity_ids = _parse_entity_list_yaml(from_file)
+                if not entity_ids:
+                    raise ValidationError(f"No entities found in {from_file}")
+            else:
+                entity_ids = [entity_id]  # type: ignore[list-item]
+
+            url_final, token_final = get_client_config(url, token)
+
+            async with HAClient(url_final, token_final) as client:
+                service = CloudService(client)
+                successful, failed = await service.set_entities_exposure(
+                    entity_ids, expose=True
+                )
+
+                if porcelain and formatter:
+                    output = formatter.success(
+                        data={
+                            "successful": successful,
+                            "failed": [{"entity_id": e, "error": err} for e, err in failed],
+                        },
+                        metadata={
+                            "total_requested": len(entity_ids),
+                            "successful_count": len(successful),
+                            "failed_count": len(failed),
+                        },
+                        suggestions={
+                            "next_steps": [
+                                "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
+                            ] if successful else [],
+                        },
+                    )
+                    write_output(output)
+                else:
+                    if successful:
+                        console.print(
+                            f"[green]✓ Exposed {len(successful)} entity(ies) to Alexa[/green]"
+                        )
+                        for eid in successful:
+                            console.print(f"  [dim]{rich_escape(eid)}[/dim]")
+
+                    if failed:
+                        console.print(f"\n[red]✗ Failed to expose {len(failed)}:[/red]")
+                        for eid, err in failed:
+                            console.print(f"  [red]{rich_escape(eid)}: {rich_escape(err)}[/red]")
+                        sys.exit(EXIT_USAGE_ERROR)
+
+                    if successful:
+                        console.print(
+                            "\n[dim]Run 'ha-cli cloud alexa sync' to trigger Alexa discovery[/dim]"
+                        )
+
+        except Exception as e:
+            _handle_error(e, porcelain, formatter)
+
+    asyncio.run(run_async_command(_expose(), command="cloud alexa expose"))
+
+
+@alexa_app.command("hide")
+def alexa_hide(
+    entity_id: str | None = typer.Argument(None, help="Entity ID to hide"),
+    all_except: Path | None = typer.Option(
+        None, "--all-except", help="Hide all except entities in YAML file"
+    ),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Disable Alexa exposure for entity(ies).
+
+    Hide a single entity:
+        ha-cli cloud alexa hide light.lounge
+
+    Hide all entities except those in a YAML file:
+        ha-cli cloud alexa hide --all-except includes/voice_exposure_entities.yaml
+    """
+    setup_logging(debug)
+    set_porcelain_mode(porcelain)
+
+    async def _hide() -> None:
+        formatter = PorcelainFormatter("cloud alexa hide") if porcelain else None
+
+        try:
+            # Validate input
+            if entity_id is None and all_except is None:
+                raise ValidationError(
+                    "Provide either entity_id or --all-except, not neither"
+                )
+            if entity_id is not None and all_except is not None:
+                raise ValidationError(
+                    "Provide either entity_id or --all-except, not both"
+                )
+
+            url_final, token_final = get_client_config(url, token)
+
+            async with HAClient(url_final, token_final) as client:
+                service = CloudService(client)
+
+                if all_except:
+                    # Get list of entities to keep exposed
+                    keep_exposed = set(_parse_entity_list_yaml(all_except))
+                    if not keep_exposed:
+                        raise ValidationError(f"No entities found in {all_except}")
+
+                    # Get all currently exposed entities
+                    all_entities = await service.get_alexa_entities()
+                    currently_exposed = {
+                        e.entity_id for e in all_entities if e.should_expose
+                    }
+
+                    # Hide entities that are exposed but not in keep list
+                    to_hide = list(currently_exposed - keep_exposed)
+                    to_hide.sort()  # Deterministic order
+
+                    if not to_hide:
+                        if porcelain and formatter:
+                            output = formatter.success(
+                                data={"successful": [], "failed": []},
+                                metadata={
+                                    "total_requested": 0,
+                                    "successful_count": 0,
+                                    "failed_count": 0,
+                                    "message": "No entities to hide",
+                                },
+                            )
+                            write_output(output)
+                        else:
+                            console.print("[dim]No entities to hide[/dim]")
+                        return
+
+                    entity_ids = to_hide
+                else:
+                    entity_ids = [entity_id]  # type: ignore[list-item]
+
+                successful, failed = await service.set_entities_exposure(
+                    entity_ids, expose=False
+                )
+
+                if porcelain and formatter:
+                    output = formatter.success(
+                        data={
+                            "successful": successful,
+                            "failed": [{"entity_id": e, "error": err} for e, err in failed],
+                        },
+                        metadata={
+                            "total_requested": len(entity_ids),
+                            "successful_count": len(successful),
+                            "failed_count": len(failed),
+                        },
+                        suggestions={
+                            "next_steps": [
+                                "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
+                            ] if successful else [],
+                        },
+                    )
+                    write_output(output)
+                else:
+                    if successful:
+                        console.print(
+                            f"[green]✓ Hidden {len(successful)} entity(ies) from Alexa[/green]"
+                        )
+                        if len(successful) <= 20:
+                            for eid in successful:
+                                console.print(f"  [dim]{rich_escape(eid)}[/dim]")
+                        else:
+                            console.print(f"  [dim]({len(successful)} entities hidden)[/dim]")
+
+                    if failed:
+                        console.print(f"\n[red]✗ Failed to hide {len(failed)}:[/red]")
+                        for eid, err in failed:
+                            console.print(f"  [red]{rich_escape(eid)}: {rich_escape(err)}[/red]")
+                        sys.exit(EXIT_USAGE_ERROR)
+
+                    if successful:
+                        console.print(
+                            "\n[dim]Run 'ha-cli cloud alexa sync' to trigger Alexa discovery[/dim]"
+                        )
+
+        except Exception as e:
+            _handle_error(e, porcelain, formatter)
+
+    asyncio.run(run_async_command(_hide(), command="cloud alexa hide"))
+
+
+@alexa_app.command("sync-filter")
+def alexa_sync_filter(
+    file: Path = typer.Option(
+        ..., "--file", "-f", help="YAML file with entity list (source of truth)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would change without making changes"
+    ),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Sync entity registry exposure with YAML filter file.
+
+    This is the "magic" command that ensures entity registry matches your YAML file:
+    - Enables exposure for all entities IN the YAML file
+    - Disables exposure for all entities NOT in the YAML file
+
+    Example:
+        ha-cli cloud alexa sync-filter --file includes/voice_exposure_entities.yaml
+
+    Use --dry-run to see what would change without making changes:
+        ha-cli cloud alexa sync-filter --file includes/voice_exposure_entities.yaml --dry-run
+    """
+    setup_logging(debug)
+    set_porcelain_mode(porcelain)
+
+    async def _sync_filter() -> None:
+        formatter = PorcelainFormatter("cloud alexa sync-filter") if porcelain else None
+
+        try:
+            # Parse the YAML file
+            desired_exposed = set(_parse_entity_list_yaml(file))
+            if not desired_exposed:
+                raise ValidationError(f"No entities found in {file}")
+
+            url_final, token_final = get_client_config(url, token)
+
+            async with HAClient(url_final, token_final) as client:
+                service = CloudService(client)
+
+                # Get current state from entity registry
+                all_entities = await service.get_alexa_entities()
+                currently_exposed = {
+                    e.entity_id for e in all_entities if e.should_expose
+                }
+                all_entity_ids = {e.entity_id for e in all_entities}
+
+                # Calculate what needs to change
+                to_expose = list(desired_exposed - currently_exposed)
+                to_hide = list(currently_exposed - desired_exposed)
+                already_correct = list(desired_exposed & currently_exposed)
+                not_in_registry = list(desired_exposed - all_entity_ids)
+
+                to_expose.sort()
+                to_hide.sort()
+                already_correct.sort()
+                not_in_registry.sort()
+
+                if dry_run:
+                    # Dry run mode - just report
+                    if porcelain and formatter:
+                        output = formatter.success(
+                            data={
+                                "dry_run": True,
+                                "to_expose": to_expose,
+                                "to_hide": to_hide,
+                                "already_correct": already_correct,
+                                "not_in_registry": not_in_registry,
+                            },
+                            metadata={
+                                "desired_count": len(desired_exposed),
+                                "currently_exposed": len(currently_exposed),
+                                "to_expose_count": len(to_expose),
+                                "to_hide_count": len(to_hide),
+                                "already_correct_count": len(already_correct),
+                                "not_in_registry_count": len(not_in_registry),
+                            },
+                        )
+                        write_output(output)
+                    else:
+                        console.print("[bold]Dry run - no changes will be made[/bold]\n")
+                        console.print(
+                            f"Desired: {len(desired_exposed)} entities from {file}"
+                        )
+                        console.print(
+                            f"Currently exposed: {len(currently_exposed)} entities\n"
+                        )
+
+                        if to_expose:
+                            console.print(f"[green]Would EXPOSE {len(to_expose)}:[/green]")
+                            for eid in to_expose:
+                                console.print(f"  [green]+ {rich_escape(eid)}[/green]")
+
+                        if to_hide:
+                            console.print(f"\n[red]Would HIDE {len(to_hide)}:[/red]")
+                            for eid in to_hide[:20]:
+                                console.print(f"  [red]- {rich_escape(eid)}[/red]")
+                            if len(to_hide) > 20:
+                                console.print(
+                                    f"  [dim]... and {len(to_hide) - 20} more[/dim]"
+                                )
+
+                        if not_in_registry:
+                            console.print(
+                                f"\n[yellow]⚠ Not in registry ({len(not_in_registry)}):[/yellow]"
+                            )
+                            for eid in not_in_registry:
+                                console.print(f"  [yellow]? {rich_escape(eid)}[/yellow]")
+
+                        if already_correct:
+                            console.print(
+                                f"\n[dim]Already correct: {len(already_correct)}[/dim]"
+                            )
+
+                        if not to_expose and not to_hide:
+                            console.print("\n[green]✓ Already in sync![/green]")
+                    return
+
+                # Actually apply changes
+                expose_success: list[str] = []
+                expose_failed: list[tuple[str, str]] = []
+                hide_success: list[str] = []
+                hide_failed: list[tuple[str, str]] = []
+
+                if to_expose:
+                    expose_success, expose_failed = await service.set_entities_exposure(
+                        to_expose, expose=True
+                    )
+
+                if to_hide:
+                    hide_success, hide_failed = await service.set_entities_exposure(
+                        to_hide, expose=False
+                    )
+
+                all_failed = expose_failed + hide_failed
+
+                if porcelain and formatter:
+                    output = formatter.success(
+                        data={
+                            "exposed": expose_success,
+                            "hidden": hide_success,
+                            "failed": [{"entity_id": e, "error": err} for e, err in all_failed],
+                            "not_in_registry": not_in_registry,
+                        },
+                        metadata={
+                            "desired_count": len(desired_exposed),
+                            "exposed_count": len(expose_success),
+                            "hidden_count": len(hide_success),
+                            "failed_count": len(all_failed),
+                            "not_in_registry_count": len(not_in_registry),
+                        },
+                        suggestions={
+                            "next_steps": [
+                                "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
+                            ],
+                        },
+                    )
+                    write_output(output)
+                else:
+                    if expose_success:
+                        console.print(
+                            f"[green]✓ Exposed {len(expose_success)} entity(ies)[/green]"
+                        )
+
+                    if hide_success:
+                        console.print(
+                            f"[green]✓ Hidden {len(hide_success)} entity(ies)[/green]"
+                        )
+
+                    if not_in_registry:
+                        console.print(
+                            f"\n[yellow]⚠ {len(not_in_registry)} entities not in registry:[/yellow]"
+                        )
+                        for eid in not_in_registry:
+                            console.print(f"  [yellow]? {rich_escape(eid)}[/yellow]")
+
+                    if all_failed:
+                        console.print(f"\n[red]✗ Failed {len(all_failed)}:[/red]")
+                        for eid, err in all_failed:
+                            console.print(
+                                f"  [red]{rich_escape(eid)}: {rich_escape(err)}[/red]"
+                            )
+                        sys.exit(EXIT_USAGE_ERROR)
+
+                    total_changed = len(expose_success) + len(hide_success)
+                    if total_changed > 0:
+                        console.print(
+                            "\n[dim]Run 'ha-cli cloud alexa sync' to trigger Alexa discovery[/dim]"
+                        )
+                    else:
+                        console.print("\n[green]✓ Already in sync![/green]")
+
+        except Exception as e:
+            _handle_error(e, porcelain, formatter)
+
+    asyncio.run(run_async_command(_sync_filter(), command="cloud alexa sync-filter"))

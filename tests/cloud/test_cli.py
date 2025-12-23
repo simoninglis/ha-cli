@@ -631,3 +631,429 @@ class TestCloudCLIErrors:
         assert result.exit_code != 0
         # Markup should be escaped, not rendered
         assert "[bold]" in result.stdout or "\\[bold\\]" in result.stdout
+
+
+class TestCloudAlexaExposeCLI:
+    """Test cloud alexa expose command."""
+
+    @patch("ha_cli.domains.cloud.cli.get_client_config")
+    @patch("ha_cli.domains.cloud.cli.HAClient")
+    @patch("ha_cli.domains.cloud.cli.CloudService")
+    def test_alexa_expose_single_entity(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test exposing a single entity."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.set_entities_exposure = AsyncMock(
+            return_value=(["light.lounge"], [])
+        )
+
+        result = runner.invoke(app, ["cloud", "alexa", "expose", "light.lounge"])
+        assert result.exit_code == 0
+        assert "Exposed 1 entity" in result.stdout
+        assert "light.lounge" in result.stdout
+
+    @patch("ha_cli.domains.cloud.cli.get_client_config")
+    @patch("ha_cli.domains.cloud.cli.HAClient")
+    @patch("ha_cli.domains.cloud.cli.CloudService")
+    def test_alexa_expose_porcelain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test exposing entity with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.set_entities_exposure = AsyncMock(
+            return_value=(["light.lounge"], [])
+        )
+
+        result = runner.invoke(
+            app, ["cloud", "alexa", "expose", "light.lounge", "--porcelain"]
+        )
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert output["data"]["successful"] == ["light.lounge"]
+        assert output["metadata"]["successful_count"] == 1
+
+    @patch("ha_cli.domains.cloud.cli._parse_entity_list_yaml")
+    @patch("ha_cli.domains.cloud.cli.get_client_config")
+    @patch("ha_cli.domains.cloud.cli.HAClient")
+    @patch("ha_cli.domains.cloud.cli.CloudService")
+    def test_alexa_expose_from_file(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+        mock_parse: MagicMock,
+    ) -> None:
+        """Test exposing entities from a YAML file."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_parse.return_value = ["light.one", "light.two"]
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.set_entities_exposure = AsyncMock(
+            return_value=(["light.one", "light.two"], [])
+        )
+
+        result = runner.invoke(
+            app, ["cloud", "alexa", "expose", "--from-file", "entities.yaml"]
+        )
+        assert result.exit_code == 0
+        assert "Exposed 2 entity" in result.stdout
+
+    def test_alexa_expose_no_args_error(self) -> None:
+        """Test expose command fails without arguments."""
+        result = runner.invoke(app, ["cloud", "alexa", "expose"])
+        assert result.exit_code != 0
+
+    @patch("ha_cli.domains.cloud.cli.get_client_config")
+    @patch("ha_cli.domains.cloud.cli.HAClient")
+    @patch("ha_cli.domains.cloud.cli.CloudService")
+    def test_alexa_expose_with_failures(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test expose command handles partial failures."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.set_entities_exposure = AsyncMock(
+            return_value=(
+                ["light.good"],
+                [("light.bad", "Entity not found")],
+            )
+        )
+
+        result = runner.invoke(
+            app, ["cloud", "alexa", "expose", "light.bad"]
+        )
+        assert result.exit_code != 0
+        assert "Failed" in result.stdout
+
+
+class TestCloudAlexaHideCLI:
+    """Test cloud alexa hide command."""
+
+    @patch("ha_cli.domains.cloud.cli.get_client_config")
+    @patch("ha_cli.domains.cloud.cli.HAClient")
+    @patch("ha_cli.domains.cloud.cli.CloudService")
+    def test_alexa_hide_single_entity(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+    ) -> None:
+        """Test hiding a single entity."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.set_entities_exposure = AsyncMock(
+            return_value=(["light.lounge"], [])
+        )
+
+        result = runner.invoke(app, ["cloud", "alexa", "hide", "light.lounge"])
+        assert result.exit_code == 0
+        assert "Hidden 1 entity" in result.stdout
+
+    @patch("ha_cli.domains.cloud.cli._parse_entity_list_yaml")
+    @patch("ha_cli.domains.cloud.cli.get_client_config")
+    @patch("ha_cli.domains.cloud.cli.HAClient")
+    @patch("ha_cli.domains.cloud.cli.CloudService")
+    def test_alexa_hide_all_except(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+        mock_parse: MagicMock,
+    ) -> None:
+        """Test hiding all except entities in file."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_parse.return_value = ["light.keep"]
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_alexa_entities = AsyncMock(
+            return_value=[
+                AlexaEntity("light.keep", should_expose=True, display_categories=[]),
+                AlexaEntity("light.remove", should_expose=True, display_categories=[]),
+            ]
+        )
+        mock_service.set_entities_exposure = AsyncMock(
+            return_value=(["light.remove"], [])
+        )
+
+        result = runner.invoke(
+            app, ["cloud", "alexa", "hide", "--all-except", "keep.yaml"]
+        )
+        assert result.exit_code == 0
+        assert "Hidden 1 entity" in result.stdout
+
+    @patch("ha_cli.domains.cloud.cli._parse_entity_list_yaml")
+    @patch("ha_cli.domains.cloud.cli.get_client_config")
+    @patch("ha_cli.domains.cloud.cli.HAClient")
+    @patch("ha_cli.domains.cloud.cli.CloudService")
+    def test_alexa_hide_all_except_nothing_to_hide(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+        mock_parse: MagicMock,
+    ) -> None:
+        """Test hide --all-except when nothing to hide."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_parse.return_value = ["light.one"]
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_alexa_entities = AsyncMock(
+            return_value=[
+                AlexaEntity("light.one", should_expose=True, display_categories=[]),
+            ]
+        )
+
+        result = runner.invoke(
+            app, ["cloud", "alexa", "hide", "--all-except", "keep.yaml"]
+        )
+        assert result.exit_code == 0
+        assert "No entities to hide" in result.stdout
+
+    def test_alexa_hide_no_args_error(self) -> None:
+        """Test hide command fails without arguments."""
+        result = runner.invoke(app, ["cloud", "alexa", "hide"])
+        assert result.exit_code != 0
+
+
+class TestCloudAlexaSyncFilterCLI:
+    """Test cloud alexa sync-filter command."""
+
+    @patch("ha_cli.domains.cloud.cli._parse_entity_list_yaml")
+    @patch("ha_cli.domains.cloud.cli.get_client_config")
+    @patch("ha_cli.domains.cloud.cli.HAClient")
+    @patch("ha_cli.domains.cloud.cli.CloudService")
+    def test_alexa_sync_filter_dry_run(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+        mock_parse: MagicMock,
+    ) -> None:
+        """Test sync-filter dry run mode."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_parse.return_value = ["light.desired"]
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_alexa_entities = AsyncMock(
+            return_value=[
+                AlexaEntity("light.desired", should_expose=False, display_categories=[]),
+                AlexaEntity("light.extra", should_expose=True, display_categories=[]),
+            ]
+        )
+
+        result = runner.invoke(
+            app,
+            ["cloud", "alexa", "sync-filter", "--file", "filter.yaml", "--dry-run"],
+        )
+        assert result.exit_code == 0
+        assert "Dry run" in result.stdout
+        assert "Would EXPOSE" in result.stdout
+        assert "Would HIDE" in result.stdout
+
+    @patch("ha_cli.domains.cloud.cli._parse_entity_list_yaml")
+    @patch("ha_cli.domains.cloud.cli.get_client_config")
+    @patch("ha_cli.domains.cloud.cli.HAClient")
+    @patch("ha_cli.domains.cloud.cli.CloudService")
+    def test_alexa_sync_filter_applies_changes(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+        mock_parse: MagicMock,
+    ) -> None:
+        """Test sync-filter applies changes."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_parse.return_value = ["light.desired"]
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_alexa_entities = AsyncMock(
+            return_value=[
+                AlexaEntity("light.desired", should_expose=False, display_categories=[]),
+                AlexaEntity("light.extra", should_expose=True, display_categories=[]),
+            ]
+        )
+        mock_service.set_entities_exposure = AsyncMock(
+            return_value=(["light.desired"], [])
+        )
+
+        result = runner.invoke(
+            app, ["cloud", "alexa", "sync-filter", "--file", "filter.yaml"]
+        )
+        assert result.exit_code == 0
+        assert "Exposed 1 entity" in result.stdout
+        assert "Hidden 1 entity" in result.stdout
+
+    @patch("ha_cli.domains.cloud.cli._parse_entity_list_yaml")
+    @patch("ha_cli.domains.cloud.cli.get_client_config")
+    @patch("ha_cli.domains.cloud.cli.HAClient")
+    @patch("ha_cli.domains.cloud.cli.CloudService")
+    def test_alexa_sync_filter_already_in_sync(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+        mock_parse: MagicMock,
+    ) -> None:
+        """Test sync-filter when already in sync."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_parse.return_value = ["light.one"]
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_alexa_entities = AsyncMock(
+            return_value=[
+                AlexaEntity("light.one", should_expose=True, display_categories=[]),
+            ]
+        )
+
+        result = runner.invoke(
+            app, ["cloud", "alexa", "sync-filter", "--file", "filter.yaml"]
+        )
+        assert result.exit_code == 0
+        assert "Already in sync" in result.stdout
+
+    @patch("ha_cli.domains.cloud.cli._parse_entity_list_yaml")
+    @patch("ha_cli.domains.cloud.cli.get_client_config")
+    @patch("ha_cli.domains.cloud.cli.HAClient")
+    @patch("ha_cli.domains.cloud.cli.CloudService")
+    def test_alexa_sync_filter_porcelain(
+        self,
+        mock_service_class: MagicMock,
+        mock_client_class: MagicMock,
+        mock_config: MagicMock,
+        mock_parse: MagicMock,
+    ) -> None:
+        """Test sync-filter with porcelain output."""
+        mock_config.return_value = ("http://test:8123", "test-token")
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_parse.return_value = ["light.one"]
+
+        mock_service = MagicMock()
+        mock_service_class.return_value = mock_service
+        mock_service.get_alexa_entities = AsyncMock(
+            return_value=[
+                AlexaEntity("light.one", should_expose=False, display_categories=[]),
+            ]
+        )
+        mock_service.set_entities_exposure = AsyncMock(
+            return_value=(["light.one"], [])
+        )
+
+        result = runner.invoke(
+            app,
+            ["cloud", "alexa", "sync-filter", "--file", "filter.yaml", "--porcelain"],
+        )
+        assert result.exit_code == 0
+        output = json.loads(result.stdout)
+        assert output["status"] == "success"
+        assert output["data"]["exposed"] == ["light.one"]
+        assert output["metadata"]["exposed_count"] == 1
+
+    def test_alexa_sync_filter_requires_file(self) -> None:
+        """Test sync-filter requires --file option."""
+        result = runner.invoke(app, ["cloud", "alexa", "sync-filter"])
+        assert result.exit_code != 0
+
+
+class TestParseEntityListYaml:
+    """Test _parse_entity_list_yaml helper function."""
+
+    def test_parse_valid_yaml_file(self, tmp_path) -> None:
+        """Test parsing valid YAML file."""
+        from ha_cli.domains.cloud.cli import _parse_entity_list_yaml
+
+        yaml_file = tmp_path / "entities.yaml"
+        yaml_file.write_text("- light.one\n- light.two\n- climate.ac\n")
+
+        result = _parse_entity_list_yaml(yaml_file)
+        assert result == ["light.one", "light.two", "climate.ac"]
+
+    def test_parse_empty_yaml_file(self, tmp_path) -> None:
+        """Test parsing empty YAML file."""
+        from ha_cli.domains.cloud.cli import _parse_entity_list_yaml
+
+        yaml_file = tmp_path / "empty.yaml"
+        yaml_file.write_text("")
+
+        result = _parse_entity_list_yaml(yaml_file)
+        assert result == []
+
+    def test_parse_yaml_file_not_found(self, tmp_path) -> None:
+        """Test parsing non-existent file raises error."""
+        from ha_cli.common.exceptions import ValidationError
+        from ha_cli.domains.cloud.cli import _parse_entity_list_yaml
+
+        import pytest
+
+        with pytest.raises(ValidationError, match="File not found"):
+            _parse_entity_list_yaml(tmp_path / "nonexistent.yaml")
+
+    def test_parse_yaml_file_not_list(self, tmp_path) -> None:
+        """Test parsing YAML file with non-list content raises error."""
+        from ha_cli.common.exceptions import ValidationError
+        from ha_cli.domains.cloud.cli import _parse_entity_list_yaml
+
+        import pytest
+
+        yaml_file = tmp_path / "dict.yaml"
+        yaml_file.write_text("key: value\n")
+
+        with pytest.raises(ValidationError, match="Expected list"):
+            _parse_entity_list_yaml(yaml_file)
+
+    def test_parse_yaml_filters_invalid_entries(self, tmp_path) -> None:
+        """Test parsing YAML file filters out invalid entries."""
+        from ha_cli.domains.cloud.cli import _parse_entity_list_yaml
+
+        yaml_file = tmp_path / "mixed.yaml"
+        yaml_file.write_text("- light.valid\n- 123\n- \n- light.also_valid\n")
+
+        result = _parse_entity_list_yaml(yaml_file)
+        assert result == ["light.valid", "light.also_valid"]

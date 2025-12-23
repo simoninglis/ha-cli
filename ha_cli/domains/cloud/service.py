@@ -263,3 +263,73 @@ class CloudService:
                 f"Unexpected cloud/alexa/sync response type: {type(result).__name__}"
             )
         return result
+
+    async def set_entity_exposure(self, entity_id: str, expose: bool) -> dict[str, Any]:
+        """Set Alexa exposure for a single entity.
+
+        Uses WebSocket command: config/entity_registry/update
+        with options_domain='cloud.alexa' and options={'should_expose': expose}
+
+        Args:
+            entity_id: The entity to modify (e.g., 'light.lounge')
+            expose: True to expose to Alexa, False to hide
+
+        Returns:
+            The updated entity registry entry
+
+        Raises:
+            NotFoundError: If entity_id doesn't exist in the registry
+            WebSocketError: If update fails
+        """
+        from ...common.exceptions import NotFoundError
+
+        result = await self.client._ws_call(
+            "config/entity_registry/update",
+            entity_id=entity_id,
+            options_domain="cloud.alexa",
+            options={"should_expose": expose},
+        )
+
+        # Handle error responses (entity not found, etc.)
+        if isinstance(result, dict) and "error" in result:
+            error_info = result.get("error", {})
+            error_code = error_info.get("code", "unknown")
+            error_message = error_info.get("message", "Unknown error")
+            if error_code == "not_found" or "not found" in error_message.lower():
+                raise NotFoundError(f"Entity not found: {entity_id}")
+            raise WebSocketError(f"Failed to update {entity_id}: {error_message}")
+
+        if not isinstance(result, dict):
+            raise WebSocketError(
+                f"Unexpected response type: {type(result).__name__}"
+            )
+
+        return result
+
+    async def set_entities_exposure(
+        self, entity_ids: list[str], expose: bool
+    ) -> tuple[list[str], list[tuple[str, str]]]:
+        """Set Alexa exposure for multiple entities.
+
+        Args:
+            entity_ids: List of entity IDs to modify
+            expose: True to expose to Alexa, False to hide
+
+        Returns:
+            Tuple of (successful_ids, failed_ids_with_errors)
+            - successful_ids: List of entity IDs that were updated
+            - failed_ids_with_errors: List of (entity_id, error_message) tuples
+        """
+        from ...common.exceptions import NotFoundError
+
+        successful: list[str] = []
+        failed: list[tuple[str, str]] = []
+
+        for entity_id in entity_ids:
+            try:
+                await self.set_entity_exposure(entity_id, expose)
+                successful.append(entity_id)
+            except (NotFoundError, WebSocketError) as e:
+                failed.append((entity_id, str(e)))
+
+        return successful, failed
