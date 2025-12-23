@@ -449,8 +449,18 @@ def alexa_expose(
                             "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
                         ] if successful else [],
                     }
-                    # Use partial_success when some operations failed
-                    if failed:
+                    # Choose status based on success/failure ratio
+                    if failed and not successful:
+                        # All operations failed - use error status
+                        output = formatter.error(
+                            error="All entity exposure operations failed",
+                            error_code="ALL_FAILED",
+                            details=output_data,
+                        )
+                        write_output(output)
+                        sys.exit(EXIT_USAGE_ERROR)
+                    elif failed:
+                        # Some succeeded, some failed - use partial_success
                         output = formatter.partial_success(
                             data=output_data,
                             metadata=output_metadata,
@@ -459,6 +469,7 @@ def alexa_expose(
                         write_output(output)
                         sys.exit(EXIT_USAGE_ERROR)
                     else:
+                        # All succeeded
                         output = formatter.success(
                             data=output_data,
                             metadata=output_metadata,
@@ -586,8 +597,18 @@ def alexa_hide(
                             "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
                         ] if successful else [],
                     }
-                    # Use partial_success when some operations failed
-                    if failed:
+                    # Choose status based on success/failure ratio
+                    if failed and not successful:
+                        # All operations failed - use error status
+                        output = formatter.error(
+                            error="All entity hide operations failed",
+                            error_code="ALL_FAILED",
+                            details=output_data,
+                        )
+                        write_output(output)
+                        sys.exit(EXIT_USAGE_ERROR)
+                    elif failed:
+                        # Some succeeded, some failed - use partial_success
                         output = formatter.partial_success(
                             data=output_data,
                             metadata=output_metadata,
@@ -596,6 +617,7 @@ def alexa_hide(
                         write_output(output)
                         sys.exit(EXIT_USAGE_ERROR)
                     else:
+                        # All succeeded
                         output = formatter.success(
                             data=output_data,
                             metadata=output_metadata,
@@ -787,8 +809,18 @@ def alexa_sync_filter(
                             "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
                         ],
                     }
-                    # Use partial_success when some operations failed
-                    if all_failed:
+                    # Choose status based on success/failure ratio
+                    if all_failed and not expose_success and not hide_success:
+                        # All operations failed - use error status
+                        output = formatter.error(
+                            error="All sync-filter operations failed",
+                            error_code="ALL_FAILED",
+                            details=output_data,
+                        )
+                        write_output(output)
+                        sys.exit(EXIT_USAGE_ERROR)
+                    elif all_failed:
+                        # Some succeeded, some failed - use partial_success
                         output = formatter.partial_success(
                             data=output_data,
                             metadata=output_metadata,
@@ -797,6 +829,7 @@ def alexa_sync_filter(
                         write_output(output)
                         sys.exit(EXIT_USAGE_ERROR)
                     else:
+                        # All succeeded
                         output = formatter.success(
                             data=output_data,
                             metadata=output_metadata,

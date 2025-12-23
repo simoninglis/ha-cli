@@ -12,15 +12,20 @@ All porcelain responses follow this consistent structure:
 
 ```json
 {
-  "command": "string",          // Command that was executed
-  "timestamp": "ISO8601",       // UTC timestamp when command started
-  "status": "success|error",    // Response status
-  "metadata": { ... },          // Command-specific metadata
-  "data": [ ... ] | { ... },   // Response data (success only)
-  "error": { ... },             // Error information (error only)
-  "suggestions": { ... }        // Contextual suggestions and guidance
+  "command": "string",                       // Command that was executed
+  "timestamp": "ISO8601",                    // UTC timestamp when command started
+  "status": "success|partial_success|error", // Response status
+  "metadata": { ... },                       // Command-specific metadata
+  "data": [ ... ] | { ... },                // Response data (success/partial_success)
+  "error": { ... },                          // Error information (error only)
+  "suggestions": { ... }                     // Contextual suggestions and guidance
 }
 ```
+
+### Status Values
+- `success`: All operations completed successfully
+- `partial_success`: Some operations succeeded, some failed (includes both `data` and failure details)
+- `error`: All operations failed or a fatal error occurred
 
 ## Success Response Format
 

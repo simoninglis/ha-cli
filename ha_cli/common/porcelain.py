@@ -197,7 +197,7 @@ class PorcelainResponse(BaseModel):
     
     command: str
     timestamp: str
-    status: str  # "success" or "error"
+    status: str  # "success", "partial_success", or "error"
     metadata: PorcelainMetadata | None = None
     data: list[Any] | dict[str, Any] | Any | None = None
     error: PorcelainError | None = None
