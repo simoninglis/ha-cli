@@ -53,16 +53,47 @@ def _handle_error(
     porcelain: bool,
     formatter: PorcelainFormatter | None,
 ) -> None:
-    """Handle errors with appropriate output format and exit code."""
+    """Handle errors with appropriate output format and exit code.
+
+    WebSocketError classification:
+    - Transport issues (timeout, closed, not connected) -> EXIT_NETWORK_ERROR
+    - HA result errors (not_found, validation_error) -> EXIT_USAGE_ERROR or EXIT_HA_ERROR
+    """
     if isinstance(e, NotFoundError):
         error_code = "NOT_FOUND"
         exit_code = EXIT_USAGE_ERROR
     elif isinstance(e, ValidationError | ConfigurationError):
         error_code = "VALIDATION_ERROR" if isinstance(e, ValidationError) else "CONFIG_ERROR"
         exit_code = EXIT_USAGE_ERROR
-    elif isinstance(e, ConnectionError | WebSocketError):
-        error_code = "CONNECTION_ERROR" if isinstance(e, ConnectionError) else "WEBSOCKET_ERROR"
+    elif isinstance(e, ConnectionError):
+        error_code = "CONNECTION_ERROR"
         exit_code = EXIT_NETWORK_ERROR
+    elif isinstance(e, WebSocketError):
+        # Parse WebSocket error to distinguish HA errors from transport issues
+        # HA result errors have format "{code}: {message}"
+        error_str = str(e)
+        ws_error_code = error_str.split(":", 1)[0].strip().lower() if ":" in error_str else ""
+
+        # Transport/connection issues
+        transport_keywords = ["timeout", "closed", "not connected", "connect", "failed to connect"]
+        is_transport_error = any(kw in error_str.lower() for kw in transport_keywords)
+
+        if is_transport_error:
+            error_code = "WEBSOCKET_ERROR"
+            exit_code = EXIT_NETWORK_ERROR
+        elif ws_error_code in ("not_found", "unknown_command"):
+            error_code = "NOT_FOUND"
+            exit_code = EXIT_USAGE_ERROR
+        elif ws_error_code in ("validation_error", "invalid_format"):
+            error_code = "VALIDATION_ERROR"
+            exit_code = EXIT_USAGE_ERROR
+        elif ws_error_code == "unauthorized":
+            error_code = "AUTH_ERROR"
+            exit_code = EXIT_HA_ERROR
+        else:
+            # Other HA errors (home_assistant_error, etc.) -> HA error
+            error_code = "HA_ERROR"
+            exit_code = EXIT_HA_ERROR
     elif isinstance(e, AuthenticationError):
         error_code = "AUTH_ERROR"
         exit_code = EXIT_HA_ERROR
@@ -701,16 +732,19 @@ def alexa_sync_filter(
                 }
                 all_entity_ids = {e.entity_id for e in all_entities}
 
-                # Calculate what needs to change
-                to_expose = list(desired_exposed - currently_exposed)
+                # Identify entities not in Alexa entity list (not compatible)
+                not_alexa_compatible = desired_exposed - all_entity_ids
+
+                # Calculate what needs to change (exclude non-compatible entities)
+                # Only expose entities that are actually in the Alexa entity list
+                to_expose = list((desired_exposed - currently_exposed) - not_alexa_compatible)
                 to_hide = list(currently_exposed - desired_exposed)
                 already_correct = list(desired_exposed & currently_exposed)
-                not_in_registry = list(desired_exposed - all_entity_ids)
 
                 to_expose.sort()
                 to_hide.sort()
                 already_correct.sort()
-                not_in_registry.sort()
+                not_alexa_compatible_list = sorted(not_alexa_compatible)
 
                 if dry_run:
                     # Dry run mode - just report
@@ -721,7 +755,7 @@ def alexa_sync_filter(
                                 "to_expose": to_expose,
                                 "to_hide": to_hide,
                                 "already_correct": already_correct,
-                                "not_alexa_compatible": not_in_registry,
+                                "not_alexa_compatible": not_alexa_compatible_list,
                             },
                             metadata={
                                 "desired_count": len(desired_exposed),
@@ -729,7 +763,7 @@ def alexa_sync_filter(
                                 "to_expose_count": len(to_expose),
                                 "to_hide_count": len(to_hide),
                                 "already_correct_count": len(already_correct),
-                                "not_alexa_compatible_count": len(not_in_registry),
+                                "not_alexa_compatible_count": len(not_alexa_compatible_list),
                             },
                         )
                         write_output(output)
@@ -756,11 +790,11 @@ def alexa_sync_filter(
                                     f"  [dim]... and {len(to_hide) - 20} more[/dim]"
                                 )
 
-                        if not_in_registry:
+                        if not_alexa_compatible_list:
                             console.print(
-                                f"\n[yellow]⚠ Not Alexa-compatible ({len(not_in_registry)}):[/yellow]"
+                                f"\n[yellow]⚠ Not Alexa-compatible ({len(not_alexa_compatible_list)}):[/yellow]"
                             )
-                            for eid in not_in_registry:
+                            for eid in not_alexa_compatible_list:
                                 console.print(f"  [yellow]? {rich_escape(eid)}[/yellow]")
 
                         if already_correct:
@@ -795,14 +829,14 @@ def alexa_sync_filter(
                         "exposed": expose_success,
                         "hidden": hide_success,
                         "failed": [{"entity_id": e, "error": err} for e, err in all_failed],
-                        "not_alexa_compatible": not_in_registry,
+                        "not_alexa_compatible": not_alexa_compatible_list,
                     }
                     output_metadata = {
                         "desired_count": len(desired_exposed),
                         "exposed_count": len(expose_success),
                         "hidden_count": len(hide_success),
                         "failed_count": len(all_failed),
-                        "not_alexa_compatible_count": len(not_in_registry),
+                        "not_alexa_compatible_count": len(not_alexa_compatible_list),
                     }
                     output_suggestions = {
                         "next_steps": [
@@ -847,11 +881,11 @@ def alexa_sync_filter(
                             f"[green]✓ Hidden {len(hide_success)} entity(ies)[/green]"
                         )
 
-                    if not_in_registry:
+                    if not_alexa_compatible_list:
                         console.print(
-                            f"\n[yellow]⚠ {len(not_in_registry)} entities not Alexa-compatible:[/yellow]"
+                            f"\n[yellow]⚠ {len(not_alexa_compatible_list)} entities not Alexa-compatible:[/yellow]"
                         )
-                        for eid in not_in_registry:
+                        for eid in not_alexa_compatible_list:
                             console.print(f"  [yellow]? {rich_escape(eid)}[/yellow]")
 
                     if all_failed:

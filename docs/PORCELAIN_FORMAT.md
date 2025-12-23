@@ -13,7 +13,7 @@ All porcelain responses follow this consistent structure:
 ```json
 {
   "command": "string",                       // Command that was executed
-  "timestamp": "ISO8601",                    // UTC timestamp when command started
+  "timestamp": "ISO8601",                    // UTC timestamp when response was created
   "status": "success|partial_success|error", // Response status
   "metadata": { ... },                       // Command-specific metadata
   "data": [ ... ] | { ... },                // Response data (success/partial_success)
@@ -38,17 +38,18 @@ All porcelain responses follow this consistent structure:
 - `suggestions`: Object with actionable suggestions
 
 ### Metadata Structure
-All metadata objects include:
+Metadata typically includes:
 ```json
 {
   "response_time_ms": 74,       // Response time in milliseconds
-  "home_assistant": {           // Home Assistant connection info
+  "home_assistant": {           // Home Assistant connection info (optional)
     "url": "http://10.0.20.35:8123",
     "connection_method": "rest|websocket"
   }
   // ... command-specific metadata
 }
 ```
+Note: `home_assistant` is included when the command connects to Home Assistant, but may be omitted for error responses or commands that don't require a connection.
 
 ### Suggestions Structure
 ```json
@@ -61,9 +62,13 @@ All metadata objects include:
   ],
   "related_commands": [         // Related commands that might be useful
     "ha-cli dashboards list --porcelain"
+  ],
+  "next_steps": [               // Suggested follow-up actions (context-specific)
+    "ha-cli cloud alexa sync  # Tell Alexa to rediscover"
   ]
 }
 ```
+Note: Fields within `suggestions` are optional; commands include only relevant fields.
 
 ## Error Response Format
 

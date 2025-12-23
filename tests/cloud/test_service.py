@@ -763,3 +763,10 @@ class TestCloudServiceSetEntitiesExposure:
 
         assert successful == []
         assert len(failed) == 2
+        # Verify failed list contents
+        failed_ids = [entity_id for entity_id, _ in failed]
+        assert "light.one" in failed_ids
+        assert "light.two" in failed_ids
+        # Verify error messages
+        for entity_id, error_msg in failed:
+            assert "not_found" in error_msg.lower() or "Entity not found" in error_msg
