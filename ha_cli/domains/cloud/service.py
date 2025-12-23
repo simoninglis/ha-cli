@@ -292,8 +292,10 @@ class CloudService:
             )
         except WebSocketError as e:
             # Convert "not_found" errors to NotFoundError for better handling
-            error_msg = str(e).lower()
-            if "not_found" in error_msg or "not found" in error_msg:
+            # WebSocket errors have format "{code}: {message}"
+            error_str = str(e)
+            error_code = error_str.split(":", 1)[0].strip().lower() if ":" in error_str else ""
+            if error_code == "not_found":
                 raise NotFoundError(f"Entity not found: {entity_id}") from e
             raise
 

@@ -655,18 +655,20 @@ class TestCloudServiceSetEntityExposure:
             await service.set_entity_exposure("light.nonexistent", True)
 
     @pytest.mark.asyncio()
-    async def test_set_entity_exposure_not_found_message(self, mock_client):
-        """Test set_entity_exposure detects 'not found' in error message."""
-        from ha_cli.common.exceptions import NotFoundError
+    async def test_set_entity_exposure_unknown_error_with_not_found_message(self, mock_client):
+        """Test set_entity_exposure re-raises WebSocketError when code is not 'not_found'.
 
-        # _ws_call raises WebSocketError - detect "not found" in message
+        Even if the message contains 'not found', only the error code prefix
+        determines whether to convert to NotFoundError.
+        """
+        # Error code is "unknown" not "not_found", so should re-raise as WebSocketError
         mock_client._ws_call.side_effect = WebSocketError(
             "unknown: Entity light.gone was not found"
         )
 
         service = CloudService(mock_client)
 
-        with pytest.raises(NotFoundError):
+        with pytest.raises(WebSocketError, match="unknown"):
             await service.set_entity_exposure("light.gone", True)
 
     @pytest.mark.asyncio()

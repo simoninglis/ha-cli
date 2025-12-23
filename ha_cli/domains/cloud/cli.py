@@ -363,7 +363,7 @@ def _parse_entity_list_yaml(file_path: Path) -> list[str]:
         raise ValidationError(f"File not found: {file_path}")
 
     try:
-        with open(file_path) as f:
+        with open(file_path, encoding="utf-8") as f:
             content = yaml.safe_load(f)
     except yaml.YAMLError as e:
         raise ValidationError(f"Invalid YAML in {file_path}: {e}") from e
@@ -435,26 +435,36 @@ def alexa_expose(
                 )
 
                 if porcelain and formatter:
-                    output = formatter.success(
-                        data={
-                            "successful": successful,
-                            "failed": [{"entity_id": e, "error": err} for e, err in failed],
-                        },
-                        metadata={
-                            "total_requested": len(entity_ids),
-                            "successful_count": len(successful),
-                            "failed_count": len(failed),
-                        },
-                        suggestions={
-                            "next_steps": [
-                                "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
-                            ] if successful else [],
-                        },
-                    )
-                    write_output(output)
-                    # Exit with error code if any failures occurred
+                    output_data = {
+                        "successful": successful,
+                        "failed": [{"entity_id": e, "error": err} for e, err in failed],
+                    }
+                    output_metadata = {
+                        "total_requested": len(entity_ids),
+                        "successful_count": len(successful),
+                        "failed_count": len(failed),
+                    }
+                    output_suggestions = {
+                        "next_steps": [
+                            "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
+                        ] if successful else [],
+                    }
+                    # Use partial_success when some operations failed
                     if failed:
+                        output = formatter.partial_success(
+                            data=output_data,
+                            metadata=output_metadata,
+                            suggestions=output_suggestions,
+                        )
+                        write_output(output)
                         sys.exit(EXIT_USAGE_ERROR)
+                    else:
+                        output = formatter.success(
+                            data=output_data,
+                            metadata=output_metadata,
+                            suggestions=output_suggestions,
+                        )
+                        write_output(output)
                 else:
                     if successful:
                         console.print(
@@ -562,26 +572,36 @@ def alexa_hide(
                 )
 
                 if porcelain and formatter:
-                    output = formatter.success(
-                        data={
-                            "successful": successful,
-                            "failed": [{"entity_id": e, "error": err} for e, err in failed],
-                        },
-                        metadata={
-                            "total_requested": len(entity_ids),
-                            "successful_count": len(successful),
-                            "failed_count": len(failed),
-                        },
-                        suggestions={
-                            "next_steps": [
-                                "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
-                            ] if successful else [],
-                        },
-                    )
-                    write_output(output)
-                    # Exit with error code if any failures occurred
+                    output_data = {
+                        "successful": successful,
+                        "failed": [{"entity_id": e, "error": err} for e, err in failed],
+                    }
+                    output_metadata = {
+                        "total_requested": len(entity_ids),
+                        "successful_count": len(successful),
+                        "failed_count": len(failed),
+                    }
+                    output_suggestions = {
+                        "next_steps": [
+                            "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
+                        ] if successful else [],
+                    }
+                    # Use partial_success when some operations failed
                     if failed:
+                        output = formatter.partial_success(
+                            data=output_data,
+                            metadata=output_metadata,
+                            suggestions=output_suggestions,
+                        )
+                        write_output(output)
                         sys.exit(EXIT_USAGE_ERROR)
+                    else:
+                        output = formatter.success(
+                            data=output_data,
+                            metadata=output_metadata,
+                            suggestions=output_suggestions,
+                        )
+                        write_output(output)
                 else:
                     if successful:
                         console.print(
@@ -679,7 +699,7 @@ def alexa_sync_filter(
                                 "to_expose": to_expose,
                                 "to_hide": to_hide,
                                 "already_correct": already_correct,
-                                "not_in_registry": not_in_registry,
+                                "not_alexa_compatible": not_in_registry,
                             },
                             metadata={
                                 "desired_count": len(desired_exposed),
@@ -687,7 +707,7 @@ def alexa_sync_filter(
                                 "to_expose_count": len(to_expose),
                                 "to_hide_count": len(to_hide),
                                 "already_correct_count": len(already_correct),
-                                "not_in_registry_count": len(not_in_registry),
+                                "not_alexa_compatible_count": len(not_in_registry),
                             },
                         )
                         write_output(output)
@@ -716,7 +736,7 @@ def alexa_sync_filter(
 
                         if not_in_registry:
                             console.print(
-                                f"\n[yellow]⚠ Not in registry ({len(not_in_registry)}):[/yellow]"
+                                f"\n[yellow]⚠ Not Alexa-compatible ({len(not_in_registry)}):[/yellow]"
                             )
                             for eid in not_in_registry:
                                 console.print(f"  [yellow]? {rich_escape(eid)}[/yellow]")
@@ -749,30 +769,40 @@ def alexa_sync_filter(
                 all_failed = expose_failed + hide_failed
 
                 if porcelain and formatter:
-                    output = formatter.success(
-                        data={
-                            "exposed": expose_success,
-                            "hidden": hide_success,
-                            "failed": [{"entity_id": e, "error": err} for e, err in all_failed],
-                            "not_alexa_compatible": not_in_registry,
-                        },
-                        metadata={
-                            "desired_count": len(desired_exposed),
-                            "exposed_count": len(expose_success),
-                            "hidden_count": len(hide_success),
-                            "failed_count": len(all_failed),
-                            "not_alexa_compatible_count": len(not_in_registry),
-                        },
-                        suggestions={
-                            "next_steps": [
-                                "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
-                            ],
-                        },
-                    )
-                    write_output(output)
-                    # Exit with error code if any failures occurred
+                    output_data = {
+                        "exposed": expose_success,
+                        "hidden": hide_success,
+                        "failed": [{"entity_id": e, "error": err} for e, err in all_failed],
+                        "not_alexa_compatible": not_in_registry,
+                    }
+                    output_metadata = {
+                        "desired_count": len(desired_exposed),
+                        "exposed_count": len(expose_success),
+                        "hidden_count": len(hide_success),
+                        "failed_count": len(all_failed),
+                        "not_alexa_compatible_count": len(not_in_registry),
+                    }
+                    output_suggestions = {
+                        "next_steps": [
+                            "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
+                        ],
+                    }
+                    # Use partial_success when some operations failed
                     if all_failed:
+                        output = formatter.partial_success(
+                            data=output_data,
+                            metadata=output_metadata,
+                            suggestions=output_suggestions,
+                        )
+                        write_output(output)
                         sys.exit(EXIT_USAGE_ERROR)
+                    else:
+                        output = formatter.success(
+                            data=output_data,
+                            metadata=output_metadata,
+                            suggestions=output_suggestions,
+                        )
+                        write_output(output)
                 else:
                     if expose_success:
                         console.print(

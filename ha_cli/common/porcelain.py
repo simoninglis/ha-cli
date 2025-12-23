@@ -242,7 +242,38 @@ class PorcelainFormatter:
         # Use custom JSON encoder to handle any control characters
         response_dict = response.model_dump(exclude_none=True)
         return json.dumps(response_dict, indent=2, cls=CleanJSONEncoder)
-    
+
+    def partial_success(
+        self,
+        data: Any,
+        metadata: dict[str, Any] | None = None,
+        suggestions: dict[str, Any] | None = None
+    ) -> str:
+        """Create a partial success response (some operations succeeded, some failed)."""
+        response_time_ms = int((time.time() - self.start_time) * 1000)
+
+        # Create metadata with response time
+        porcelain_metadata = PorcelainMetadata(
+            response_time_ms=response_time_ms,
+            **(metadata or {})
+        )
+
+        # Create suggestions
+        porcelain_suggestions = PorcelainSuggestions(**(suggestions or {}))
+
+        response = PorcelainResponse(
+            command=self.command,
+            timestamp=datetime.now(UTC).isoformat(),
+            status="partial_success",
+            metadata=porcelain_metadata,
+            data=data,
+            suggestions=porcelain_suggestions
+        )
+
+        # Use custom JSON encoder to handle any control characters
+        response_dict = response.model_dump(exclude_none=True)
+        return json.dumps(response_dict, indent=2, cls=CleanJSONEncoder)
+
     def _sanitize_json_output(self, json_str: str) -> str:
         """Sanitize JSON output by removing control characters."""
         # Remove control characters (0x00-0x1F except tab, newline, carriage return)
