@@ -236,3 +236,98 @@ EXIT_SUCCESS = 0        # Operation completed successfully
 EXIT_USAGE_ERROR = 1    # Invalid arguments or usage
 EXIT_NETWORK_ERROR = 2  # Network/connection failure
 EXIT_HA_ERROR = 3       # Home Assistant returned an error
+
+
+# Known HA WebSocket error code prefixes (format: "{code}: {message}")
+# These should be classified based on their code, NOT transport keywords
+HA_ERROR_CODES: set[str] = {
+    "not_found",
+    "unknown_command",
+    "validation_error",
+    "invalid_format",
+    "unauthorized",
+    "home_assistant_error",
+    "integration_not_found",
+    "service_not_found",
+    "unknown_error",
+}
+
+# Transport error keywords - use specific phrases to avoid false positives
+# Note: Avoid bare "connect" as it matches entity IDs like "binary_sensor.ha_connected"
+TRANSPORT_ERROR_KEYWORDS: tuple[str, ...] = (
+    "timeout",
+    "timed out",
+    "connection closed",
+    "not connected",
+    "failed to connect",
+    "connection refused",
+    "connection reset",
+)
+
+
+def classify_websocket_error(error: WebSocketError) -> tuple[str, int]:
+    """Classify a WebSocketError and return (error_code, exit_code).
+
+    Classification order (IMPORTANT - prevents misclassification):
+    1. Check for HA error code prefix first (e.g., "not_found:", "unauthorized:")
+    2. Only check transport keywords if no HA error code found
+
+    Args:
+        error: The WebSocketError to classify
+
+    Returns:
+        Tuple of (error_code, exit_code) for CLI output
+
+    Examples:
+        >>> classify_websocket_error(WebSocketError("not_found: Entity not found"))
+        ("NOT_FOUND", EXIT_USAGE_ERROR)
+        >>> classify_websocket_error(WebSocketError("WebSocket call timed out after 30s"))
+        ("WEBSOCKET_ERROR", EXIT_NETWORK_ERROR)
+    """
+    error_str = str(error)
+    error_lower = error_str.lower()
+
+    # Step 1: Check for HA error code prefix FIRST
+    # This prevents misclassifying "home_assistant_error: Not connected" as transport
+    if ":" in error_str:
+        code_prefix = error_str.split(":", 1)[0].strip().lower()
+        if code_prefix in HA_ERROR_CODES:
+            # Classify based on the HA error code
+            if code_prefix in ("not_found", "unknown_command"):
+                return ("NOT_FOUND", EXIT_USAGE_ERROR)
+            elif code_prefix in ("validation_error", "invalid_format"):
+                return ("VALIDATION_ERROR", EXIT_USAGE_ERROR)
+            elif code_prefix == "unauthorized":
+                return ("AUTH_ERROR", EXIT_HA_ERROR)
+            else:
+                # Other HA errors (home_assistant_error, service_not_found, etc.)
+                return ("HA_ERROR", EXIT_HA_ERROR)
+
+    # Step 2: Check for transport keywords only if no HA error code
+    if any(kw in error_lower for kw in TRANSPORT_ERROR_KEYWORDS):
+        return ("WEBSOCKET_ERROR", EXIT_NETWORK_ERROR)
+
+    # Step 3: Default to HA error
+    return ("HA_ERROR", EXIT_HA_ERROR)
+
+
+def is_transport_error(error: WebSocketError) -> bool:
+    """Check if a WebSocketError is a transport-level error.
+
+    Transport errors affect all operations and should propagate immediately
+    rather than being collected as per-entity failures.
+
+    Args:
+        error: The WebSocketError to check
+
+    Returns:
+        True if this is a transport error (timeout, connection closed, etc.)
+
+    Examples:
+        >>> is_transport_error(WebSocketError("WebSocket call timed out after 30s"))
+        True
+        >>> is_transport_error(WebSocketError("not_found: Entity not found"))
+        False
+    """
+    error_code, exit_code = classify_websocket_error(error)
+    return exit_code == EXIT_NETWORK_ERROR

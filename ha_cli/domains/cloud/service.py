@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...common.client import HAClient
-from ...common.exceptions import ConnectionError, WebSocketError
+from ...common.exceptions import ConnectionError, WebSocketError, is_transport_error
 
 logger = logging.getLogger(__name__)
 
@@ -329,18 +329,14 @@ class CloudService:
         successful: list[str] = []
         failed: list[tuple[str, str]] = []
 
-        # Transport error keywords - these should propagate, not be treated as per-entity failures
-        transport_keywords = ["timeout", "timed out", "closed", "not connected", "connect", "failed to connect"]
-
         for entity_id in entity_ids:
             try:
                 await self.set_entity_exposure(entity_id, expose)
                 successful.append(entity_id)
             except (NotFoundError, WebSocketError) as e:
-                error_str = str(e).lower()
-                # Check if this is a transport error (affects all operations)
-                is_transport_error = any(kw in error_str for kw in transport_keywords)
-                if is_transport_error and isinstance(e, WebSocketError):
+                # Use centralized classifier that checks HA error code prefix FIRST
+                # This prevents misclassifying "not_found: Entity connected" as transport
+                if isinstance(e, WebSocketError) and is_transport_error(e):
                     # Transport errors should propagate - they affect all subsequent operations
                     raise
                 # Per-entity errors are collected for reporting

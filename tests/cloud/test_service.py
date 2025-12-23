@@ -770,3 +770,45 @@ class TestCloudServiceSetEntitiesExposure:
         # Verify error messages
         for entity_id, error_msg in failed:
             assert "not_found" in error_msg.lower() or "Entity not found" in error_msg
+
+    @pytest.mark.asyncio()
+    async def test_set_entities_exposure_transport_error_propagates(
+        self, mock_client: AsyncMock
+    ) -> None:
+        """Test that transport errors (timeout) propagate immediately.
+
+        Transport errors affect all operations and should raise immediately
+        rather than being collected as per-entity failures.
+        """
+        mock_client._ws_call.side_effect = WebSocketError(
+            "WebSocket call timed out after 30s"
+        )
+
+        service = CloudService(mock_client)
+        with pytest.raises(WebSocketError, match="timed out"):
+            await service.set_entities_exposure(["light.one", "light.two"], True)
+
+    @pytest.mark.asyncio()
+    async def test_set_entities_exposure_ha_error_with_connected_not_transport(
+        self, mock_client: AsyncMock
+    ) -> None:
+        """Test that HA errors with 'connected' keyword are NOT misclassified.
+
+        'home_assistant_error: Not connected to Nabu Casa' should be treated
+        as a per-entity failure, NOT as a transport error that propagates.
+        """
+        mock_client._ws_call.side_effect = WebSocketError(
+            "home_assistant_error: Not connected to Nabu Casa"
+        )
+
+        service = CloudService(mock_client)
+        successful, failed = await service.set_entities_exposure(
+            ["light.one", "light.two"], True
+        )
+
+        # Should be collected as per-entity failures, not propagated
+        assert successful == []
+        assert len(failed) == 2
+        # Verify error messages contain the HA error
+        for entity_id, error_msg in failed:
+            assert "Not connected" in error_msg

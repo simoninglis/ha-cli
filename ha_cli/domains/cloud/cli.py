@@ -28,6 +28,7 @@ from ...common.exceptions import (
     NotFoundError,
     ValidationError,
     WebSocketError,
+    classify_websocket_error,
 )
 from ...common.porcelain import PorcelainFormatter
 from .service import CloudService
@@ -55,9 +56,9 @@ def _handle_error(
 ) -> None:
     """Handle errors with appropriate output format and exit code.
 
-    WebSocketError classification:
-    - Transport issues (timeout, closed, not connected) -> EXIT_NETWORK_ERROR
-    - HA result errors (not_found, validation_error) -> EXIT_USAGE_ERROR or EXIT_HA_ERROR
+    WebSocketError classification uses centralized classify_websocket_error():
+    1. Checks HA error code prefix FIRST (prevents "not connected" misclassification)
+    2. Only checks transport keywords if no HA code found
     """
     if isinstance(e, NotFoundError):
         error_code = "NOT_FOUND"
@@ -69,32 +70,8 @@ def _handle_error(
         error_code = "CONNECTION_ERROR"
         exit_code = EXIT_NETWORK_ERROR
     elif isinstance(e, WebSocketError):
-        # Parse WebSocket error to distinguish HA errors from transport issues
-        # HA result errors have format "{code}: {message}"
-        error_str = str(e)
-        ws_error_code = error_str.split(":", 1)[0].strip().lower() if ":" in error_str else ""
-
-        # Transport/connection issues
-        # Note: "timed out" matches "WebSocket call timed out after 30s"
-        transport_keywords = ["timeout", "timed out", "closed", "not connected", "connect", "failed to connect"]
-        is_transport_error = any(kw in error_str.lower() for kw in transport_keywords)
-
-        if is_transport_error:
-            error_code = "WEBSOCKET_ERROR"
-            exit_code = EXIT_NETWORK_ERROR
-        elif ws_error_code in ("not_found", "unknown_command"):
-            error_code = "NOT_FOUND"
-            exit_code = EXIT_USAGE_ERROR
-        elif ws_error_code in ("validation_error", "invalid_format"):
-            error_code = "VALIDATION_ERROR"
-            exit_code = EXIT_USAGE_ERROR
-        elif ws_error_code == "unauthorized":
-            error_code = "AUTH_ERROR"
-            exit_code = EXIT_HA_ERROR
-        else:
-            # Other HA errors (home_assistant_error, etc.) -> HA error
-            error_code = "HA_ERROR"
-            exit_code = EXIT_HA_ERROR
+        # Use centralized classifier that checks HA error code prefix FIRST
+        error_code, exit_code = classify_websocket_error(e)
     elif isinstance(e, AuthenticationError):
         error_code = "AUTH_ERROR"
         exit_code = EXIT_HA_ERROR
