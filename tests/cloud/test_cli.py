@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from typer.testing import CliRunner
 
 from ha_cli.cli import app
+from ha_cli.common.exceptions import EXIT_USAGE_ERROR, EntityFailure
 from ha_cli.domains.cloud.service import AlexaEntity, CloudStatus
 
 runner = CliRunner()
@@ -743,7 +744,7 @@ class TestCloudAlexaExposeCLI:
         mock_service.set_entities_exposure = AsyncMock(
             return_value=(
                 ["light.good"],
-                [("light.bad", "Entity not found")],
+                [EntityFailure("light.bad", "NOT_FOUND", EXIT_USAGE_ERROR, "Entity not found")],
             )
         )
 

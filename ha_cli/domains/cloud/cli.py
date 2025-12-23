@@ -65,7 +65,7 @@ def _handle_error(
     if isinstance(e, NotFoundError):
         error_code = "NOT_FOUND"
         exit_code = EXIT_USAGE_ERROR
-    elif isinstance(e, ValidationError | ConfigurationError):
+    elif isinstance(e, (ValidationError, ConfigurationError)):
         error_code = "VALIDATION_ERROR" if isinstance(e, ValidationError) else "CONFIG_ERROR"
         exit_code = EXIT_USAGE_ERROR
     elif isinstance(e, ConnectionError):
