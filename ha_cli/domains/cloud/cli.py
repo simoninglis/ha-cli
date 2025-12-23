@@ -75,7 +75,8 @@ def _handle_error(
         ws_error_code = error_str.split(":", 1)[0].strip().lower() if ":" in error_str else ""
 
         # Transport/connection issues
-        transport_keywords = ["timeout", "closed", "not connected", "connect", "failed to connect"]
+        # Note: "timed out" matches "WebSocket call timed out after 30s"
+        transport_keywords = ["timeout", "timed out", "closed", "not connected", "connect", "failed to connect"]
         is_transport_error = any(kw in error_str.lower() for kw in transport_keywords)
 
         if is_transport_error:

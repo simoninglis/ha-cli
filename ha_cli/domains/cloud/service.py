@@ -319,17 +319,31 @@ class CloudService:
             Tuple of (successful_ids, failed_ids_with_errors)
             - successful_ids: List of entity IDs that were updated
             - failed_ids_with_errors: List of (entity_id, error_message) tuples
+
+        Raises:
+            WebSocketError: If a transport error occurs (timeout, connection closed, etc.)
+                These are propagated since they affect all operations, not just one entity.
         """
         from ...common.exceptions import NotFoundError
 
         successful: list[str] = []
         failed: list[tuple[str, str]] = []
 
+        # Transport error keywords - these should propagate, not be treated as per-entity failures
+        transport_keywords = ["timeout", "timed out", "closed", "not connected", "connect", "failed to connect"]
+
         for entity_id in entity_ids:
             try:
                 await self.set_entity_exposure(entity_id, expose)
                 successful.append(entity_id)
             except (NotFoundError, WebSocketError) as e:
+                error_str = str(e).lower()
+                # Check if this is a transport error (affects all operations)
+                is_transport_error = any(kw in error_str for kw in transport_keywords)
+                if is_transport_error and isinstance(e, WebSocketError):
+                    # Transport errors should propagate - they affect all subsequent operations
+                    raise
+                # Per-entity errors are collected for reporting
                 failed.append((entity_id, str(e)))
 
         return successful, failed

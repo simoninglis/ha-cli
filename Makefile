@@ -13,12 +13,12 @@ dev: ## Install all dependencies including dev
 	poetry install
 
 lint: ## Run linting checks
-	poetry run ruff check ha_automation/
-	poetry run mypy ha_automation/
+	poetry run ruff check ha_automation/ ha_cli/
+	poetry run mypy ha_automation/ ha_cli/
 
 format: ## Format code
-	poetry run ruff format ha_automation/
-	poetry run ruff check --fix ha_automation/
+	poetry run ruff format ha_automation/ ha_cli/
+	poetry run ruff check --fix ha_automation/ ha_cli/
 
 test: ## Run tests
 	poetry run pytest tests/ -v
