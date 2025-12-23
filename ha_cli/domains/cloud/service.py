@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...common.client import HAClient
-from ...common.exceptions import ConnectionError, WebSocketError, is_transport_error
+from ...common.exceptions import (
+    ConnectionError,
+    EntityFailure,
+    WebSocketError,
+    classify_websocket_error,
+    is_transport_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -308,7 +314,7 @@ class CloudService:
 
     async def set_entities_exposure(
         self, entity_ids: list[str], expose: bool
-    ) -> tuple[list[str], list[tuple[str, str]]]:
+    ) -> tuple[list[str], list[EntityFailure]]:
         """Set Alexa exposure for multiple entities.
 
         Args:
@@ -316,18 +322,18 @@ class CloudService:
             expose: True to expose to Alexa, False to hide
 
         Returns:
-            Tuple of (successful_ids, failed_ids_with_errors)
+            Tuple of (successful_ids, failures)
             - successful_ids: List of entity IDs that were updated
-            - failed_ids_with_errors: List of (entity_id, error_message) tuples
+            - failures: List of EntityFailure objects with structured error info
 
         Raises:
             WebSocketError: If a transport error occurs (timeout, connection closed, etc.)
                 These are propagated since they affect all operations, not just one entity.
         """
-        from ...common.exceptions import NotFoundError
+        from ...common.exceptions import EXIT_USAGE_ERROR, NotFoundError
 
         successful: list[str] = []
-        failed: list[tuple[str, str]] = []
+        failed: list[EntityFailure] = []
 
         for entity_id in entity_ids:
             try:
@@ -339,7 +345,20 @@ class CloudService:
                 if isinstance(e, WebSocketError) and is_transport_error(e):
                     # Transport errors should propagate - they affect all subsequent operations
                     raise
-                # Per-entity errors are collected for reporting
-                failed.append((entity_id, str(e)))
+
+                # Get error classification for structured failure info
+                if isinstance(e, NotFoundError):
+                    error_code = "NOT_FOUND"
+                    exit_code = EXIT_USAGE_ERROR
+                else:
+                    error_code, exit_code = classify_websocket_error(e)
+
+                # Per-entity errors are collected with structured info
+                failed.append(EntityFailure(
+                    entity_id=entity_id,
+                    error_code=error_code,
+                    exit_code=exit_code,
+                    message=str(e),
+                ))
 
         return successful, failed

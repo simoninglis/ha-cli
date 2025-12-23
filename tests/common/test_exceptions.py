@@ -4,10 +4,13 @@ from ha_cli.common.exceptions import (
     EXIT_HA_ERROR,
     EXIT_NETWORK_ERROR,
     EXIT_USAGE_ERROR,
-    HA_ERROR_CODES,
+    HA_ERROR_CODE_AUTH,
+    HA_ERROR_CODE_USAGE,
     TRANSPORT_ERROR_KEYWORDS,
+    EntityFailure,
     WebSocketError,
     classify_websocket_error,
+    get_most_severe_exit_code,
     is_transport_error,
 )
 
@@ -17,14 +20,17 @@ class TestHAErrorCodes:
 
     def test_known_codes_are_strings(self) -> None:
         """All known HA error codes should be lowercase strings."""
-        for code in HA_ERROR_CODES:
+        for code in HA_ERROR_CODE_USAGE | HA_ERROR_CODE_AUTH:
             assert isinstance(code, str)
             assert code == code.lower()
 
     def test_includes_common_codes(self) -> None:
         """Should include common HA WebSocket error codes."""
-        expected = {"not_found", "unauthorized", "validation_error", "home_assistant_error"}
-        assert expected.issubset(HA_ERROR_CODES)
+        # Usage errors
+        assert "not_found" in HA_ERROR_CODE_USAGE
+        assert "validation_error" in HA_ERROR_CODE_USAGE
+        # Auth errors
+        assert "unauthorized" in HA_ERROR_CODE_AUTH
 
 
 class TestTransportErrorKeywords:
@@ -173,3 +179,102 @@ class TestIsTransportError:
         """HA error with 'connected' keyword should return False (not misclassified)."""
         error = WebSocketError("home_assistant_error: Not connected to Nabu Casa")
         assert is_transport_error(error) is False
+
+
+class TestUnknownCodePrefix:
+    """Tests for unknown HA error code handling."""
+
+    def test_unknown_code_with_timeout_not_transport(self) -> None:
+        """Unknown code prefix with 'timed out' should be HA error, not transport.
+
+        This is a critical case - 'unknown: timed out waiting' should be
+        classified as HA error because it has a code: prefix, even though
+        the message contains 'timed out'.
+        """
+        error = WebSocketError("unknown: timed out waiting for response")
+        code, exit_code = classify_websocket_error(error)
+        # Should be HA error, not transport
+        assert code == "HA_ERROR"
+        assert exit_code == EXIT_HA_ERROR
+
+    def test_unknown_code_prefix_recognized(self) -> None:
+        """Any code: prefix matching [a-z_]+ should be treated as HA error."""
+        error = WebSocketError("some_new_error: Something went wrong")
+        code, exit_code = classify_websocket_error(error)
+        assert code == "HA_ERROR"
+        assert exit_code == EXIT_HA_ERROR
+
+    def test_non_code_prefix_not_matched(self) -> None:
+        """Prefixes with numbers/uppercase should not match code pattern."""
+        # "Error123: message" should not match code pattern
+        error = WebSocketError("Error123: Something went wrong with timeout")
+        code, exit_code = classify_websocket_error(error)
+        # Should check transport keywords since no code prefix
+        assert code == "WEBSOCKET_ERROR"
+        assert exit_code == EXIT_NETWORK_ERROR
+
+
+class TestEntityFailure:
+    """Tests for EntityFailure dataclass."""
+
+    def test_entity_failure_creation(self) -> None:
+        """EntityFailure should store all fields correctly."""
+        failure = EntityFailure(
+            entity_id="light.test",
+            error_code="NOT_FOUND",
+            exit_code=EXIT_USAGE_ERROR,
+            message="Entity not found",
+        )
+        assert failure.entity_id == "light.test"
+        assert failure.error_code == "NOT_FOUND"
+        assert failure.exit_code == EXIT_USAGE_ERROR
+        assert failure.message == "Entity not found"
+
+    def test_entity_failure_to_dict(self) -> None:
+        """to_dict should return correct dictionary for porcelain output."""
+        failure = EntityFailure(
+            entity_id="light.test",
+            error_code="HA_ERROR",
+            exit_code=EXIT_HA_ERROR,
+            message="Server error",
+        )
+        result = failure.to_dict()
+        assert result == {
+            "entity_id": "light.test",
+            "error_code": "HA_ERROR",
+            "message": "Server error",
+        }
+        # exit_code is not in to_dict (internal use only)
+        assert "exit_code" not in result
+
+
+class TestGetMostSevereExitCode:
+    """Tests for get_most_severe_exit_code function."""
+
+    def test_empty_list_returns_default(self) -> None:
+        """Empty list should return default exit code."""
+        assert get_most_severe_exit_code([]) == EXIT_USAGE_ERROR
+        assert get_most_severe_exit_code([], default=EXIT_HA_ERROR) == EXIT_HA_ERROR
+
+    def test_single_failure_returns_its_code(self) -> None:
+        """Single failure should return its exit code."""
+        failure = EntityFailure("e1", "NOT_FOUND", EXIT_USAGE_ERROR, "msg")
+        assert get_most_severe_exit_code([failure]) == EXIT_USAGE_ERROR
+
+    def test_mixed_failures_returns_most_severe(self) -> None:
+        """Mixed failures should return the most severe (highest) exit code."""
+        failures = [
+            EntityFailure("e1", "NOT_FOUND", EXIT_USAGE_ERROR, "msg1"),
+            EntityFailure("e2", "HA_ERROR", EXIT_HA_ERROR, "msg2"),
+            EntityFailure("e3", "WEBSOCKET_ERROR", EXIT_NETWORK_ERROR, "msg3"),
+        ]
+        # EXIT_HA_ERROR (3) is most severe
+        assert get_most_severe_exit_code(failures) == EXIT_HA_ERROR
+
+    def test_all_same_returns_that_code(self) -> None:
+        """All same exit codes should return that code."""
+        failures = [
+            EntityFailure("e1", "NOT_FOUND", EXIT_USAGE_ERROR, "msg1"),
+            EntityFailure("e2", "VALIDATION_ERROR", EXIT_USAGE_ERROR, "msg2"),
+        ]
+        assert get_most_severe_exit_code(failures) == EXIT_USAGE_ERROR

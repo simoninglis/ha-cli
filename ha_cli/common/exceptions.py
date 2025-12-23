@@ -1,5 +1,7 @@
 """Custom exceptions for Home Assistant Automation CLI."""
 
+import re
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -239,17 +241,16 @@ EXIT_HA_ERROR = 3       # Home Assistant returned an error
 
 
 # Known HA WebSocket error code prefixes (format: "{code}: {message}")
-# These should be classified based on their code, NOT transport keywords
-HA_ERROR_CODES: set[str] = {
+# These have specific classifications based on their code
+HA_ERROR_CODE_USAGE: set[str] = {
     "not_found",
     "unknown_command",
     "validation_error",
     "invalid_format",
+}
+
+HA_ERROR_CODE_AUTH: set[str] = {
     "unauthorized",
-    "home_assistant_error",
-    "integration_not_found",
-    "service_not_found",
-    "unknown_error",
 }
 
 # Transport error keywords - use specific phrases to avoid false positives
@@ -264,13 +265,26 @@ TRANSPORT_ERROR_KEYWORDS: tuple[str, ...] = (
     "connection reset",
 )
 
+# Pattern for HA error code prefix: lowercase letters and underscores only
+# e.g., "not_found:", "home_assistant_error:", "unknown:"
+_HA_CODE_PREFIX_PATTERN = re.compile(r"^[a-z_]+$")
+
+
+def _looks_like_ha_code_prefix(prefix: str) -> bool:
+    """Check if a prefix looks like an HA WebSocket error code.
+
+    HA error codes are lowercase with underscores (e.g., "not_found", "home_assistant_error").
+    This catches unknown codes that aren't in our allowlist.
+    """
+    return bool(_HA_CODE_PREFIX_PATTERN.match(prefix))
+
 
 def classify_websocket_error(error: WebSocketError) -> tuple[str, int]:
     """Classify a WebSocketError and return (error_code, exit_code).
 
     Classification order (IMPORTANT - prevents misclassification):
-    1. Check for HA error code prefix first (e.g., "not_found:", "unauthorized:")
-    2. Only check transport keywords if no HA error code found
+    1. Check for HA error code prefix first (any "code:" pattern)
+    2. Only check transport keywords if message doesn't have code prefix
 
     Args:
         error: The WebSocketError to classify
@@ -283,15 +297,18 @@ def classify_websocket_error(error: WebSocketError) -> tuple[str, int]:
         ("NOT_FOUND", EXIT_USAGE_ERROR)
         >>> classify_websocket_error(WebSocketError("WebSocket call timed out after 30s"))
         ("WEBSOCKET_ERROR", EXIT_NETWORK_ERROR)
+        >>> classify_websocket_error(WebSocketError("unknown: timed out waiting"))
+        ("HA_ERROR", EXIT_HA_ERROR)  # Not transport - has HA code prefix
     """
     error_str = str(error)
     error_lower = error_str.lower()
 
     # Step 1: Check for HA error code prefix FIRST
-    # This prevents misclassifying "home_assistant_error: Not connected" as transport
+    # Any message matching "code: message" pattern is treated as HA-level
+    # This prevents misclassifying "unknown: timed out" as transport
     if ":" in error_str:
         code_prefix = error_str.split(":", 1)[0].strip().lower()
-        if code_prefix in HA_ERROR_CODES:
+        if _looks_like_ha_code_prefix(code_prefix):
             # Classify based on the HA error code
             if code_prefix in ("not_found", "unknown_command"):
                 return ("NOT_FOUND", EXIT_USAGE_ERROR)
@@ -300,10 +317,10 @@ def classify_websocket_error(error: WebSocketError) -> tuple[str, int]:
             elif code_prefix == "unauthorized":
                 return ("AUTH_ERROR", EXIT_HA_ERROR)
             else:
-                # Other HA errors (home_assistant_error, service_not_found, etc.)
+                # Other HA errors (home_assistant_error, service_not_found, unknown, etc.)
                 return ("HA_ERROR", EXIT_HA_ERROR)
 
-    # Step 2: Check for transport keywords only if no HA error code
+    # Step 2: Check for transport keywords only if no HA error code prefix
     if any(kw in error_lower for kw in TRANSPORT_ERROR_KEYWORDS):
         return ("WEBSOCKET_ERROR", EXIT_NETWORK_ERROR)
 
@@ -331,3 +348,47 @@ def is_transport_error(error: WebSocketError) -> bool:
     """
     error_code, exit_code = classify_websocket_error(error)
     return exit_code == EXIT_NETWORK_ERROR
+
+
+@dataclass
+class EntityFailure:
+    """Structured failure info for entity operations.
+
+    Used by set_entities_exposure() to return rich failure information
+    that allows the CLI to pick the most severe exit code.
+    """
+
+    entity_id: str
+    error_code: str
+    exit_code: int
+    message: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for porcelain output."""
+        return {
+            "entity_id": self.entity_id,
+            "error_code": self.error_code,
+            "message": self.message,
+        }
+
+
+def get_most_severe_exit_code(failures: list[EntityFailure], default: int = EXIT_USAGE_ERROR) -> int:
+    """Get the most severe exit code from a list of failures.
+
+    Exit code severity order (highest to lowest):
+    - EXIT_HA_ERROR (3) - Server-side issues
+    - EXIT_NETWORK_ERROR (2) - Connection issues
+    - EXIT_USAGE_ERROR (1) - Client-side issues
+
+    Args:
+        failures: List of EntityFailure objects
+        default: Default exit code if list is empty
+
+    Returns:
+        The most severe exit code found, or default if empty
+    """
+    if not failures:
+        return default
+
+    # Higher exit code = more severe
+    return max(f.exit_code for f in failures)

@@ -25,10 +25,12 @@ from ...common.exceptions import (
     AuthenticationError,
     ConfigurationError,
     ConnectionError,
+    EntityFailure,
     NotFoundError,
     ValidationError,
     WebSocketError,
     classify_websocket_error,
+    get_most_severe_exit_code,
 )
 from ...common.porcelain import PorcelainFormatter
 from .service import CloudService
@@ -446,7 +448,7 @@ def alexa_expose(
                 if porcelain and formatter:
                     output_data = {
                         "successful": successful,
-                        "failed": [{"entity_id": e, "error": err} for e, err in failed],
+                        "failed": [f.to_dict() for f in failed],
                     }
                     output_metadata = {
                         "total_requested": len(entity_ids),
@@ -458,25 +460,25 @@ def alexa_expose(
                             "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
                         ] if successful else [],
                     }
-                    # Choose status based on success/failure ratio
+                    # Choose status and exit code based on success/failure
                     if failed and not successful:
-                        # All operations failed - use error status
+                        # All operations failed - use most severe exit code
                         output = formatter.error(
                             error="All entity exposure operations failed",
                             error_code="ALL_FAILED",
                             details=output_data,
                         )
                         write_output(output)
-                        sys.exit(EXIT_USAGE_ERROR)
+                        sys.exit(get_most_severe_exit_code(failed))
                     elif failed:
-                        # Some succeeded, some failed - use partial_success
+                        # Some succeeded, some failed - use most severe exit code
                         output = formatter.partial_success(
                             data=output_data,
                             metadata=output_metadata,
                             suggestions=output_suggestions,
                         )
                         write_output(output)
-                        sys.exit(EXIT_USAGE_ERROR)
+                        sys.exit(get_most_severe_exit_code(failed))
                     else:
                         # All succeeded
                         output = formatter.success(
@@ -495,9 +497,9 @@ def alexa_expose(
 
                     if failed:
                         console.print(f"\n[red]✗ Failed to expose {len(failed)}:[/red]")
-                        for eid, err in failed:
-                            console.print(f"  [red]{rich_escape(eid)}: {rich_escape(err)}[/red]")
-                        sys.exit(EXIT_USAGE_ERROR)
+                        for f in failed:
+                            console.print(f"  [red]{rich_escape(f.entity_id)}: {rich_escape(f.message)}[/red]")
+                        sys.exit(get_most_severe_exit_code(failed))
 
                     if successful:
                         console.print(
@@ -594,7 +596,7 @@ def alexa_hide(
                 if porcelain and formatter:
                     output_data = {
                         "successful": successful,
-                        "failed": [{"entity_id": e, "error": err} for e, err in failed],
+                        "failed": [f.to_dict() for f in failed],
                     }
                     output_metadata = {
                         "total_requested": len(entity_ids),
@@ -606,25 +608,25 @@ def alexa_hide(
                             "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
                         ] if successful else [],
                     }
-                    # Choose status based on success/failure ratio
+                    # Choose status and exit code based on success/failure
                     if failed and not successful:
-                        # All operations failed - use error status
+                        # All operations failed - use most severe exit code
                         output = formatter.error(
                             error="All entity hide operations failed",
                             error_code="ALL_FAILED",
                             details=output_data,
                         )
                         write_output(output)
-                        sys.exit(EXIT_USAGE_ERROR)
+                        sys.exit(get_most_severe_exit_code(failed))
                     elif failed:
-                        # Some succeeded, some failed - use partial_success
+                        # Some succeeded, some failed - use most severe exit code
                         output = formatter.partial_success(
                             data=output_data,
                             metadata=output_metadata,
                             suggestions=output_suggestions,
                         )
                         write_output(output)
-                        sys.exit(EXIT_USAGE_ERROR)
+                        sys.exit(get_most_severe_exit_code(failed))
                     else:
                         # All succeeded
                         output = formatter.success(
@@ -646,9 +648,9 @@ def alexa_hide(
 
                     if failed:
                         console.print(f"\n[red]✗ Failed to hide {len(failed)}:[/red]")
-                        for eid, err in failed:
-                            console.print(f"  [red]{rich_escape(eid)}: {rich_escape(err)}[/red]")
-                        sys.exit(EXIT_USAGE_ERROR)
+                        for f in failed:
+                            console.print(f"  [red]{rich_escape(f.entity_id)}: {rich_escape(f.message)}[/red]")
+                        sys.exit(get_most_severe_exit_code(failed))
 
                     if successful:
                         console.print(
@@ -786,9 +788,9 @@ def alexa_sync_filter(
 
                 # Actually apply changes
                 expose_success: list[str] = []
-                expose_failed: list[tuple[str, str]] = []
+                expose_failed: list[EntityFailure] = []
                 hide_success: list[str] = []
-                hide_failed: list[tuple[str, str]] = []
+                hide_failed: list[EntityFailure] = []
 
                 if to_expose:
                     expose_success, expose_failed = await service.set_entities_exposure(
@@ -806,7 +808,7 @@ def alexa_sync_filter(
                     output_data = {
                         "exposed": expose_success,
                         "hidden": hide_success,
-                        "failed": [{"entity_id": e, "error": err} for e, err in all_failed],
+                        "failed": [f.to_dict() for f in all_failed],
                         "not_alexa_compatible": not_alexa_compatible_list,
                     }
                     output_metadata = {
@@ -821,25 +823,25 @@ def alexa_sync_filter(
                             "ha-cli cloud alexa sync  # Tell Alexa to rediscover",
                         ],
                     }
-                    # Choose status based on success/failure ratio
+                    # Choose status and exit code based on success/failure
                     if all_failed and not expose_success and not hide_success:
-                        # All operations failed - use error status
+                        # All operations failed - use most severe exit code
                         output = formatter.error(
                             error="All sync-filter operations failed",
                             error_code="ALL_FAILED",
                             details=output_data,
                         )
                         write_output(output)
-                        sys.exit(EXIT_USAGE_ERROR)
+                        sys.exit(get_most_severe_exit_code(all_failed))
                     elif all_failed:
-                        # Some succeeded, some failed - use partial_success
+                        # Some succeeded, some failed - use most severe exit code
                         output = formatter.partial_success(
                             data=output_data,
                             metadata=output_metadata,
                             suggestions=output_suggestions,
                         )
                         write_output(output)
-                        sys.exit(EXIT_USAGE_ERROR)
+                        sys.exit(get_most_severe_exit_code(all_failed))
                     else:
                         # All succeeded
                         output = formatter.success(
@@ -868,11 +870,11 @@ def alexa_sync_filter(
 
                     if all_failed:
                         console.print(f"\n[red]✗ Failed {len(all_failed)}:[/red]")
-                        for eid, err in all_failed:
+                        for f in all_failed:
                             console.print(
-                                f"  [red]{rich_escape(eid)}: {rich_escape(err)}[/red]"
+                                f"  [red]{rich_escape(f.entity_id)}: {rich_escape(f.message)}[/red]"
                             )
-                        sys.exit(EXIT_USAGE_ERROR)
+                        sys.exit(get_most_severe_exit_code(all_failed))
 
                     total_changed = len(expose_success) + len(hide_success)
                     if total_changed > 0:

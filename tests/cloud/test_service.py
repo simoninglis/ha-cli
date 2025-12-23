@@ -735,8 +735,8 @@ class TestCloudServiceSetEntitiesExposure:
 
         assert successful == ["light.good", "light.also_good"]
         assert len(failed) == 1
-        assert failed[0][0] == "light.missing"
-        assert "not found" in failed[0][1].lower()
+        assert failed[0].entity_id == "light.missing"
+        assert "not found" in failed[0].message.lower()
 
     @pytest.mark.asyncio()
     async def test_set_entities_exposure_empty_list(self, mock_client):
@@ -764,12 +764,13 @@ class TestCloudServiceSetEntitiesExposure:
         assert successful == []
         assert len(failed) == 2
         # Verify failed list contents
-        failed_ids = [entity_id for entity_id, _ in failed]
+        failed_ids = [f.entity_id for f in failed]
         assert "light.one" in failed_ids
         assert "light.two" in failed_ids
-        # Verify error messages
-        for entity_id, error_msg in failed:
-            assert "not_found" in error_msg.lower() or "Entity not found" in error_msg
+        # Verify error messages and error codes
+        for f in failed:
+            assert "not_found" in f.message.lower() or "Entity not found" in f.message
+            assert f.error_code == "NOT_FOUND"
 
     @pytest.mark.asyncio()
     async def test_set_entities_exposure_transport_error_propagates(
@@ -809,6 +810,9 @@ class TestCloudServiceSetEntitiesExposure:
         # Should be collected as per-entity failures, not propagated
         assert successful == []
         assert len(failed) == 2
-        # Verify error messages contain the HA error
-        for entity_id, error_msg in failed:
-            assert "Not connected" in error_msg
+        # Verify error info - should be HA error, not transport
+        for f in failed:
+            assert "Not connected" in f.message
+            assert f.error_code == "HA_ERROR"
+            from ha_cli.common.exceptions import EXIT_HA_ERROR
+            assert f.exit_code == EXIT_HA_ERROR
