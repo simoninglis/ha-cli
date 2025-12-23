@@ -644,9 +644,10 @@ class TestCloudServiceSetEntityExposure:
         """Test set_entity_exposure raises NotFoundError for unknown entity."""
         from ha_cli.common.exceptions import NotFoundError
 
-        mock_client._ws_call.return_value = {
-            "error": {"code": "not_found", "message": "Entity not found"},
-        }
+        # _ws_call raises WebSocketError with format "{code}: {message}"
+        mock_client._ws_call.side_effect = WebSocketError(
+            "not_found: Entity not found"
+        )
 
         service = CloudService(mock_client)
 
@@ -658,9 +659,10 @@ class TestCloudServiceSetEntityExposure:
         """Test set_entity_exposure detects 'not found' in error message."""
         from ha_cli.common.exceptions import NotFoundError
 
-        mock_client._ws_call.return_value = {
-            "error": {"code": "unknown", "message": "Entity light.gone was not found"},
-        }
+        # _ws_call raises WebSocketError - detect "not found" in message
+        mock_client._ws_call.side_effect = WebSocketError(
+            "unknown: Entity light.gone was not found"
+        )
 
         service = CloudService(mock_client)
 
@@ -669,14 +671,15 @@ class TestCloudServiceSetEntityExposure:
 
     @pytest.mark.asyncio()
     async def test_set_entity_exposure_other_error(self, mock_client):
-        """Test set_entity_exposure raises WebSocketError for other errors."""
-        mock_client._ws_call.return_value = {
-            "error": {"code": "validation_error", "message": "Invalid entity_id format"},
-        }
+        """Test set_entity_exposure re-raises WebSocketError for other errors."""
+        # _ws_call raises WebSocketError for non-not_found errors
+        mock_client._ws_call.side_effect = WebSocketError(
+            "validation_error: Invalid entity_id format"
+        )
 
         service = CloudService(mock_client)
 
-        with pytest.raises(WebSocketError, match="Failed to update"):
+        with pytest.raises(WebSocketError, match="validation_error"):
             await service.set_entity_exposure("invalid", True)
 
     @pytest.mark.asyncio()
@@ -713,14 +716,12 @@ class TestCloudServiceSetEntitiesExposure:
     @pytest.mark.asyncio()
     async def test_set_entities_exposure_some_fail(self, mock_client):
         """Test set_entities_exposure handles partial failures."""
-        call_count = 0
 
         async def ws_call_handler(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
             entity_id = kwargs.get("entity_id", "")
             if entity_id == "light.missing":
-                return {"error": {"code": "not_found", "message": "Not found"}}
+                # _ws_call raises WebSocketError, converted to NotFoundError
+                raise WebSocketError("not_found: Entity not found")
             return {"entity_id": entity_id, "options": {}}
 
         mock_client._ws_call.side_effect = ws_call_handler
@@ -748,9 +749,10 @@ class TestCloudServiceSetEntitiesExposure:
     @pytest.mark.asyncio()
     async def test_set_entities_exposure_all_fail(self, mock_client):
         """Test set_entities_exposure when all entities fail."""
-        mock_client._ws_call.return_value = {
-            "error": {"code": "not_found", "message": "Not found"},
-        }
+        # _ws_call raises WebSocketError for all entities
+        mock_client._ws_call.side_effect = WebSocketError(
+            "not_found: Entity not found"
+        )
 
         service = CloudService(mock_client)
         successful, failed = await service.set_entities_exposure(

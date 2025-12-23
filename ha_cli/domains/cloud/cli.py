@@ -354,10 +354,10 @@ def _parse_entity_list_yaml(file_path: Path) -> list[str]:
         file_path: Path to the YAML file
 
     Returns:
-        List of entity IDs
+        List of entity IDs (stripped of whitespace)
 
     Raises:
-        ValidationError: If file doesn't exist or content is not a list
+        ValidationError: If file doesn't exist, can't be read, or content is not a list
     """
     if not file_path.exists():
         raise ValidationError(f"File not found: {file_path}")
@@ -367,6 +367,8 @@ def _parse_entity_list_yaml(file_path: Path) -> list[str]:
             content = yaml.safe_load(f)
     except yaml.YAMLError as e:
         raise ValidationError(f"Invalid YAML in {file_path}: {e}") from e
+    except OSError as e:
+        raise ValidationError(f"Cannot read {file_path}: {e}") from e
 
     if content is None:
         return []
@@ -376,8 +378,8 @@ def _parse_entity_list_yaml(file_path: Path) -> list[str]:
             f"Expected list of entities in {file_path}, got {type(content).__name__}"
         )
 
-    # Filter to only valid non-empty strings
-    return [e for e in content if isinstance(e, str) and e.strip()]
+    # Filter to only valid non-empty strings and strip whitespace
+    return [e.strip() for e in content if isinstance(e, str) and e.strip()]
 
 
 @alexa_app.command("expose")
@@ -450,6 +452,9 @@ def alexa_expose(
                         },
                     )
                     write_output(output)
+                    # Exit with error code if any failures occurred
+                    if failed:
+                        sys.exit(EXIT_USAGE_ERROR)
                 else:
                     if successful:
                         console.print(
@@ -574,6 +579,9 @@ def alexa_hide(
                         },
                     )
                     write_output(output)
+                    # Exit with error code if any failures occurred
+                    if failed:
+                        sys.exit(EXIT_USAGE_ERROR)
                 else:
                     if successful:
                         console.print(
@@ -746,14 +754,14 @@ def alexa_sync_filter(
                             "exposed": expose_success,
                             "hidden": hide_success,
                             "failed": [{"entity_id": e, "error": err} for e, err in all_failed],
-                            "not_in_registry": not_in_registry,
+                            "not_alexa_compatible": not_in_registry,
                         },
                         metadata={
                             "desired_count": len(desired_exposed),
                             "exposed_count": len(expose_success),
                             "hidden_count": len(hide_success),
                             "failed_count": len(all_failed),
-                            "not_in_registry_count": len(not_in_registry),
+                            "not_alexa_compatible_count": len(not_in_registry),
                         },
                         suggestions={
                             "next_steps": [
@@ -762,6 +770,9 @@ def alexa_sync_filter(
                         },
                     )
                     write_output(output)
+                    # Exit with error code if any failures occurred
+                    if all_failed:
+                        sys.exit(EXIT_USAGE_ERROR)
                 else:
                     if expose_success:
                         console.print(
@@ -775,7 +786,7 @@ def alexa_sync_filter(
 
                     if not_in_registry:
                         console.print(
-                            f"\n[yellow]⚠ {len(not_in_registry)} entities not in registry:[/yellow]"
+                            f"\n[yellow]⚠ {len(not_in_registry)} entities not Alexa-compatible:[/yellow]"
                         )
                         for eid in not_in_registry:
                             console.print(f"  [yellow]? {rich_escape(eid)}[/yellow]")

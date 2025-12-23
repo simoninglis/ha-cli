@@ -283,21 +283,19 @@ class CloudService:
         """
         from ...common.exceptions import NotFoundError
 
-        result = await self.client._ws_call(
-            "config/entity_registry/update",
-            entity_id=entity_id,
-            options_domain="cloud.alexa",
-            options={"should_expose": expose},
-        )
-
-        # Handle error responses (entity not found, etc.)
-        if isinstance(result, dict) and "error" in result:
-            error_info = result.get("error", {})
-            error_code = error_info.get("code", "unknown")
-            error_message = error_info.get("message", "Unknown error")
-            if error_code == "not_found" or "not found" in error_message.lower():
-                raise NotFoundError(f"Entity not found: {entity_id}")
-            raise WebSocketError(f"Failed to update {entity_id}: {error_message}")
+        try:
+            result = await self.client._ws_call(
+                "config/entity_registry/update",
+                entity_id=entity_id,
+                options_domain="cloud.alexa",
+                options={"should_expose": expose},
+            )
+        except WebSocketError as e:
+            # Convert "not_found" errors to NotFoundError for better handling
+            error_msg = str(e).lower()
+            if "not_found" in error_msg or "not found" in error_msg:
+                raise NotFoundError(f"Entity not found: {entity_id}") from e
+            raise
 
         if not isinstance(result, dict):
             raise WebSocketError(
