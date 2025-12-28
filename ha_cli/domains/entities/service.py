@@ -952,7 +952,8 @@ class EntityService:
         # Build update payload (only include fields being changed)
         payload: dict[str, Any] = {"entity_id": entity_id}
         if name is not None:
-            payload["name"] = name
+            # Empty string means clear the custom name (revert to default)
+            payload["name"] = name if name else None
         if icon is not None:
             # Empty string means clear the icon
             payload["icon"] = icon if icon else None

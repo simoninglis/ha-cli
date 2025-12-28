@@ -854,3 +854,372 @@ class TestImportOperationsCommand:
 
         assert result.exit_code == 0
         assert "No rename operations found" in result.output
+
+
+class TestUpdateCommand:
+    """Tests for the update command."""
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_update_name(self, mock_service_class, mock_client_class, runner):
+        """Test updating entity friendly name."""
+        mock_service = AsyncMock()
+        mock_service.get_entity_registry_entry.return_value = {
+            "entity_id": "light.kitchen",
+            "name": "Kitchen Light",
+            "icon": None,
+            "area_id": None,
+        }
+        mock_service.update_entity_registry.return_value = {
+            "entity_id": "light.kitchen",
+            "name": "Kitchen Under-Cabinet LEDs",
+            "icon": None,
+            "area_id": None,
+        }
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cli.app, ["update", "light.kitchen", "--name", "Kitchen Under-Cabinet LEDs"]
+        )
+
+        assert result.exit_code == 0
+        assert "Updated" in result.output
+        mock_service.update_entity_registry.assert_called_once()
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_update_dry_run(self, mock_service_class, mock_client_class, runner):
+        """Test update with dry run shows preview but makes no changes."""
+        mock_service = AsyncMock()
+        mock_service.get_entity_registry_entry.return_value = {
+            "entity_id": "light.kitchen",
+            "name": "Old Name",
+            "icon": None,
+            "area_id": None,
+        }
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cli.app, ["update", "light.kitchen", "--name", "New Name", "--dry-run"]
+        )
+
+        assert result.exit_code == 0
+        assert "Dry run" in result.output
+        assert "No changes made" in result.output
+        mock_service.update_entity_registry.assert_not_called()
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_update_clear_icon(self, mock_service_class, mock_client_class, runner):
+        """Test clearing custom icon."""
+        mock_service = AsyncMock()
+        mock_service.get_entity_registry_entry.return_value = {
+            "entity_id": "light.kitchen",
+            "name": "Kitchen",
+            "icon": "mdi:lightbulb",
+            "area_id": None,
+        }
+        mock_service.update_entity_registry.return_value = {
+            "entity_id": "light.kitchen",
+            "name": "Kitchen",
+            "icon": None,
+            "area_id": None,
+        }
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(cli.app, ["update", "light.kitchen", "--clear-icon"])
+
+        assert result.exit_code == 0
+        mock_service.update_entity_registry.assert_called_once()
+        call_kwargs = mock_service.update_entity_registry.call_args[1]
+        assert call_kwargs.get("icon") == ""  # Empty string to clear
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_update_entity_not_found(self, mock_service_class, mock_client_class, runner):
+        """Test update with non-existent entity returns usage error."""
+        from ha_cli.common.exceptions import NotFoundError
+
+        mock_service = AsyncMock()
+        mock_service.get_entity_registry_entry.side_effect = NotFoundError(
+            "Entity not found in registry: light.nonexistent"
+        )
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cli.app, ["update", "light.nonexistent", "--name", "New Name"]
+        )
+
+        # Should exit with EXIT_USAGE_ERROR (1) for not found
+        assert result.exit_code == 1
+        assert "not found" in result.output.lower()
+
+    def test_update_no_changes_requested(self, runner):
+        """Test update requires at least one change option."""
+        result = runner.invoke(cli.app, ["update", "light.kitchen"])
+
+        assert result.exit_code != 0
+        assert "Must specify at least one update option" in result.output
+
+    def test_update_conflicting_options(self, runner):
+        """Test conflicting options are rejected."""
+        result = runner.invoke(
+            cli.app, ["update", "light.kitchen", "--icon", "mdi:lamp", "--clear-icon"]
+        )
+
+        assert result.exit_code != 0
+        assert "Cannot use --icon and --clear-icon together" in result.output
+
+    def test_update_invalid_entity_id_format(self, runner):
+        """Test invalid entity_id format is rejected."""
+        result = runner.invoke(
+            cli.app, ["update", "invalid_entity", "--name", "New Name"]
+        )
+
+        assert result.exit_code != 0
+        assert "Invalid entity_id format" in result.output
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_update_porcelain_output(self, mock_service_class, mock_client_class, runner):
+        """Test update with porcelain output format."""
+        mock_service = AsyncMock()
+        mock_service.get_entity_registry_entry.return_value = {
+            "entity_id": "light.kitchen",
+            "name": "Old Name",
+            "icon": None,
+            "area_id": None,
+        }
+        mock_service.update_entity_registry.return_value = {
+            "entity_id": "light.kitchen",
+            "name": "New Name",
+            "icon": None,
+            "area_id": None,
+        }
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cli.app, ["update", "light.kitchen", "--name", "New Name", "--porcelain"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["status"] == "success"
+        assert output["data"]["success"] is True
+
+
+class TestUpdateBatchCommand:
+    """Tests for the update-batch command."""
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_update_batch_dry_run(self, mock_service_class, mock_client_class, runner, tmp_path):
+        """Test batch update with dry run."""
+        # Create test CSV
+        csv_file = tmp_path / "updates.csv"
+        csv_file.write_text(
+            "entity_id,name,icon,area_id\n"
+            "light.kitchen,Kitchen LEDs,mdi:led-strip,kitchen\n"
+        )
+
+        mock_service = MagicMock()
+        mock_service.import_updates_from_csv.return_value = [
+            {"entity_id": "light.kitchen", "name": "Kitchen LEDs", "icon": "mdi:led-strip", "area_id": "kitchen"}
+        ]
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(cli.app, ["update-batch", str(csv_file), "--dry-run"])
+
+        assert result.exit_code == 0
+        assert "Dry run mode" in result.output
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_update_batch_with_force(self, mock_service_class, mock_client_class, runner, tmp_path):
+        """Test batch update with --force skips confirmation."""
+        csv_file = tmp_path / "updates.csv"
+        csv_file.write_text(
+            "entity_id,name,icon,area_id\n"
+            "light.kitchen,Kitchen LEDs,,\n"
+        )
+
+        mock_service = MagicMock()
+        mock_service.import_updates_from_csv.return_value = [
+            {"entity_id": "light.kitchen", "name": "Kitchen LEDs"}
+        ]
+        mock_service.update_entity_registry = AsyncMock(return_value={
+            "entity_id": "light.kitchen",
+            "name": "Kitchen LEDs",
+        })
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(cli.app, ["update-batch", str(csv_file), "--force"])
+
+        assert result.exit_code == 0
+        assert "Successfully updated" in result.output
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_update_batch_confirmation_cancel(
+        self, mock_service_class, mock_client_class, runner, tmp_path
+    ):
+        """Test batch update cancelled by user."""
+        csv_file = tmp_path / "updates.csv"
+        csv_file.write_text(
+            "entity_id,name,icon,area_id\n"
+            "light.kitchen,Kitchen LEDs,,\n"
+        )
+
+        mock_service = MagicMock()
+        mock_service.import_updates_from_csv.return_value = [
+            {"entity_id": "light.kitchen", "name": "Kitchen LEDs"}
+        ]
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Simulate user typing 'n' to cancel
+        result = runner.invoke(cli.app, ["update-batch", str(csv_file)], input="n\n")
+
+        assert result.exit_code == 0
+        assert "cancelled" in result.output.lower()
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_update_batch_with_failures_exits_nonzero(
+        self, mock_service_class, mock_client_class, runner, tmp_path
+    ):
+        """Test batch update exits with error code when failures occur."""
+        csv_file = tmp_path / "updates.csv"
+        csv_file.write_text(
+            "entity_id,name,icon,area_id\n"
+            "light.kitchen,Kitchen LEDs,,\n"
+            "light.nonexistent,Should Fail,,\n"
+        )
+
+        mock_service = MagicMock()
+        mock_service.import_updates_from_csv.return_value = [
+            {"entity_id": "light.kitchen", "name": "Kitchen LEDs"},
+            {"entity_id": "light.nonexistent", "name": "Should Fail"},
+        ]
+
+        # First call succeeds, second fails
+        mock_service.update_entity_registry = AsyncMock(
+            side_effect=[
+                {"entity_id": "light.kitchen", "name": "Kitchen LEDs"},
+                Exception("Entity not found"),
+            ]
+        )
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(cli.app, ["update-batch", str(csv_file), "--force"])
+
+        # Should exit with EXIT_HA_ERROR (3) because of failures
+        assert result.exit_code == 3
+        assert "Failed to update" in result.output
+
+    def test_update_batch_file_not_found(self, runner):
+        """Test batch update with non-existent file."""
+        result = runner.invoke(cli.app, ["update-batch", "nonexistent.csv"])
+
+        assert result.exit_code != 0
+        assert "not found" in result.output.lower()
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_update_batch_empty_file(self, mock_service_class, mock_client_class, runner, tmp_path):
+        """Test batch update with empty CSV file."""
+        csv_file = tmp_path / "empty.csv"
+        csv_file.write_text("entity_id,name,icon,area_id\n")
+
+        mock_service = MagicMock()
+        mock_service.import_updates_from_csv.return_value = []
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(cli.app, ["update-batch", str(csv_file)])
+
+        assert result.exit_code == 0
+        assert "No valid update operations found" in result.output
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_update_batch_porcelain_output(
+        self, mock_service_class, mock_client_class, runner, tmp_path
+    ):
+        """Test batch update with porcelain output format."""
+        csv_file = tmp_path / "updates.csv"
+        csv_file.write_text(
+            "entity_id,name,icon,area_id\n"
+            "light.kitchen,Kitchen LEDs,,\n"
+        )
+
+        mock_service = MagicMock()
+        mock_service.import_updates_from_csv.return_value = [
+            {"entity_id": "light.kitchen", "name": "Kitchen LEDs"}
+        ]
+        mock_service.update_entity_registry = AsyncMock(return_value={
+            "entity_id": "light.kitchen",
+            "name": "Kitchen LEDs",
+        })
+        mock_service_class.return_value = mock_service
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Porcelain mode skips confirmation automatically
+        result = runner.invoke(cli.app, ["update-batch", str(csv_file), "--porcelain"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["status"] == "success"
+        assert output["metadata"]["successful"] == 1

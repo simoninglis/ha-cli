@@ -1004,10 +1004,10 @@ def update(
                 except NotFoundError as e:
                     if porcelain and formatter:
                         write_output(formatter.error(e))
-                        sys.exit(EXIT_HA_ERROR)
+                        sys.exit(EXIT_USAGE_ERROR)
                     else:
                         console.print(f"[red]Error:[/red] {e}")
-                        sys.exit(EXIT_HA_ERROR)
+                        sys.exit(EXIT_USAGE_ERROR)
 
                 # Build the changes
                 changes: dict[str, Any] = {}
@@ -1113,7 +1113,7 @@ def update(
                 write_output(formatter.error(e))
             else:
                 console.print(f"[red]Error:[/red] {e}")
-            sys.exit(EXIT_HA_ERROR)
+            sys.exit(EXIT_USAGE_ERROR)
         except Exception as e:
             if porcelain and formatter:
                 write_output(formatter.error(e))
@@ -1128,6 +1128,7 @@ def update(
 def update_batch(
     csv_file: str = typer.Argument(..., help="CSV file with updates (columns: entity_id,name,icon,area_id)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes only"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Structured JSON output"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
@@ -1142,8 +1143,8 @@ def update_batch(
     - "CLEAR" = clear the value
 
     Examples:
-        ha-cli entities update-batch entities.csv --dry-run
-        ha-cli entities update-batch renames.csv
+        ha-cli entities update-batch updates.csv --dry-run
+        ha-cli entities update-batch updates.csv --force
         ha-cli entities update-batch updates.csv --porcelain
     """
     setup_logging(debug)
@@ -1228,6 +1229,14 @@ def update_batch(
                         console.print("\n[yellow]Dry run mode - no changes made[/yellow]")
                     return
 
+                # Confirmation prompt (skip for porcelain/json output or when --force used)
+                if not force and not porcelain and not json_output:
+                    console.print()
+                    confirm = typer.confirm(f"Proceed with updating {len(operations)} entities?")
+                    if not confirm:
+                        console.print("[yellow]Batch update cancelled[/yellow]")
+                        return
+
                 # Execute operations
                 if not porcelain and not json_output:
                     console.print("[cyan]Executing updates...[/cyan]")
@@ -1300,6 +1309,10 @@ def update_batch(
                                 console.print(f"  {r['entity_id']}: {r.get('error', 'Unknown error')}")
 
                     console.print(f"\n[cyan]Summary:[/cyan] {success_count} succeeded, {failure_count} failed")
+
+                # Exit with error code if any failures occurred
+                if failure_count > 0:
+                    sys.exit(EXIT_HA_ERROR)
 
         except Exception as e:
             if porcelain and formatter:
