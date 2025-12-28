@@ -18,6 +18,7 @@ from ...common.config import get_client_config
 from ...common.exceptions import (
     EXIT_HA_ERROR,
     EXIT_USAGE_ERROR,
+    NotFoundError,
 )
 from ...common.porcelain import (
     PorcelainFormatter,
@@ -935,6 +936,379 @@ def analyze(
                         console.print("  • Test automations after entity changes to ensure they still work correctly")
     
     asyncio.run(run_async_command(_analyze(), command="entities analyze"))
+
+
+@app.command()
+def update(
+    entity_id: str = typer.Argument(..., help="Entity ID to update"),
+    name: str | None = typer.Option(None, "--name", "-n", help="New friendly name"),
+    icon: str | None = typer.Option(None, "--icon", "-i", help="Icon (e.g., mdi:lightbulb)"),
+    area: str | None = typer.Option(None, "--area", "-a", help="Area ID to assign"),
+    clear_icon: bool = typer.Option(False, "--clear-icon", help="Clear custom icon"),
+    clear_area: bool = typer.Option(False, "--clear-area", help="Remove from area"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes only"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(False, "--porcelain", help="Structured JSON output"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
+    timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Update entity registry metadata (friendly name, icon, area).
+
+    Examples:
+        ha-cli entities update light.kitchen --name "Kitchen Under-Cabinet LEDs"
+        ha-cli entities update sensor.temp --icon mdi:thermometer --area kitchen
+        ha-cli entities update switch.pump --clear-area
+        ha-cli entities update light.office --dry-run --name "Office Desk Lamp"
+    """
+    setup_logging(debug)
+    set_porcelain_mode(porcelain)
+
+    # Validate mutually exclusive flags
+    output_flags = sum([json_output, porcelain])
+    if output_flags > 1:
+        console.print("[red]Error:[/red] Cannot use --json and --porcelain together")
+        sys.exit(EXIT_USAGE_ERROR)
+
+    # Validate that at least one update is requested
+    if not any([name, icon, area, clear_icon, clear_area]):
+        console.print("[red]Error:[/red] Must specify at least one update option (--name, --icon, --area, --clear-icon, --clear-area)")
+        sys.exit(EXIT_USAGE_ERROR)
+
+    # Validate conflicting options
+    if icon and clear_icon:
+        console.print("[red]Error:[/red] Cannot use --icon and --clear-icon together")
+        sys.exit(EXIT_USAGE_ERROR)
+    if area and clear_area:
+        console.print("[red]Error:[/red] Cannot use --area and --clear-area together")
+        sys.exit(EXIT_USAGE_ERROR)
+
+    # Validate entity_id format
+    if "." not in entity_id or entity_id.count(".") != 1:
+        console.print(f"[red]Error:[/red] Invalid entity_id format: '{entity_id}'. Expected format: domain.name")
+        sys.exit(EXIT_USAGE_ERROR)
+
+    async def _update() -> None:
+        formatter = PorcelainFormatter("entities update") if porcelain else None
+
+        try:
+            url_final, token_final = get_client_config(url, token)
+
+            async with HAClient(url_final, token_final, timeout) as client:
+                service = EntityService(client)
+
+                # Get current entity state for comparison
+                try:
+                    current = await service.get_entity_registry_entry(entity_id)
+                except NotFoundError as e:
+                    if porcelain and formatter:
+                        write_output(formatter.error(e))
+                        sys.exit(EXIT_HA_ERROR)
+                    else:
+                        console.print(f"[red]Error:[/red] {e}")
+                        sys.exit(EXIT_HA_ERROR)
+
+                # Build the changes
+                changes: dict[str, Any] = {}
+                if name is not None:
+                    changes["name"] = {"from": current.get("name"), "to": name}
+                if icon is not None:
+                    changes["icon"] = {"from": current.get("icon"), "to": icon}
+                if clear_icon:
+                    changes["icon"] = {"from": current.get("icon"), "to": None}
+                if area is not None:
+                    changes["area_id"] = {"from": current.get("area_id"), "to": area}
+                if clear_area:
+                    changes["area_id"] = {"from": current.get("area_id"), "to": None}
+
+                # Dry run - show what would change
+                if dry_run:
+                    if porcelain:
+                        assert formatter is not None
+                        data = {
+                            "entity_id": entity_id,
+                            "dry_run": True,
+                            "changes": changes,
+                            "current": {
+                                "name": current.get("name"),
+                                "icon": current.get("icon"),
+                                "area_id": current.get("area_id"),
+                            }
+                        }
+                        metadata = {
+                            "entity_id": entity_id,
+                            "home_assistant": create_home_assistant_metadata(url_final, "websocket")
+                        }
+                        write_output(formatter.success(data, metadata))
+                    elif json_output:
+                        data = {
+                            "entity_id": entity_id,
+                            "dry_run": True,
+                            "changes": changes,
+                        }
+                        write_output(json.dumps(data, indent=2))
+                    else:
+                        console.print(f"[cyan]Dry run - would update {entity_id}:[/cyan]")
+                        for field, change in changes.items():
+                            console.print(f"  {field}: [red]{change['from']}[/red] → [green]{change['to']}[/green]")
+                        console.print("\n[yellow]No changes made (dry run)[/yellow]")
+                    return
+
+                # Execute the update
+                update_kwargs: dict[str, Any] = {}
+                if name is not None:
+                    update_kwargs["name"] = name
+                if icon is not None:
+                    update_kwargs["icon"] = icon
+                if clear_icon:
+                    update_kwargs["icon"] = ""  # Empty string clears
+                if area is not None:
+                    update_kwargs["area_id"] = area
+                if clear_area:
+                    update_kwargs["area_id"] = ""  # Empty string clears
+
+                result = await service.update_entity_registry(entity_id, **update_kwargs)
+
+                if porcelain:
+                    assert formatter is not None
+                    data = {
+                        "entity_id": entity_id,
+                        "success": True,
+                        "changes": changes,
+                        "result": {
+                            "name": result.get("name"),
+                            "icon": result.get("icon"),
+                            "area_id": result.get("area_id"),
+                        }
+                    }
+                    metadata = {
+                        "entity_id": entity_id,
+                        "home_assistant": create_home_assistant_metadata(url_final, "websocket")
+                    }
+                    suggestions: dict[str, Any] = {
+                        "common_actions": [
+                            f"Verify entity: ha-cli entities state {entity_id}",
+                            f"Analyze impact: ha-cli entities analyze {entity_id}",
+                        ]
+                    }
+                    write_output(formatter.success(data, metadata, suggestions))
+
+                elif json_output:
+                    data = {
+                        "entity_id": entity_id,
+                        "success": True,
+                        "changes": changes,
+                        "result": result,
+                    }
+                    write_output(json.dumps(data, indent=2))
+
+                else:
+                    console.print(f"[green]✓ Updated {entity_id}[/green]")
+                    for field, change in changes.items():
+                        console.print(f"  {field}: [red]{change['from']}[/red] → [green]{change['to']}[/green]")
+
+        except NotFoundError as e:
+            if porcelain and formatter:
+                write_output(formatter.error(e))
+            else:
+                console.print(f"[red]Error:[/red] {e}")
+            sys.exit(EXIT_HA_ERROR)
+        except Exception as e:
+            if porcelain and formatter:
+                write_output(formatter.error(e))
+                sys.exit(EXIT_HA_ERROR)
+            else:
+                raise
+
+    asyncio.run(run_async_command(_update(), command="entities update"))
+
+
+@app.command(name="update-batch")
+def update_batch(
+    csv_file: str = typer.Argument(..., help="CSV file with updates (columns: entity_id,name,icon,area_id)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes only"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(False, "--porcelain", help="Structured JSON output"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
+    timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Batch update entities from CSV file.
+
+    CSV format: entity_id,name,icon,area_id
+    - Empty cells = no change
+    - "CLEAR" = clear the value
+
+    Examples:
+        ha-cli entities update-batch entities.csv --dry-run
+        ha-cli entities update-batch renames.csv
+        ha-cli entities update-batch updates.csv --porcelain
+    """
+    setup_logging(debug)
+    set_porcelain_mode(porcelain)
+
+    # Validate mutually exclusive flags
+    output_flags = sum([json_output, porcelain])
+    if output_flags > 1:
+        console.print("[red]Error:[/red] Cannot use --json and --porcelain together")
+        sys.exit(EXIT_USAGE_ERROR)
+
+    # Check if CSV file exists
+    if not Path(csv_file).exists():
+        console.print(f"[red]Error:[/red] CSV file '{csv_file}' not found")
+        sys.exit(EXIT_USAGE_ERROR)
+
+    async def _update_batch() -> None:
+        formatter = PorcelainFormatter("entities update-batch") if porcelain else None
+
+        try:
+            url_final, token_final = get_client_config(url, token)
+
+            async with HAClient(url_final, token_final, timeout) as client:
+                service = EntityService(client)
+
+                # Import operations from CSV
+                try:
+                    operations = service.import_updates_from_csv(csv_file)
+                except Exception as e:
+                    if porcelain and formatter:
+                        write_output(formatter.error(e))
+                        sys.exit(EXIT_HA_ERROR)
+                    else:
+                        console.print(f"[red]Error reading CSV:[/red] {e}")
+                        sys.exit(EXIT_HA_ERROR)
+
+                if not operations:
+                    if porcelain and formatter:
+                        write_output(formatter.success([], {"total": 0, "message": "No valid operations found in CSV"}))
+                    else:
+                        console.print("[yellow]No valid update operations found in CSV file[/yellow]")
+                    return
+
+                # Show preview table
+                if not porcelain and not json_output:
+                    console.print(f"[cyan]Found {len(operations)} update operations:[/cyan]")
+                    table = Table()
+                    table.add_column("Entity ID", style="cyan")
+                    table.add_column("Name", style="white")
+                    table.add_column("Icon", style="yellow")
+                    table.add_column("Area ID", style="green")
+
+                    for op in operations:
+                        table.add_row(
+                            op["entity_id"],
+                            op.get("name", "-"),
+                            op.get("icon", "-"),
+                            op.get("area_id", "-"),
+                        )
+                    console.print(table)
+
+                if dry_run:
+                    if porcelain:
+                        assert formatter is not None
+                        data = {
+                            "dry_run": True,
+                            "operations": operations,
+                        }
+                        metadata = {
+                            "total_operations": len(operations),
+                            "csv_file": csv_file,
+                            "home_assistant": create_home_assistant_metadata(url_final, "websocket")
+                        }
+                        write_output(formatter.success(data, metadata))
+                    elif json_output:
+                        data = {
+                            "dry_run": True,
+                            "operations": operations,
+                        }
+                        write_output(json.dumps(data, indent=2))
+                    else:
+                        console.print("\n[yellow]Dry run mode - no changes made[/yellow]")
+                    return
+
+                # Execute operations
+                if not porcelain and not json_output:
+                    console.print("[cyan]Executing updates...[/cyan]")
+
+                results: List[dict[str, Any]] = []
+                success_count = 0
+                failure_count = 0
+
+                for op in operations:
+                    entity_id = op["entity_id"]
+                    try:
+                        await service.update_entity_registry(
+                            entity_id,
+                            name=op.get("name"),
+                            icon=op.get("icon"),
+                            area_id=op.get("area_id"),
+                        )
+                        results.append({
+                            "entity_id": entity_id,
+                            "success": True,
+                            "updates": {k: v for k, v in op.items() if k != "entity_id"}
+                        })
+                        success_count += 1
+                    except Exception as e:
+                        results.append({
+                            "entity_id": entity_id,
+                            "success": False,
+                            "error": str(e)
+                        })
+                        failure_count += 1
+
+                # Output results
+                if porcelain:
+                    assert formatter is not None
+                    metadata = {
+                        "total_operations": len(operations),
+                        "successful": success_count,
+                        "failed": failure_count,
+                        "csv_file": csv_file,
+                        "home_assistant": create_home_assistant_metadata(url_final, "websocket")
+                    }
+                    suggestions: dict[str, Any] = {
+                        "common_actions": [
+                            "List entities: ha-cli entities list --porcelain",
+                        ]
+                    }
+                    if failure_count > 0:
+                        suggestions["common_actions"].append("Check failed entities exist in registry")
+                    write_output(formatter.success(results, metadata, suggestions))
+
+                elif json_output:
+                    data = {
+                        "results": results,
+                        "summary": {
+                            "total": len(operations),
+                            "success": success_count,
+                            "failed": failure_count
+                        }
+                    }
+                    write_output(json.dumps(data, indent=2))
+
+                else:
+                    if success_count > 0:
+                        console.print(f"[green]✓ Successfully updated {success_count} entities[/green]")
+
+                    if failure_count > 0:
+                        console.print(f"[red]✗ Failed to update {failure_count} entities:[/red]")
+                        for r in results:
+                            if not r.get("success"):
+                                console.print(f"  {r['entity_id']}: {r.get('error', 'Unknown error')}")
+
+                    console.print(f"\n[cyan]Summary:[/cyan] {success_count} succeeded, {failure_count} failed")
+
+        except Exception as e:
+            if porcelain and formatter:
+                write_output(formatter.error(e))
+                sys.exit(EXIT_HA_ERROR)
+            else:
+                raise
+
+    asyncio.run(run_async_command(_update_batch(), command="entities update-batch"))
 
 
 @app.command()

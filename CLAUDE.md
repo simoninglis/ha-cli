@@ -136,6 +136,34 @@ poetry run ha-cli labels entities <label_id>    # List entities with label
 2. `ha-cli labels assign light.kitchen_ceiling routine_kitchen_remote`
 3. Use in automations: `target: { label_id: routine_kitchen_remote }`
 
+### Entity Commands
+```bash
+poetry run ha-cli entities list                   # List all entities
+poetry run ha-cli entities list --domain light    # List entities by domain
+poetry run ha-cli entities state <entity_id>      # Get entity state
+poetry run ha-cli entities analyze <entity_id>    # Analyze entity impact
+poetry run ha-cli entities update <entity_id> --name "New Name"  # Update friendly name
+poetry run ha-cli entities update <entity_id> --icon mdi:lamp    # Set custom icon
+poetry run ha-cli entities update <entity_id> --area living_room # Assign to area
+poetry run ha-cli entities update <entity_id> --clear-icon       # Clear custom icon
+poetry run ha-cli entities update <entity_id> --clear-area       # Remove from area
+poetry run ha-cli entities update <entity_id> --dry-run --name "Preview"  # Preview changes
+poetry run ha-cli entities update-batch updates.csv --dry-run    # Batch update from CSV
+poetry run ha-cli entities update-batch updates.csv              # Execute batch update
+poetry run ha-cli entities delete --entity-id sensor.orphaned    # Delete entity
+poetry run ha-cli entities rename --search "old" --replace "new" # Rename entities
+```
+
+**Entity Update CSV Format:**
+```csv
+entity_id,name,icon,area_id
+light.kitchen,Kitchen LEDs,mdi:led-strip,kitchen
+sensor.temp,Temperature,mdi:thermometer,
+switch.pump,,CLEAR,garage
+```
+- Empty cells = no change
+- `CLEAR` = clear the value (remove icon, unassign area)
+
 ### Cloud Commands (Nabu Casa)
 ```bash
 poetry run ha-cli cloud status                  # Show cloud connection status

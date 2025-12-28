@@ -620,3 +620,236 @@ class TestEntityServiceEntityLikelyReferenced:
         )
 
         assert result is False
+
+
+class TestEntityServiceGetEntityRegistryEntry:
+    """Tests for EntityService.get_entity_registry_entry method."""
+
+    @pytest.mark.asyncio
+    async def test_get_entity_registry_entry_success(self, mock_client):
+        """Test successful entity registry entry retrieval."""
+        mock_client._ws_call.return_value = {
+            "entity_id": "light.living_room",
+            "name": "Living Room Light",
+            "icon": "mdi:lamp",
+            "area_id": "living_room",
+            "labels": ["indoor"],
+        }
+
+        service = EntityService(mock_client)
+        result = await service.get_entity_registry_entry("light.living_room")
+
+        assert result["entity_id"] == "light.living_room"
+        assert result["name"] == "Living Room Light"
+        assert result["icon"] == "mdi:lamp"
+        assert result["area_id"] == "living_room"
+        mock_client._ws_call.assert_called_once_with(
+            "config/entity_registry/get",
+            entity_id="light.living_room"
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_entity_registry_entry_not_found_empty_result(self, mock_client):
+        """Test NotFoundError when entity registry returns empty result."""
+        from ha_cli.common.exceptions import NotFoundError
+
+        mock_client._ws_call.return_value = None
+
+        service = EntityService(mock_client)
+        with pytest.raises(NotFoundError, match="Entity not found in registry"):
+            await service.get_entity_registry_entry("light.nonexistent")
+
+    @pytest.mark.asyncio
+    async def test_get_entity_registry_entry_not_found_ws_error(self, mock_client):
+        """Test NotFoundError when WebSocket returns not_found error."""
+        from ha_cli.common.exceptions import NotFoundError, WebSocketError
+
+        mock_client._ws_call.side_effect = WebSocketError(
+            "Entity not found",
+            details={"code": "not_found"}
+        )
+
+        service = EntityService(mock_client)
+        with pytest.raises(NotFoundError, match="Entity not found in registry"):
+            await service.get_entity_registry_entry("light.nonexistent")
+
+
+class TestEntityServiceUpdateEntityRegistry:
+    """Tests for EntityService.update_entity_registry method."""
+
+    @pytest.mark.asyncio
+    async def test_update_entity_registry_name(self, mock_client):
+        """Test updating entity name."""
+        # Mock get_entity_registry_entry to verify entity exists
+        mock_client._ws_call.side_effect = [
+            # First call: get_entity_registry_entry
+            {"entity_id": "light.kitchen", "name": "Old Name"},
+            # Second call: update
+            {"entity_id": "light.kitchen", "name": "New Kitchen Light"},
+        ]
+
+        service = EntityService(mock_client)
+        result = await service.update_entity_registry(
+            "light.kitchen",
+            name="New Kitchen Light"
+        )
+
+        assert result["name"] == "New Kitchen Light"
+        # Verify update was called with correct payload
+        calls = mock_client._ws_call.call_args_list
+        assert len(calls) == 2
+        assert calls[1][0][0] == "config/entity_registry/update"
+        assert calls[1][1]["entity_id"] == "light.kitchen"
+        assert calls[1][1]["name"] == "New Kitchen Light"
+
+    @pytest.mark.asyncio
+    async def test_update_entity_registry_icon(self, mock_client):
+        """Test updating entity icon."""
+        mock_client._ws_call.side_effect = [
+            {"entity_id": "sensor.temp", "icon": None},
+            {"entity_id": "sensor.temp", "icon": "mdi:thermometer"},
+        ]
+
+        service = EntityService(mock_client)
+        result = await service.update_entity_registry(
+            "sensor.temp",
+            icon="mdi:thermometer"
+        )
+
+        assert result["icon"] == "mdi:thermometer"
+
+    @pytest.mark.asyncio
+    async def test_update_entity_registry_area(self, mock_client):
+        """Test updating entity area assignment."""
+        mock_client._ws_call.side_effect = [
+            {"entity_id": "switch.pump", "area_id": None},
+            {"entity_id": "switch.pump", "area_id": "garage"},
+        ]
+
+        service = EntityService(mock_client)
+        result = await service.update_entity_registry(
+            "switch.pump",
+            area_id="garage"
+        )
+
+        assert result["area_id"] == "garage"
+
+    @pytest.mark.asyncio
+    async def test_update_entity_registry_clear_icon(self, mock_client):
+        """Test clearing entity icon with empty string."""
+        mock_client._ws_call.side_effect = [
+            {"entity_id": "light.test", "icon": "mdi:lamp"},
+            {"entity_id": "light.test", "icon": None},
+        ]
+
+        service = EntityService(mock_client)
+        result = await service.update_entity_registry(
+            "light.test",
+            icon=""  # Empty string should clear
+        )
+
+        # Verify icon was set to None in the call
+        calls = mock_client._ws_call.call_args_list
+        assert calls[1][1]["icon"] is None
+
+    @pytest.mark.asyncio
+    async def test_update_entity_registry_multiple_fields(self, mock_client):
+        """Test updating multiple fields at once."""
+        mock_client._ws_call.side_effect = [
+            {"entity_id": "light.office", "name": "Old", "icon": None, "area_id": None},
+            {"entity_id": "light.office", "name": "Office Desk Lamp", "icon": "mdi:desk-lamp", "area_id": "office"},
+        ]
+
+        service = EntityService(mock_client)
+        result = await service.update_entity_registry(
+            "light.office",
+            name="Office Desk Lamp",
+            icon="mdi:desk-lamp",
+            area_id="office"
+        )
+
+        assert result["name"] == "Office Desk Lamp"
+        assert result["icon"] == "mdi:desk-lamp"
+        assert result["area_id"] == "office"
+
+    @pytest.mark.asyncio
+    async def test_update_entity_registry_not_found(self, mock_client):
+        """Test updating nonexistent entity raises NotFoundError."""
+        from ha_cli.common.exceptions import NotFoundError
+
+        mock_client._ws_call.return_value = None
+
+        service = EntityService(mock_client)
+        with pytest.raises(NotFoundError, match="Entity not found in registry"):
+            await service.update_entity_registry("light.nonexistent", name="Test")
+
+
+class TestEntityServiceImportUpdatesFromCSV:
+    """Tests for EntityService.import_updates_from_csv method."""
+
+    def test_import_updates_basic(self, mock_client, tmp_path):
+        """Test importing basic updates from CSV."""
+        csv_content = """entity_id,name,icon,area_id
+light.kitchen,Kitchen LED,mdi:led-strip,kitchen
+sensor.temp,Temperature,mdi:thermometer,
+"""
+        csv_file = tmp_path / "updates.csv"
+        csv_file.write_text(csv_content)
+
+        service = EntityService(mock_client)
+        operations = service.import_updates_from_csv(str(csv_file))
+
+        assert len(operations) == 2
+        assert operations[0]["entity_id"] == "light.kitchen"
+        assert operations[0]["name"] == "Kitchen LED"
+        assert operations[0]["icon"] == "mdi:led-strip"
+        assert operations[0]["area_id"] == "kitchen"
+        assert operations[1]["entity_id"] == "sensor.temp"
+        assert operations[1]["name"] == "Temperature"
+        assert operations[1]["icon"] == "mdi:thermometer"
+        assert "area_id" not in operations[1]  # Empty = no change
+
+    def test_import_updates_clear_values(self, mock_client, tmp_path):
+        """Test CLEAR keyword clears values."""
+        csv_content = """entity_id,name,icon,area_id
+light.test,,CLEAR,CLEAR
+"""
+        csv_file = tmp_path / "updates.csv"
+        csv_file.write_text(csv_content)
+
+        service = EntityService(mock_client)
+        operations = service.import_updates_from_csv(str(csv_file))
+
+        assert len(operations) == 1
+        assert operations[0]["entity_id"] == "light.test"
+        assert "name" not in operations[0]  # Empty = no change
+        assert operations[0]["icon"] == ""  # CLEAR = empty string
+        assert operations[0]["area_id"] == ""  # CLEAR = empty string
+
+    def test_import_updates_empty_rows_skipped(self, mock_client, tmp_path):
+        """Test empty entity_id rows are skipped."""
+        csv_content = """entity_id,name,icon,area_id
+light.valid,Valid Name,,
+,Invalid Row,,
+"""
+        csv_file = tmp_path / "updates.csv"
+        csv_file.write_text(csv_content)
+
+        service = EntityService(mock_client)
+        operations = service.import_updates_from_csv(str(csv_file))
+
+        assert len(operations) == 1
+        assert operations[0]["entity_id"] == "light.valid"
+
+    def test_import_updates_no_changes_skipped(self, mock_client, tmp_path):
+        """Test rows with no actual changes are skipped."""
+        csv_content = """entity_id,name,icon,area_id
+light.nochange,,,
+"""
+        csv_file = tmp_path / "updates.csv"
+        csv_file.write_text(csv_content)
+
+        service = EntityService(mock_client)
+        operations = service.import_updates_from_csv(str(csv_file))
+
+        assert len(operations) == 0

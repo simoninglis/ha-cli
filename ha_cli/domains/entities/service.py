@@ -12,7 +12,7 @@ from typing import Any
 import websockets
 
 from ...common.client import HAClient
-from ...common.exceptions import HAAutomationError
+from ...common.exceptions import HAAutomationError, NotFoundError, WebSocketError
 from ...common.utils import compile_user_regex
 from .models import (
     Entity,
@@ -893,3 +893,129 @@ class EntityService:
                     }
 
         return results
+
+    async def get_entity_registry_entry(self, entity_id: str) -> dict[str, Any]:
+        """Get entity registry entry via WebSocket.
+
+        Returns full registry entry with name, icon, area_id, labels, etc.
+
+        Args:
+            entity_id: The entity ID to retrieve
+
+        Returns:
+            Entity registry entry dict
+
+        Raises:
+            NotFoundError: If entity not in registry
+        """
+        try:
+            result = await self.client._ws_call(
+                "config/entity_registry/get",
+                entity_id=entity_id
+            )
+        except WebSocketError as e:
+            # Translate WebSocket "not_found" errors to NotFoundError
+            error_code = e.details.get("code", "") if e.details else ""
+            if error_code == "not_found" or "not_found" in str(e).lower():
+                raise NotFoundError(f"Entity not found in registry: {entity_id}") from e
+            raise
+
+        if not result:
+            raise NotFoundError(f"Entity not found in registry: {entity_id}")
+
+        return dict(result)
+
+    async def update_entity_registry(
+        self,
+        entity_id: str,
+        name: str | None = None,
+        icon: str | None = None,
+        area_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Update entity registry metadata.
+
+        Args:
+            entity_id: Entity to update
+            name: New friendly name (None = no change)
+            icon: New icon (None = no change, "" = clear)
+            area_id: Area ID to assign (None = no change, "" = clear)
+
+        Returns:
+            Updated entity registry entry
+
+        Raises:
+            NotFoundError: If entity not in registry
+        """
+        # Verify entity exists first
+        await self.get_entity_registry_entry(entity_id)
+
+        # Build update payload (only include fields being changed)
+        payload: dict[str, Any] = {"entity_id": entity_id}
+        if name is not None:
+            payload["name"] = name
+        if icon is not None:
+            # Empty string means clear the icon
+            payload["icon"] = icon if icon else None
+        if area_id is not None:
+            # Empty string means remove from area
+            payload["area_id"] = area_id if area_id else None
+
+        result = await self.client._ws_call(
+            "config/entity_registry/update",
+            **payload
+        )
+        return dict(result) if result else {}
+
+    def import_updates_from_csv(self, csv_file: str) -> list[dict[str, Any]]:
+        """Import entity update operations from CSV file.
+
+        CSV format: entity_id,name,icon,area_id
+        - Empty cells = no change
+        - "CLEAR" = clear the value
+
+        Args:
+            csv_file: Path to CSV file
+
+        Returns:
+            List of update operation dicts with entity_id and fields to update
+        """
+        import csv
+
+        operations = []
+
+        with open(csv_file, encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+
+            for row in reader:
+                entity_id = row.get('entity_id', '').strip()
+                if not entity_id:
+                    continue
+
+                operation: dict[str, Any] = {"entity_id": entity_id}
+
+                # Process name field
+                name = row.get('name', '').strip()
+                if name == 'CLEAR':
+                    operation['name'] = ''
+                elif name:
+                    operation['name'] = name
+
+                # Process icon field
+                icon = row.get('icon', '').strip()
+                if icon == 'CLEAR':
+                    operation['icon'] = ''
+                elif icon:
+                    operation['icon'] = icon
+
+                # Process area_id field
+                area_id = row.get('area_id', '').strip()
+                if area_id == 'CLEAR':
+                    operation['area_id'] = ''
+                elif area_id:
+                    operation['area_id'] = area_id
+
+                # Only add if there are actual updates
+                if len(operation) > 1:  # More than just entity_id
+                    operations.append(operation)
+
+        return operations
