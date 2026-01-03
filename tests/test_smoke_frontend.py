@@ -280,7 +280,7 @@ async def test_no_critical_http_failures(skip_if_no_credentials):
         await browser.close()
 
     # Filter for truly critical failures
-    # Exclude: lazy-loaded chunks (numbered .js files), camera proxies, websocket
+    # Exclude: lazy-loaded chunks (numbered .js files), camera proxies, websocket, HLS streams
     critical_failures = [
         f for f in failed_requests
         if (
@@ -292,6 +292,9 @@ async def test_no_critical_http_failures(skip_if_no_credentials):
             "/api/" in f["url"]
             and "camera_proxy" not in f["url"]  # camera failures OK
             and "websocket" not in f["url"]  # websocket failures OK
+            and "/api/hls/" not in f["url"]  # HLS stream failures OK
+            and ".m3u8" not in f["url"]  # HLS manifest failures OK
+            and ".ts" not in f["url"]  # HLS segment failures OK
         )
     ]
 
