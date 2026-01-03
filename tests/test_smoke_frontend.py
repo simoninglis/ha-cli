@@ -293,8 +293,8 @@ async def test_no_critical_http_failures(skip_if_no_credentials):
             and "camera_proxy" not in f["url"]  # camera failures OK
             and "websocket" not in f["url"]  # websocket failures OK
             and "/api/hls/" not in f["url"]  # HLS stream failures OK
-            and ".m3u8" not in f["url"]  # HLS manifest failures OK
-            and ".ts" not in f["url"]  # HLS segment failures OK
+            and not f["url"].endswith(".m3u8")  # HLS manifest failures OK
+            and not f["url"].endswith(".ts")  # HLS segment failures OK (precise match)
         )
     ]
 
