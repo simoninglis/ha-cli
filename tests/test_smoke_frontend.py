@@ -36,6 +36,7 @@ See docs/troubleshooting.md#frontend-loading-data-spinner for diagnosis.
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -296,16 +297,18 @@ async def test_no_critical_http_failures(skip_if_no_credentials):
         parsed = urlparse(url)
         path = parsed.path
         filename = path.rsplit("/", 1)[-1] if "/" in path else path
-        stem = filename.rsplit(".", 1)[0] if "." in filename else filename
 
         # JS file handling
         if path.endswith(".js"):
-            # Numbered chunks (e.g., "1234.js") are lazy-loaded and OK to fail
-            if stem.isdigit():
-                return False
-            # Core framework JS in /frontend_latest/ IS critical (e.g., core-xxx.js, app-xxx.js)
-            # These must load for the frontend to work
+            # Only check JS files in /frontend_latest/ (framework files)
             if "/frontend_latest/" in path:
+                # Core framework JS IS critical (e.g., core-xxx.js, app-xxx.js)
+                if re.match(r"^(core|app)[.-]", filename):
+                    return True
+                # Numbered chunks (e.g., "1234.js", "1234.abcdef.js") are lazy-loaded, OK to fail
+                if re.match(r"^\d+[.-]", filename):
+                    return False
+                # Other frontend_latest files - likely critical
                 return True
             # Other JS files outside frontend_latest are likely custom/external, less critical
             return False
