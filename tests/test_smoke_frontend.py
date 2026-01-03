@@ -38,6 +38,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import pytest
 from playwright.async_api import async_playwright, Page, WebSocket
@@ -279,24 +280,53 @@ async def test_no_critical_http_failures(skip_if_no_credentials):
 
         await browser.close()
 
-    # Filter for truly critical failures
-    # Exclude: lazy-loaded chunks (numbered .js files), camera proxies, websocket, HLS streams
-    critical_failures = [
-        f for f in failed_requests
-        if (
-            f["url"].endswith(".js")
-            and not any(c.isdigit() for c in f["url"].split("/")[-1].split(".")[0])  # numbered chunks OK
-            and "frontend_latest" not in f["url"]  # lazy chunks OK
-        )
-        or (
-            "/api/" in f["url"]
-            and "camera_proxy" not in f["url"]  # camera failures OK
-            and "websocket" not in f["url"]  # websocket failures OK
-            and "/api/hls/" not in f["url"]  # HLS stream failures OK
-            and not f["url"].endswith(".m3u8")  # HLS manifest failures OK
-            and not f["url"].endswith(".ts")  # HLS segment failures OK (precise match)
-        )
-    ]
+    def is_critical_failure(url: str) -> bool:
+        """Determine if a failed request is critical (should fail the test).
+
+        Critical failures:
+        - Core JS files (in /frontend_latest/) that aren't numbered chunks
+        - API calls except: camera_proxy, websocket, HLS streams
+
+        Non-critical (expected to fail sometimes):
+        - Numbered JS chunks (e.g., 1234.js) - lazy-loaded, may not exist
+        - Camera proxy/stream requests - network-dependent
+        - WebSocket connections - handled separately
+        - HLS streams (.m3u8, .ts) - camera streams may be offline
+        """
+        parsed = urlparse(url)
+        path = parsed.path
+        filename = path.rsplit("/", 1)[-1] if "/" in path else path
+        stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+
+        # JS file handling
+        if path.endswith(".js"):
+            # Numbered chunks (e.g., "1234.js") are lazy-loaded and OK to fail
+            if stem.isdigit():
+                return False
+            # Core framework JS in /frontend_latest/ IS critical (e.g., core-xxx.js, app-xxx.js)
+            # These must load for the frontend to work
+            if "/frontend_latest/" in path:
+                return True
+            # Other JS files outside frontend_latest are likely custom/external, less critical
+            return False
+
+        # API call handling
+        if "/api/" in path:
+            # Camera proxies and streams are network-dependent
+            if "camera_proxy" in path:
+                return False
+            # WebSocket handled separately
+            if "websocket" in path:
+                return False
+            # HLS streams (parse path to handle query strings)
+            if path.startswith("/api/hls/") or path.endswith((".m3u8", ".ts")):
+                return False
+            # Other API failures are critical
+            return True
+
+        return False
+
+    critical_failures = [f for f in failed_requests if is_critical_failure(f["url"])]
 
     # Only fail if core framework JS fails (e.g., core-xxx.js, app-xxx.js)
     if critical_failures:
