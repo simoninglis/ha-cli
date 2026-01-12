@@ -28,6 +28,7 @@ from .domains.entities import cli as entities_cli
 from .domains.events import cli as events_cli
 from .domains.labels import cli as labels_cli
 from .domains.system import cli as system_cli
+from .domains.zones import cli as zones_cli
 
 # Add subcommands
 app.add_typer(areas_cli.app, name="areas")
@@ -40,3 +41,4 @@ app.add_typer(entities_cli.app, name="entities")
 app.add_typer(events_cli.app, name="events")
 app.add_typer(labels_cli.app, name="labels")
 app.add_typer(system_cli.app, name="system")
+app.add_typer(zones_cli.app, name="zones")
