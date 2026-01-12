@@ -53,6 +53,30 @@ class ZoneService:
                 return zone
         return None
 
+    def _validate_coordinates(
+        self, latitude: float | None, longitude: float | None, radius: float | None
+    ) -> None:
+        """Validate coordinate and radius values.
+
+        Args:
+            latitude: Latitude to validate (if not None)
+            longitude: Longitude to validate (if not None)
+            radius: Radius to validate (if not None)
+
+        Raises:
+            ValidationError: If any value is out of range
+        """
+        if latitude is not None and (latitude < -90 or latitude > 90):
+            raise ValidationError(
+                f"Latitude must be between -90 and 90, got {latitude}"
+            )
+        if longitude is not None and (longitude < -180 or longitude > 180):
+            raise ValidationError(
+                f"Longitude must be between -180 and 180, got {longitude}"
+            )
+        if radius is not None and radius <= 0:
+            raise ValidationError(f"Radius must be positive, got {radius}")
+
     async def create_zone(
         self,
         name: str,
@@ -66,9 +90,9 @@ class ZoneService:
 
         Args:
             name: Zone name (required)
-            latitude: Center point latitude (required)
-            longitude: Center point longitude (required)
-            radius: Radius in meters (default: 100)
+            latitude: Center point latitude (required, -90 to 90)
+            longitude: Center point longitude (required, -180 to 180)
+            radius: Radius in meters (default: 100, must be positive)
             icon: Optional icon (e.g., "mdi:school")
             passive: Hide from UI and device tracker (default: False)
 
@@ -78,6 +102,9 @@ class ZoneService:
         Raises:
             ValidationError: If zone with same name already exists or invalid params
         """
+        # Validate coordinates and radius
+        self._validate_coordinates(latitude, longitude, radius)
+
         payload: dict[str, Any] = {
             "name": name,
             "latitude": latitude,
@@ -117,9 +144,9 @@ class ZoneService:
         Args:
             zone_id: Zone ID to update (required)
             name: New zone name (optional)
-            latitude: New latitude (optional)
-            longitude: New longitude (optional)
-            radius: New radius in meters (optional)
+            latitude: New latitude (optional, -90 to 90)
+            longitude: New longitude (optional, -180 to 180)
+            radius: New radius in meters (optional, must be positive)
             icon: New icon (optional, use "" to clear)
             passive: New passive state (optional)
 
@@ -130,6 +157,9 @@ class ZoneService:
             NotFoundError: If zone not found
             ValidationError: If name already used or invalid parameters
         """
+        # Validate coordinates and radius if provided
+        self._validate_coordinates(latitude, longitude, radius)
+
         # Build request payload - only include fields that were specified
         payload: dict[str, Any] = {"zone_id": zone_id}
         if name is not None:
