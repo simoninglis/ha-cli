@@ -85,12 +85,23 @@ def list_repairs(
             if porcelain:
                 assert formatter is not None
                 data = [r.to_dict() for r in repairs]
-                summary = await service.get_summary()
+                # Compute summary from displayed repairs for consistency
+                critical_count = sum(1 for r in repairs if r.severity == "critical")
+                error_count = sum(1 for r in repairs if r.severity == "error")
+                warning_count = sum(1 for r in repairs if r.severity == "warning")
+                fixable_count = sum(1 for r in repairs if r.is_fixable)
+                affected_domains = sorted({r.domain for r in repairs})
                 output = formatter.success(
                     data,
                     metadata={
                         "total_count": len(repairs),
-                        **summary,
+                        "total_repairs": len(repairs),
+                        "critical_count": critical_count,
+                        "error_count": error_count,
+                        "warning_count": warning_count,
+                        "fixable_count": fixable_count,
+                        "affected_domains": affected_domains,
+                        "include_ignored": include_ignored,
                     },
                     suggestions={
                         "common_actions": [
@@ -117,25 +128,35 @@ def list_repairs(
 
                 for repair in repairs:
                     severity_style = SEVERITY_COLORS.get(repair.severity, "white")
+                    # Handle None (unknown) separately from False (not fixable)
+                    if repair.is_fixable is True:
+                        fixable_display = "Yes"
+                    elif repair.is_fixable is False:
+                        fixable_display = "No"
+                    else:
+                        fixable_display = "-"
                     table.add_row(
                         f"[{severity_style}]{repair.severity.upper()}[/{severity_style}]",
                         repair.domain,
                         repair.issue_id,
-                        "Yes" if repair.is_fixable else "No",
+                        fixable_display,
                         repair.created_display,
                     )
 
                 console.print(table)
 
-                # Summary line
-                summary = await service.get_summary()
+                # Summary line - compute from displayed repairs, not get_summary()
+                critical_count = sum(1 for r in repairs if r.severity == "critical")
+                error_count = sum(1 for r in repairs if r.severity == "error")
+                warning_count = sum(1 for r in repairs if r.severity == "warning")
+
                 parts = []
-                if summary["critical_count"]:
-                    parts.append(f"{summary['critical_count']} critical")
-                if summary["error_count"]:
-                    parts.append(f"{summary['error_count']} errors")
-                if summary["warning_count"]:
-                    parts.append(f"{summary['warning_count']} warnings")
+                if critical_count:
+                    parts.append(f"{critical_count} critical")
+                if error_count:
+                    parts.append(f"{error_count} errors")
+                if warning_count:
+                    parts.append(f"{warning_count} warnings")
 
                 summary_text = ", ".join(parts) if parts else "0 issues"
                 console.print(f"\nTotal: {len(repairs)} repairs ({summary_text})")
