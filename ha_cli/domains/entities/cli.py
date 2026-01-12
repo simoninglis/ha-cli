@@ -280,6 +280,7 @@ def state(
         ha-cli entities state climate.lounge --porcelain
     """
     setup_logging(debug)
+    set_porcelain_mode(porcelain)
 
     # Validate mutually exclusive flags
     if value_only and porcelain:
@@ -1351,7 +1352,8 @@ def delete(
         ha-cli entities delete --domain sensor --dry-run
     """
     setup_logging(debug)
-    
+    set_porcelain_mode(porcelain)
+
     # Validate mutually exclusive flags
     output_flags = sum([json_output, porcelain])
     if output_flags > 1:
@@ -1478,15 +1480,26 @@ def delete(
                         return
                 
                 # Confirm deletion if not forced
-                if not force and not porcelain:
-                    console.print()
-                    console.print("[bold red]⚠ WARNING:[/bold red] Entity deletion is permanent and cannot be undone!")
-                    console.print("[yellow]Note:[/yellow] Some entities may be automatically recreated by their integration")
-                    
-                    confirm = typer.confirm(f"Are you sure you want to delete {len(entities_to_delete)} entities?")
-                    if not confirm:
-                        console.print("[yellow]Deletion cancelled[/yellow]")
-                        return
+                # SAFETY: porcelain/json modes require --force for destructive operations
+                if not force:
+                    if porcelain or json_output:
+                        # Automation modes must explicitly opt-in to destructive operations
+                        error_msg = "Destructive delete operation requires --force flag when using --porcelain or --json"
+                        if porcelain and formatter:
+                            write_output(formatter.error(Exception(error_msg), error_code="FORCE_REQUIRED"))
+                        else:
+                            console.print(f"[red]Error:[/red] {error_msg}")
+                        sys.exit(EXIT_USAGE_ERROR)
+                    else:
+                        # Interactive mode - prompt for confirmation
+                        console.print()
+                        console.print("[bold red]⚠ WARNING:[/bold red] Entity deletion is permanent and cannot be undone!")
+                        console.print("[yellow]Note:[/yellow] Some entities may be automatically recreated by their integration")
+
+                        confirm = typer.confirm(f"Are you sure you want to delete {len(entities_to_delete)} entities?")
+                        if not confirm:
+                            console.print("[yellow]Deletion cancelled[/yellow]")
+                            return
                 
                 # Execute deletions
                 console.print(f"[cyan]Deleting {len(entities_to_delete)} entities...[/cyan]")
