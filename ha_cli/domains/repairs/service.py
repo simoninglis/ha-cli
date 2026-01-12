@@ -1,13 +1,10 @@
 """Service layer for repairs domain."""
 
-import logging
 from typing import Any, cast
 
 from ...common.client import HAClient
 from ...common.exceptions import NotFoundError
 from .models import Repair
-
-logger = logging.getLogger(__name__)
 
 
 class RepairService:
@@ -124,8 +121,8 @@ class RepairService:
         error_count = sum(1 for r in repairs if r.severity == "error")
         warning_count = sum(1 for r in repairs if r.severity == "warning")
 
-        # Count fixable
-        fixable_count = sum(1 for r in repairs if r.is_fixable)
+        # Count fixable (use 'is True' for type-strict counting)
+        fixable_count = sum(1 for r in repairs if r.is_fixable is True)
 
         # Get unique domains
         domains = sorted({r.domain for r in repairs})

@@ -36,24 +36,25 @@ SEVERITY_COLORS = {
 }
 
 
-def _parse_repair_id(repair_id: str) -> tuple[str, str]:
+def _parse_repair_id(repair_id: str) -> tuple[str, str] | None:
     """Parse domain/issue_id string into components.
 
     Args:
         repair_id: String in format "domain/issue_id"
 
     Returns:
-        Tuple of (domain, issue_id)
-
-    Raises:
-        typer.BadParameter: If format is invalid
+        Tuple of (domain, issue_id) or None if format is invalid
     """
+    repair_id = repair_id.strip()
     if "/" not in repair_id:
-        raise typer.BadParameter(
-            f"Invalid repair ID format: '{repair_id}'. Expected format: domain/issue_id"
-        )
+        return None
     parts = repair_id.split("/", 1)
-    return parts[0], parts[1]
+    domain = parts[0].strip()
+    issue_id = parts[1].strip()
+    # Both parts must be non-empty
+    if not domain or not issue_id:
+        return None
+    return domain, issue_id
 
 
 @app.command("list")
@@ -89,13 +90,13 @@ def list_repairs(
                 critical_count = sum(1 for r in repairs if r.severity == "critical")
                 error_count = sum(1 for r in repairs if r.severity == "error")
                 warning_count = sum(1 for r in repairs if r.severity == "warning")
-                fixable_count = sum(1 for r in repairs if r.is_fixable)
+                # Use 'is True' for type-strict counting (None != True)
+                fixable_count = sum(1 for r in repairs if r.is_fixable is True)
                 affected_domains = sorted({r.domain for r in repairs})
                 output = formatter.success(
                     data,
                     metadata={
                         "total_count": len(repairs),
-                        "total_repairs": len(repairs),
                         "critical_count": critical_count,
                         "error_count": error_count,
                         "warning_count": warning_count,
@@ -181,11 +182,22 @@ def show_repair(
     setup_logging(debug)
     set_porcelain_mode(porcelain)
 
-    domain, issue_id = _parse_repair_id(repair_id)
-
     async def _show() -> None:
         formatter = PorcelainFormatter("repairs show") if porcelain else None
 
+        # Parse repair_id inside async for porcelain error handling
+        parsed = _parse_repair_id(repair_id)
+        if parsed is None:
+            error_msg = f"Invalid repair ID format: '{repair_id}'. Expected: domain/issue_id"
+            if porcelain:
+                assert formatter is not None
+                output = formatter.error(error_msg, error_code="INVALID_FORMAT")
+                write_output(output)
+            else:
+                console.print(f"[red]Error:[/red] {error_msg}")
+            sys.exit(EXIT_USAGE_ERROR)
+
+        domain, issue_id = parsed
         url_final, token_final = get_client_config(url, token)
 
         async with HAClient(url_final, token_final) as client:
@@ -271,11 +283,22 @@ def ignore_repair(
     setup_logging(debug)
     set_porcelain_mode(porcelain)
 
-    domain, issue_id = _parse_repair_id(repair_id)
-
     async def _ignore() -> None:
         formatter = PorcelainFormatter("repairs ignore") if porcelain else None
 
+        # Parse repair_id inside async for porcelain error handling
+        parsed = _parse_repair_id(repair_id)
+        if parsed is None:
+            error_msg = f"Invalid repair ID format: '{repair_id}'. Expected: domain/issue_id"
+            if porcelain:
+                assert formatter is not None
+                output = formatter.error(error_msg, error_code="INVALID_FORMAT")
+                write_output(output)
+            else:
+                console.print(f"[red]Error:[/red] {error_msg}")
+            sys.exit(EXIT_USAGE_ERROR)
+
+        domain, issue_id = parsed
         url_final, token_final = get_client_config(url, token)
 
         async with HAClient(url_final, token_final) as client:
@@ -329,11 +352,22 @@ def unignore_repair(
     setup_logging(debug)
     set_porcelain_mode(porcelain)
 
-    domain, issue_id = _parse_repair_id(repair_id)
-
     async def _unignore() -> None:
         formatter = PorcelainFormatter("repairs unignore") if porcelain else None
 
+        # Parse repair_id inside async for porcelain error handling
+        parsed = _parse_repair_id(repair_id)
+        if parsed is None:
+            error_msg = f"Invalid repair ID format: '{repair_id}'. Expected: domain/issue_id"
+            if porcelain:
+                assert formatter is not None
+                output = formatter.error(error_msg, error_code="INVALID_FORMAT")
+                write_output(output)
+            else:
+                console.print(f"[red]Error:[/red] {error_msg}")
+            sys.exit(EXIT_USAGE_ERROR)
+
+        domain, issue_id = parsed
         url_final, token_final = get_client_config(url, token)
 
         async with HAClient(url_final, token_final) as client:
