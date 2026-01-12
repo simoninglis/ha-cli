@@ -136,6 +136,57 @@ poetry run ha-cli labels entities <label_id>    # List entities with label
 2. `ha-cli labels assign light.kitchen_ceiling routine_kitchen_remote`
 3. Use in automations: `target: { label_id: routine_kitchen_remote }`
 
+### Repairs Commands (System Health)
+```bash
+poetry run ha-cli repairs list                  # List all active repairs
+poetry run ha-cli repairs list --all            # Include ignored/dismissed repairs
+poetry run ha-cli repairs show <domain>/<id>    # Show repair details
+poetry run ha-cli repairs ignore <domain>/<id>  # Mark repair as ignored
+poetry run ha-cli repairs unignore <domain>/<id> # Unmark repair as ignored
+```
+
+**Repair ID Format:** `<domain>/<issue_id>` (e.g., `homeassistant/deprecated_yaml`, `zwave_js/node_not_ready`)
+
+**Severity Levels:**
+- `critical` - Immediate action required
+- `error` - Action needed soon
+- `warning` - Informational, non-blocking
+
+**Use Cases:**
+- Automated monitoring scripts
+- Integration with alerting systems
+- Quick diagnosis from terminal
+- Porcelain output for Claude Code workflows
+
+### Zones Commands (Presence Detection)
+```bash
+poetry run ha-cli zones list                    # List all zones with coordinates
+poetry run ha-cli zones show <zone_id>          # Show zone details with Google Maps link
+poetry run ha-cli zones create <name> --lat <lat> --lon <lon>  # Create new zone
+poetry run ha-cli zones create "Work" --lat -27.45 --lon 153.03 --radius 200 --icon mdi:briefcase
+poetry run ha-cli zones update <zone_id> --lat <lat> --lon <lon>  # Update zone location
+poetry run ha-cli zones update school --radius 200  # Update just the radius
+poetry run ha-cli zones delete <zone_id>        # Delete zone (with confirmation)
+poetry run ha-cli zones delete <zone_id> -f     # Delete zone (skip confirmation)
+```
+
+**Zone Options:**
+- `--lat`, `-y`: Latitude (-90 to 90)
+- `--lon`, `-x`: Longitude (-180 to 180)
+- `--radius`, `-r`: Radius in meters (default: 100, must be positive)
+- `--icon`, `-i`: Icon (e.g., `mdi:school`, `mdi:briefcase`)
+- `--passive`, `-p`: Hide from UI and device tracker
+
+**Notes:**
+- The "home" zone cannot be deleted (HA restriction)
+- Zones are used by Companion App for GPS-based presence detection
+- WebSocket API uses `zone/list`, `zone/create`, etc. (NOT `config/zone_registry/*`)
+
+**Example: Update school zone location:**
+```bash
+ha-cli zones update school --lat -27.516409 --lon 153.072904 --radius 200
+```
+
 ### Entity Commands
 ```bash
 poetry run ha-cli entities list                   # List all entities
