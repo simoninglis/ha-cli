@@ -6,6 +6,67 @@ from datetime import datetime
 from typing import Any
 
 
+def _str_or_none(value: Any) -> str | None:
+    """Convert value to string or None.
+
+    Args:
+        value: Any value that might be a string
+
+    Returns:
+        String representation or None if value is None/empty
+    """
+    if value is None:
+        return None
+    return str(value) if value else None
+
+
+def _parse_bool(value: Any, default: bool) -> bool:
+    """Parse a value as boolean with proper type handling.
+
+    Args:
+        value: Any value that should be interpreted as boolean
+        default: Default value if value is None
+
+    Returns:
+        Boolean value
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    # Handle string "true"/"false" from API edge cases
+    if isinstance(value, str):
+        return value.lower() in ("true", "1", "yes")
+    # Fallback for other types
+    return bool(value)
+
+
+def _parse_optional_bool(value: Any) -> bool | None:
+    """Parse a value as optional boolean (can be None, True, or False).
+
+    Args:
+        value: Any value that might be a boolean
+
+    Returns:
+        Boolean value or None if value is None or unrecognized
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    # Handle string "true"/"false" from API edge cases
+    if isinstance(value, str):
+        lower_val = value.lower()
+        if lower_val in ("true", "1", "yes"):
+            return True
+        if lower_val in ("false", "0", "no"):
+            return False
+        # Unknown string - preserve tri-state by returning None
+        return None
+    # For other types (int, etc.), use standard bool conversion
+    return bool(value)
+
+
 @dataclass
 class Repair:
     """Home Assistant repair issue model.
@@ -41,24 +102,37 @@ class Repair:
         """
         # Parse created timestamp if present
         created = None
-        if data.get("created"):
-            with contextlib.suppress(ValueError, AttributeError):
+        created_raw = data.get("created")
+        if created_raw:
+            with contextlib.suppress(ValueError, AttributeError, TypeError):
                 # HA returns ISO format timestamps
-                created = datetime.fromisoformat(data["created"].replace("Z", "+00:00"))
+                created_str = str(created_raw) if created_raw else ""
+                if created_str:
+                    created = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+
+        # Type-safe extraction with coercion for required string fields
+        domain = data.get("domain")
+        issue_id = data.get("issue_id")
+        severity_raw = data.get("severity")
+
+        # Normalize severity to lowercase for consistent matching
+        severity = str(severity_raw).lower() if severity_raw is not None else "warning"
+        if severity not in ("critical", "error", "warning"):
+            severity = "warning"  # Default unknown severities
 
         return cls(
-            domain=data.get("domain", ""),
-            issue_id=data.get("issue_id", ""),
-            active=data.get("active", True),
-            severity=data.get("severity", "warning"),
-            is_fixable=data.get("is_fixable"),
-            is_persistent=data.get("is_persistent", False),
-            breaks_in_ha_version=data.get("breaks_in_ha_version"),
+            domain=str(domain) if domain is not None else "",
+            issue_id=str(issue_id) if issue_id is not None else "",
+            active=_parse_bool(data.get("active"), default=True),
+            severity=severity,
+            is_fixable=_parse_optional_bool(data.get("is_fixable")),
+            is_persistent=_parse_bool(data.get("is_persistent"), default=False),
+            breaks_in_ha_version=_str_or_none(data.get("breaks_in_ha_version")),
             created=created,
-            dismissed_version=data.get("dismissed_version"),
-            issue_domain=data.get("issue_domain"),
-            learn_more_url=data.get("learn_more_url"),
-            translation_key=data.get("translation_key"),
+            dismissed_version=_str_or_none(data.get("dismissed_version")),
+            issue_domain=_str_or_none(data.get("issue_domain")),
+            learn_more_url=_str_or_none(data.get("learn_more_url")),
+            translation_key=_str_or_none(data.get("translation_key")),
             translation_placeholders=data.get("translation_placeholders"),
             data=data.get("data"),
         )

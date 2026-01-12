@@ -6,6 +6,7 @@ import sys
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from ...common.cli_utils import (
@@ -16,8 +17,8 @@ from ...common.cli_utils import (
 )
 from ...common.client import HAClient
 from ...common.config import get_client_config
-from ...common.exceptions import EXIT_USAGE_ERROR, NotFoundError
-from ...common.porcelain import PorcelainFormatter
+from ...common.exceptions import EXIT_USAGE_ERROR, NotFoundError, ValidationError
+from ...common.porcelain import PorcelainFormatter, create_home_assistant_metadata
 from .service import RepairService
 
 app = typer.Typer(
@@ -81,7 +82,16 @@ def list_repairs(
 
         async with HAClient(url_final, token_final) as client:
             service = RepairService(client)
-            repairs = await service.list_repairs(include_ignored=include_ignored)
+            try:
+                repairs = await service.list_repairs(include_ignored=include_ignored)
+            except ValidationError as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="VALIDATION_ERROR")
+                    write_output(output)
+                else:
+                    console.print(f"[red]Error:[/red] {escape(str(e))}")
+                sys.exit(EXIT_USAGE_ERROR)
 
             if porcelain:
                 assert formatter is not None
@@ -103,6 +113,9 @@ def list_repairs(
                         "fixable_count": fixable_count,
                         "affected_domains": affected_domains,
                         "include_ignored": include_ignored,
+                        "home_assistant": create_home_assistant_metadata(
+                            url_final, "websocket"
+                        ),
                     },
                     suggestions={
                         "common_actions": [
@@ -138,8 +151,8 @@ def list_repairs(
                         fixable_display = "-"
                     table.add_row(
                         f"[{severity_style}]{repair.severity.upper()}[/{severity_style}]",
-                        repair.domain,
-                        repair.issue_id,
+                        escape(repair.domain),
+                        escape(repair.issue_id),
                         fixable_display,
                         repair.created_display,
                     )
@@ -188,12 +201,13 @@ def show_repair(
         # Parse repair_id inside async for porcelain error handling
         parsed = _parse_repair_id(repair_id)
         if parsed is None:
-            error_msg = f"Invalid repair ID format: '{repair_id}'. Expected: domain/issue_id"
             if porcelain:
                 assert formatter is not None
+                error_msg = f"Invalid repair ID format: '{repair_id}'. Expected: domain/issue_id"
                 output = formatter.error(error_msg, error_code="INVALID_FORMAT")
                 write_output(output)
             else:
+                error_msg = f"Invalid repair ID format: '{escape(repair_id)}'. Expected: domain/issue_id"
                 console.print(f"[red]Error:[/red] {error_msg}")
             sys.exit(EXIT_USAGE_ERROR)
 
@@ -202,7 +216,16 @@ def show_repair(
 
         async with HAClient(url_final, token_final) as client:
             service = RepairService(client)
-            repair = await service.get_repair(domain, issue_id)
+            try:
+                repair = await service.get_repair(domain, issue_id)
+            except ValidationError as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="VALIDATION_ERROR")
+                    write_output(output)
+                else:
+                    console.print(f"[red]Error:[/red] {escape(str(e))}")
+                sys.exit(EXIT_USAGE_ERROR)
 
             if not repair:
                 if porcelain:
@@ -213,7 +236,7 @@ def show_repair(
                     )
                     write_output(output)
                 else:
-                    console.print(f"[red]Error:[/red] Repair '{repair_id}' not found")
+                    console.print(f"[red]Error:[/red] Repair '{escape(repair_id)}' not found")
                 sys.exit(EXIT_USAGE_ERROR)
 
             if porcelain:
@@ -234,7 +257,12 @@ def show_repair(
 
                 output = formatter.success(
                     repair.to_dict(),
-                    metadata={"repair_id": repair.full_id},
+                    metadata={
+                        "repair_id": repair.full_id,
+                        "home_assistant": create_home_assistant_metadata(
+                            url_final, "websocket"
+                        ),
+                    },
                     suggestions={"common_actions": suggestions_list},
                 )
                 write_output(output)
@@ -242,12 +270,12 @@ def show_repair(
                 write_output(json.dumps(repair.to_dict(), indent=2))
             else:
                 severity_style = SEVERITY_COLORS.get(repair.severity, "white")
-                console.print(f"\n[bold cyan]Repair: {repair.full_id}[/bold cyan]")
+                console.print(f"\n[bold cyan]Repair: {escape(repair.full_id)}[/bold cyan]")
                 console.print(
                     f"  Severity: [{severity_style}]{repair.severity.upper()}[/{severity_style}]"
                 )
-                console.print(f"  Domain: {repair.domain}")
-                console.print(f"  Issue ID: {repair.issue_id}")
+                console.print(f"  Domain: {escape(repair.domain)}")
+                console.print(f"  Issue ID: {escape(repair.issue_id)}")
                 console.print(f"  Active: {'Yes' if repair.active else 'No (ignored)'}")
                 console.print(
                     f"  Fixable: {'Yes' if repair.is_fixable else 'No' if repair.is_fixable is False else 'Unknown'}"
@@ -257,12 +285,12 @@ def show_repair(
 
                 if repair.breaks_in_ha_version:
                     console.print(
-                        f"  [yellow]Breaks in HA version: {repair.breaks_in_ha_version}[/yellow]"
+                        f"  [yellow]Breaks in HA version: {escape(repair.breaks_in_ha_version)}[/yellow]"
                     )
                 if repair.issue_domain:
-                    console.print(f"  Issue Domain: {repair.issue_domain}")
+                    console.print(f"  Issue Domain: {escape(repair.issue_domain)}")
                 if repair.learn_more_url:
-                    console.print(f"\n  [dim]Learn more: {repair.learn_more_url}[/dim]")
+                    console.print(f"\n  [dim]Learn more: {escape(repair.learn_more_url)}[/dim]")
 
     asyncio.run(run_async_command(_show(), command="repairs show"))
 
@@ -289,12 +317,13 @@ def ignore_repair(
         # Parse repair_id inside async for porcelain error handling
         parsed = _parse_repair_id(repair_id)
         if parsed is None:
-            error_msg = f"Invalid repair ID format: '{repair_id}'. Expected: domain/issue_id"
             if porcelain:
                 assert formatter is not None
+                error_msg = f"Invalid repair ID format: '{repair_id}'. Expected: domain/issue_id"
                 output = formatter.error(error_msg, error_code="INVALID_FORMAT")
                 write_output(output)
             else:
+                error_msg = f"Invalid repair ID format: '{escape(repair_id)}'. Expected: domain/issue_id"
                 console.print(f"[red]Error:[/red] {error_msg}")
             sys.exit(EXIT_USAGE_ERROR)
 
@@ -311,7 +340,13 @@ def ignore_repair(
                     assert formatter is not None
                     output = formatter.success(
                         {"domain": domain, "issue_id": issue_id, "ignored": True},
-                        metadata={"repair_id": f"{domain}/{issue_id}", "action": "ignored"},
+                        metadata={
+                            "repair_id": f"{domain}/{issue_id}",
+                            "action": "ignored",
+                            "home_assistant": create_home_assistant_metadata(
+                                url_final, "websocket"
+                            ),
+                        },
                         suggestions={
                             "common_actions": [
                                 "List all repairs: ha-cli repairs list",
@@ -322,7 +357,7 @@ def ignore_repair(
                     write_output(output)
                 else:
                     console.print(
-                        f"[green]Ignored repair '[bold]{domain}/{issue_id}[/bold]'[/green]"
+                        f"[green]Ignored repair '[bold]{escape(domain)}/{escape(issue_id)}[/bold]'[/green]"
                     )
             except NotFoundError as e:
                 if porcelain:
@@ -330,7 +365,15 @@ def ignore_repair(
                     output = formatter.error(str(e), error_code="NOT_FOUND")
                     write_output(output)
                 else:
-                    console.print(f"[red]Error:[/red] {e}")
+                    console.print(f"[red]Error:[/red] {escape(str(e))}")
+                sys.exit(EXIT_USAGE_ERROR)
+            except ValidationError as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="VALIDATION_ERROR")
+                    write_output(output)
+                else:
+                    console.print(f"[red]Error:[/red] {escape(str(e))}")
                 sys.exit(EXIT_USAGE_ERROR)
 
     asyncio.run(run_async_command(_ignore(), command="repairs ignore"))
@@ -358,12 +401,13 @@ def unignore_repair(
         # Parse repair_id inside async for porcelain error handling
         parsed = _parse_repair_id(repair_id)
         if parsed is None:
-            error_msg = f"Invalid repair ID format: '{repair_id}'. Expected: domain/issue_id"
             if porcelain:
                 assert formatter is not None
+                error_msg = f"Invalid repair ID format: '{repair_id}'. Expected: domain/issue_id"
                 output = formatter.error(error_msg, error_code="INVALID_FORMAT")
                 write_output(output)
             else:
+                error_msg = f"Invalid repair ID format: '{escape(repair_id)}'. Expected: domain/issue_id"
                 console.print(f"[red]Error:[/red] {error_msg}")
             sys.exit(EXIT_USAGE_ERROR)
 
@@ -380,7 +424,13 @@ def unignore_repair(
                     assert formatter is not None
                     output = formatter.success(
                         {"domain": domain, "issue_id": issue_id, "ignored": False},
-                        metadata={"repair_id": f"{domain}/{issue_id}", "action": "unignored"},
+                        metadata={
+                            "repair_id": f"{domain}/{issue_id}",
+                            "action": "unignored",
+                            "home_assistant": create_home_assistant_metadata(
+                                url_final, "websocket"
+                            ),
+                        },
                         suggestions={
                             "common_actions": [
                                 "List all repairs: ha-cli repairs list",
@@ -391,7 +441,7 @@ def unignore_repair(
                     write_output(output)
                 else:
                     console.print(
-                        f"[green]Unignored repair '[bold]{domain}/{issue_id}[/bold]'[/green]"
+                        f"[green]Unignored repair '[bold]{escape(domain)}/{escape(issue_id)}[/bold]'[/green]"
                     )
             except NotFoundError as e:
                 if porcelain:
@@ -399,7 +449,15 @@ def unignore_repair(
                     output = formatter.error(str(e), error_code="NOT_FOUND")
                     write_output(output)
                 else:
-                    console.print(f"[red]Error:[/red] {e}")
+                    console.print(f"[red]Error:[/red] {escape(str(e))}")
+                sys.exit(EXIT_USAGE_ERROR)
+            except ValidationError as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(str(e), error_code="VALIDATION_ERROR")
+                    write_output(output)
+                else:
+                    console.print(f"[red]Error:[/red] {escape(str(e))}")
                 sys.exit(EXIT_USAGE_ERROR)
 
     asyncio.run(run_async_command(_unignore(), command="repairs unignore"))

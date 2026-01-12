@@ -3,7 +3,7 @@
 from typing import Any, cast
 
 from ...common.client import HAClient
-from ...common.exceptions import NotFoundError
+from ...common.exceptions import NotFoundError, ValidationError
 from .models import Repair
 
 
@@ -30,13 +30,32 @@ class RepairService:
 
         Returns:
             List of repairs sorted by severity (critical > error > warning)
+
+        Raises:
+            ValidationError: If response format is unexpected
         """
         result = await self.client._ws_call("repairs/list_issues")
+
+        # Validate response shape
+        if result is None:
+            result = {}
+        if not isinstance(result, dict):
+            raise ValidationError(f"Unexpected response type: {type(result).__name__}")
+
         result_dict = cast(dict[str, Any], result)
-        issues = result_dict.get("issues", [])
+        issues = result_dict.get("issues")
+
+        # Handle missing or invalid issues field
+        if issues is None:
+            issues = []
+        if not isinstance(issues, list):
+            raise ValidationError(f"Unexpected issues type: {type(issues).__name__}")
 
         repairs = []
         for item in issues:
+            # Validate each item is a dict before parsing
+            if not isinstance(item, dict):
+                continue  # Skip malformed entries gracefully
             repair = Repair.from_dict(item)
             # Filter out inactive/ignored unless requested
             if repair.active or include_ignored:
@@ -57,10 +76,15 @@ class RepairService:
 
         Returns:
             Repair if found, None otherwise
+
+        Note:
+            Matching is case-insensitive for user convenience.
         """
         repairs = await self.list_repairs(include_ignored=True)
+        domain_lower = domain.lower()
+        issue_id_lower = issue_id.lower()
         for repair in repairs:
-            if repair.domain == domain and repair.issue_id == issue_id:
+            if repair.domain.lower() == domain_lower and repair.issue_id.lower() == issue_id_lower:
                 return repair
         return None
 
@@ -107,31 +131,3 @@ class RepairService:
             issue_id=issue_id,
             ignore=False,
         )
-
-    async def get_summary(self) -> dict[str, Any]:
-        """Get summary statistics about repairs.
-
-        Returns:
-            Dictionary with repair statistics
-        """
-        repairs = await self.list_repairs(include_ignored=False)
-
-        # Count by severity
-        critical_count = sum(1 for r in repairs if r.severity == "critical")
-        error_count = sum(1 for r in repairs if r.severity == "error")
-        warning_count = sum(1 for r in repairs if r.severity == "warning")
-
-        # Count fixable (use 'is True' for type-strict counting)
-        fixable_count = sum(1 for r in repairs if r.is_fixable is True)
-
-        # Get unique domains
-        domains = sorted({r.domain for r in repairs})
-
-        return {
-            "total_repairs": len(repairs),
-            "critical_count": critical_count,
-            "error_count": error_count,
-            "warning_count": warning_count,
-            "fixable_count": fixable_count,
-            "affected_domains": domains,
-        }
