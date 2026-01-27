@@ -6,8 +6,8 @@ authors = ["Simbo <simbo@example.com>"]
 license = "MIT"
 readme = "README.md"
 packages = [{include = "ha_automation"}, {include = "ha_cli"}]
-repository = "https://github.com/singlis/ha-cli"
-homepage = "https://github.com/singlis/ha-cli"
+repository = "https://github.com/simoninglis/ha-cli"
+homepage = "https://github.com/simoninglis/ha-cli"
 keywords = ["home-assistant", "cli", "automation"]
 classifiers = [
     "Development Status :: 4 - Beta",
