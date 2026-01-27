@@ -8,10 +8,13 @@ Supports two modes:
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ...common.client import HAClient
+
+from ...common.defaults import DEFAULT_SSH_HOST, DEFAULT_SSH_USER
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +60,8 @@ class SystemService:
     def __init__(
         self,
         client: "HAClient | None" = None,
-        host: str = "10.0.20.35",
-        user: str = "root",
+        host: str = DEFAULT_SSH_HOST,
+        user: str = DEFAULT_SSH_USER,
     ) -> None:
         """Initialize with optional HAClient and SSH details.
 
@@ -81,6 +84,7 @@ class SystemService:
         service: str,
         entity_ids: list[str] | None = None,
         service_data: dict | None = None,
+        return_response: bool = False,
     ) -> dict:
         """Call a Home Assistant service via WebSocket API.
 
@@ -89,9 +93,12 @@ class SystemService:
             service: Service name (e.g., "turn_on", "turn_off")
             entity_ids: Optional list of entity IDs to target
             service_data: Optional additional service data
+            return_response: If True, request service response data (for services
+                that return data, e.g., music_assistant.search)
 
         Returns:
-            Result dict from service call
+            Result dict from service call. If return_response=True, includes
+            the "response" key with service-specific response data.
 
         Raises:
             HAAutomationError: If no API client or service call fails
@@ -116,6 +123,8 @@ class SystemService:
                 call_kwargs["service_data"] = service_data
             if target:
                 call_kwargs["target"] = target
+            if return_response:
+                call_kwargs["return_response"] = True
 
             result = await self.client._ws_call("call_service", **call_kwargs)
             return dict(result) if isinstance(result, dict) else {"success": True}
@@ -564,3 +573,86 @@ class SystemService:
             raise
         except Exception as e:
             raise HAAutomationError(f"Failed to get integrations: {e}") from e
+
+    async def get_logbook(
+        self,
+        hours: int = 2,
+        entity_id: str | None = None,
+        limit: int = 100,
+    ) -> tuple[list[dict], dict]:
+        """Get logbook entries via REST API.
+
+        Args:
+            hours: Number of hours to look back (default 2)
+            entity_id: Optional entity ID to filter by
+            limit: Maximum number of entries to return (0 for unlimited)
+
+        Returns:
+            Tuple of (entries, metadata) where metadata includes:
+            - start_time: ISO timestamp of query start
+            - end_time: ISO timestamp of query end
+            - count: Number of entries returned
+            - is_truncated: True if results were limited
+            - full_count: Total count before truncation (if truncated)
+
+        Raises:
+            ValidationError: If hours or limit are invalid
+            HAAutomationError: If no API client or query fails
+        """
+        from ...common.exceptions import HAAutomationError, ValidationError
+
+        if not self.client:
+            raise HAAutomationError("No API client available")
+
+        # Validate hours
+        if hours <= 0:
+            raise ValidationError("--hours must be greater than 0")
+
+        # Validate limit
+        if limit < 0:
+            raise ValidationError("--limit must be 0 or greater")
+
+        try:
+            end_time = datetime.now(UTC)
+            start_time = end_time - timedelta(hours=hours)
+
+            # Build endpoint and params
+            # Logbook API: GET /api/logbook/<start_time>
+            endpoint = f"/api/logbook/{start_time.isoformat()}"
+            params: dict[str, str] = {"end_time": end_time.isoformat()}
+            if entity_id:
+                params["entity"] = entity_id
+
+            result = await self.client._rest("GET", endpoint, params=params)
+
+            # Validate response
+            if not isinstance(result, list):
+                raise HAAutomationError(
+                    "Unexpected response from logbook API",
+                    details={"result_type": type(result).__name__},
+                )
+
+            # Apply limit if needed
+            full_count = len(result)
+            is_truncated = limit > 0 and full_count > limit
+            entries = result[:limit] if is_truncated else result
+
+            metadata = {
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "hours": hours,
+                "count": len(entries),
+                "is_truncated": is_truncated,
+            }
+            if entity_id:
+                metadata["entity_filter"] = entity_id
+            if is_truncated:
+                metadata["full_count"] = full_count
+                metadata["limit"] = limit
+
+            return entries, metadata
+
+        except HAAutomationError:
+            raise
+        except Exception as e:
+            raise HAAutomationError(f"Failed to get logbook: {e}") from e

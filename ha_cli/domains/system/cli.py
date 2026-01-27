@@ -18,6 +18,7 @@ from ...common.cli_utils import (
 )
 from ...common.client import HAClient
 from ...common.config import get_client_config
+from ...common.defaults import DEFAULT_SSH_HOST, DEFAULT_SSH_USER
 from ...common.exceptions import EXIT_HA_ERROR
 from ...common.porcelain import PorcelainFormatter
 from .service import SSHError, SystemService
@@ -32,17 +33,13 @@ app = typer.Typer(
 
 console = Console()
 
-# Default SSH connection settings
-DEFAULT_HOST = "10.0.20.35"
-DEFAULT_USER = "root"
-
 
 @app.command("restart")
 def restart(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
     token: str | None = typer.Option(None, "--token", help="Access token"),
-    host: str = typer.Option(DEFAULT_HOST, "--host", "-h", help="SSH host (fallback)"),
-    user: str = typer.Option(DEFAULT_USER, "--user", "-u", help="SSH user (fallback)"),
+    host: str = typer.Option(DEFAULT_SSH_HOST, "--host", "-h", help="SSH host (fallback)"),
+    user: str = typer.Option(DEFAULT_SSH_USER, "--user", "-u", help="SSH user (fallback)"),
     check_first: bool = typer.Option(
         True, "--check/--no-check", help="Check config before restart"
     ),
@@ -267,8 +264,8 @@ def reload(
 
 @app.command("check")
 def check_config(
-    host: str = typer.Option(DEFAULT_HOST, "--host", "-h", help="Home Assistant host"),
-    user: str = typer.Option(DEFAULT_USER, "--user", "-u", help="SSH user"),
+    host: str = typer.Option(DEFAULT_SSH_HOST, "--host", "-h", help="Home Assistant host"),
+    user: str = typer.Option(DEFAULT_SSH_USER, "--user", "-u", help="SSH user"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -342,8 +339,8 @@ def logs(
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL (for --errors-only)"),
     token: str | None = typer.Option(None, "--token", help="Access token (for --errors-only)"),
-    host: str = typer.Option(DEFAULT_HOST, "--host", "-h", help="SSH host (for full logs)"),
-    user: str = typer.Option(DEFAULT_USER, "--user", "-u", help="SSH user (for full logs)"),
+    host: str = typer.Option(DEFAULT_SSH_HOST, "--host", "-h", help="SSH host (for full logs)"),
+    user: str = typer.Option(DEFAULT_SSH_USER, "--user", "-u", help="SSH user (for full logs)"),
     raw: bool = typer.Option(False, "--raw", help="Output raw logs without formatting"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
@@ -464,8 +461,8 @@ def logs(
 
 @app.command("info")
 def info(
-    host: str = typer.Option(DEFAULT_HOST, "--host", "-h", help="Home Assistant host"),
-    user: str = typer.Option(DEFAULT_USER, "--user", "-u", help="SSH user"),
+    host: str = typer.Option(DEFAULT_SSH_HOST, "--host", "-h", help="Home Assistant host"),
+    user: str = typer.Option(DEFAULT_SSH_USER, "--user", "-u", help="SSH user"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -527,6 +524,9 @@ def call(
         None, "--entity", "-e", help="Target entity ID(s) - can be repeated"
     ),
     data: str | None = typer.Option(None, "--data", "-d", help="JSON service data"),
+    return_response: bool = typer.Option(
+        False, "--return-response", "-r", help="Request response data from service"
+    ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
     token: str | None = typer.Option(None, "--token", help="Access token"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
@@ -543,6 +543,7 @@ def call(
         ha-cli system call climate.set_temperature --entity climate.lounge --data '{"temperature": 22}'
         ha-cli system call homeassistant.restart
         ha-cli system call notify.mobile_app_iphone --data '{"message": "Hello"}'
+        ha-cli system call music_assistant.search --data '{"query": "chill"}' --return-response
     """
     setup_logging(debug)
     set_porcelain_mode(porcelain)
@@ -584,6 +585,7 @@ def call(
                     service=service,
                     entity_ids=list(entity) if entity else None,
                     service_data=service_data,
+                    return_response=return_response,
                 )
 
                 if porcelain:
@@ -631,15 +633,15 @@ def call(
             except Exception as e:
                 if porcelain:
                     assert formatter is not None
-                    output = formatter.error(str(e), error_code="SERVICE_CALL_FAILED")
+                    # Pass exception object to preserve HAAutomationError.details
+                    output = formatter.error(e, error_code="SERVICE_CALL_FAILED")
                     write_output(output)
                 elif json_output:
-                    write_output(
-                        json.dumps(
-                            {"success": False, "error": str(e)},
-                            indent=2,
-                        )
-                    )
+                    from ...common.exceptions import HAAutomationError
+                    error_data: dict = {"success": False, "error": str(e)}
+                    if isinstance(e, HAAutomationError) and e.details:
+                        error_data["details"] = e.details
+                    write_output(json.dumps(error_data, indent=2))
                 else:
                     console.print(f"[red]✗[/red] Service call failed: {e}")
                 sys.exit(EXIT_HA_ERROR)
@@ -925,6 +927,138 @@ def integrations(
                 sys.exit(EXIT_HA_ERROR)
 
     asyncio.run(run_async_command(_integrations(), command="system integrations"))
+
+
+@app.command("logbook")
+def logbook(
+    hours: int = typer.Option(2, "--hours", "-H", help="Hours to look back"),
+    entity: str | None = typer.Option(None, "--entity", "-e", help="Filter by entity ID"),
+    limit: int = typer.Option(100, "--limit", "-n", help="Maximum entries (0 for unlimited)"),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Query logbook events.
+
+    Shows state changes and events from the Home Assistant logbook.
+    Useful for understanding what happened and when.
+
+    Examples:
+        ha-cli system logbook                              # Last 2 hours
+        ha-cli system logbook --hours 24                   # Last 24 hours
+        ha-cli system logbook --entity automation.lights   # Filter by entity
+        ha-cli system logbook --limit 50                   # Limit results
+        ha-cli system logbook --porcelain                  # Machine-readable output
+    """
+    setup_logging(debug)
+    set_porcelain_mode(porcelain)
+
+    async def _logbook() -> None:
+        formatter = PorcelainFormatter("system logbook") if porcelain else None
+
+        url_final, token_final = get_client_config(url, token)
+
+        async with HAClient(url_final, token_final) as client:
+            service = SystemService(client=client)
+
+            try:
+                entries, metadata = await service.get_logbook(
+                    hours=hours,
+                    entity_id=entity,
+                    limit=limit,
+                )
+
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.success(
+                        {
+                            "entries": entries,
+                        },
+                        metadata=metadata,
+                        suggestions={
+                            "common_actions": [
+                                "Filter by entity: ha-cli system logbook --entity <entity_id>",
+                                "More history: ha-cli system logbook --hours 24",
+                                "Entity history: ha-cli history get <entity_id>",
+                            ],
+                            "related_commands": [
+                                "ha-cli system logs",
+                                "ha-cli entities state <entity_id>",
+                            ],
+                        },
+                    )
+                    write_output(output)
+                elif json_output:
+                    write_output(
+                        json.dumps(
+                            {
+                                "entries": entries,
+                                **metadata,
+                            },
+                            indent=2,
+                        )
+                    )
+                else:
+                    # Human-readable output
+                    if not entries:
+                        time_desc = f"last {hours} hour{'s' if hours != 1 else ''}"
+                        entity_desc = f" for {entity}" if entity else ""
+                        console.print(f"[yellow]No logbook entries in {time_desc}{entity_desc}[/yellow]")
+                        return
+
+                    # Display entries
+                    title = f"Logbook (last {hours} hour{'s' if hours != 1 else ''})"
+                    if entity:
+                        title += f" [filter: {entity}]"
+                    console.print(f"\n[bold cyan]{title}[/bold cyan] ({len(entries)} entries)")
+                    if metadata.get("is_truncated"):
+                        console.print(f"[dim]Showing {len(entries)} of {metadata.get('full_count')} entries[/dim]")
+
+                    console.print()
+                    for entry in entries:
+                        # Format timestamp
+                        when = entry.get("when", "")
+                        if when:
+                            try:
+                                from datetime import datetime as dt
+                                ts = dt.fromisoformat(when.replace("Z", "+00:00"))
+                                when = ts.strftime("%Y-%m-%d %H:%M:%S")
+                            except Exception:
+                                logger.debug("Failed to parse timestamp: %s", when, exc_info=True)
+
+                        entity_id = entry.get("entity_id", "")
+                        name = entry.get("name", entity_id)
+                        state = entry.get("state", "")
+                        message = entry.get("message", "")
+
+                        # Format the entry
+                        if message:
+                            console.print(f"  [dim]{when}[/dim] {name}: {message}")
+                        elif state:
+                            console.print(f"  [dim]{when}[/dim] {name} → {state}")
+                        else:
+                            console.print(f"  [dim]{when}[/dim] {name}")
+
+            except Exception as e:
+                if porcelain:
+                    assert formatter is not None
+                    output = formatter.error(e, error_code="LOGBOOK_ERROR")
+                    write_output(output)
+                elif json_output:
+                    from ...common.exceptions import HAAutomationError
+                    error_data: dict = {"success": False, "error": str(e)}
+                    if isinstance(e, HAAutomationError) and e.details:
+                        error_data["details"] = e.details
+                    write_output(json.dumps(error_data, indent=2))
+                else:
+                    console.print(f"[red]✗[/red] Failed to get logbook: {e}")
+                sys.exit(EXIT_HA_ERROR)
+
+    asyncio.run(run_async_command(_logbook(), command="system logbook"))
 
 
 @app.command("version")

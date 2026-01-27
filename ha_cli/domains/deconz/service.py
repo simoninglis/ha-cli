@@ -6,6 +6,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
+from ...common.defaults import DEFAULT_SSH_HOST
+
 logger = logging.getLogger(__name__)
 
 # SSH connection options for safety (consistent with system domain)
@@ -62,7 +64,7 @@ class DeconzDevice:
 class DeconzService:
     """Service for interacting with deCONZ API."""
 
-    def __init__(self, ssh_host: str = "homeassistant"):
+    def __init__(self, ssh_host: str = DEFAULT_SSH_HOST):
         self.ssh_host = ssh_host
         self._config: DeconzConfig | None = None
 

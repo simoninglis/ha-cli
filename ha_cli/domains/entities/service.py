@@ -12,6 +12,7 @@ from typing import Any
 import websockets
 
 from ...common.client import HAClient
+from ...common.defaults import DEFAULT_FILE_EDITOR_URL
 from ...common.exceptions import HAAutomationError, NotFoundError, WebSocketError
 from ...common.utils import compile_user_regex
 from .models import (
@@ -641,22 +642,25 @@ class EntityService:
         """Try to access automation files via File Editor API.
 
         Uses httpx for HTTP requests (consistent with rest of codebase).
+        Requires HA_FILE_EDITOR_URL environment variable to be set.
         """
+        # Skip if File Editor URL not configured
+        if not DEFAULT_FILE_EDITOR_URL:
+            logger.debug("HA_FILE_EDITOR_URL not set, skipping File Editor API access")
+            return []
+
         references = []
 
         try:
             import httpx
             import yaml
 
-            # Try multiple access methods for File Editor
-            token = getattr(self.client, '_token', '')
+            # Use configured File Editor URL
             access_methods = [
-                # Method 1: Direct access on port 3218 (if enabled)
-                {"base_url": "http://10.0.20.35:3218", "headers": {}},
-                # Method 2: Through Home Assistant API proxy (if ingress available)
-                {"base_url": "http://10.0.20.35:8123/api/hassio_ingress", "headers": {"Authorization": f"Bearer {token}"}},
-                # Method 3: Try without authentication first (some configurations don't require it)
-                {"base_url": "http://10.0.20.35:3218", "headers": {"User-Agent": "ha-cli/1.0"}},
+                # Method 1: Direct access with configured URL
+                {"base_url": DEFAULT_FILE_EDITOR_URL, "headers": {}},
+                # Method 2: Try with User-Agent header
+                {"base_url": DEFAULT_FILE_EDITOR_URL, "headers": {"User-Agent": "ha-cli/1.0"}},
             ]
 
             # Common automation file locations

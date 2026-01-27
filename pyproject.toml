@@ -6,6 +6,15 @@ authors = ["Simbo <simbo@example.com>"]
 license = "MIT"
 readme = "README.md"
 packages = [{include = "ha_automation"}, {include = "ha_cli"}]
+repository = "https://github.com/singlis/ha-cli"
+homepage = "https://github.com/singlis/ha-cli"
+keywords = ["home-assistant", "cli", "automation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+]
 
 [tool.poetry.scripts]
 ha-cli = "ha_cli.__main__:main"
