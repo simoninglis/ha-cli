@@ -86,9 +86,11 @@ Each automation state includes:
   - `max`: Maximum allowed instances
 
 ### Configuration
-The scripts read Home Assistant connection details from the `.mcp.json` file in the project root:
-- URL from `mcpServers.home-assistant.env.HOME_ASSISTANT_URL`
-- Token from `mcpServers.home-assistant.args` (extracts Bearer token)
+The scripts read Home Assistant connection details from environment variables or `.env` file:
+- `HOME_ASSISTANT_URL` or `HA_URL` - Home Assistant base URL
+- `HOME_ASSISTANT_TOKEN` or `HA_TOKEN` - Long-lived access token
+
+See `ENV_SETUP.md` for configuration details.
 
 ## Integration with ha-cli
 

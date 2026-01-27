@@ -2,7 +2,7 @@
 
 Multi-domain command-line tool for managing Home Assistant configurations including automations, dashboards, and more.
 
-## Latest Updates (v0.3.2)
+## Latest Updates (v0.3.1)
 
 - **🚀 Porcelain Mode**: New `--porcelain` flag provides structured JSON output optimized for Claude Code and automation tools
 - **🧠 Intelligent Analysis**: Automatic complexity analysis, entity dependency mapping, and performance optimization suggestions
@@ -136,7 +136,7 @@ The tool can be configured in multiple ways (in order of precedence):
 
 1. **Command-line arguments** - Highest priority
 2. **Environment variables**
-3. **Configuration file** - `~/.config/ha-automation/config.json`
+3. **Configuration file** - `~/.config/home-assistant-cli/config.json`
 4. **Interactive prompt** - If no config found
 
 ### Environment Variables
@@ -160,11 +160,11 @@ Environment variables can be set in a `.env` file in your working directory.
 
 ### Configuration File
 
-Create `~/.config/ha-automation/config.json`:
+Create `~/.config/home-assistant-cli/config.json`:
 
 ```json
 {
-  "url": "http://10.0.20.35:8123",
+  "url": "http://homeassistant.local:8123",
   "token": "your-long-lived-access-token"
 }
 ```

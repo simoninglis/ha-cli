@@ -43,7 +43,7 @@ Metadata typically includes:
 {
   "response_time_ms": 74,       // Response time in milliseconds
   "home_assistant": {           // Home Assistant connection info (optional)
-    "url": "http://10.0.20.35:8123",
+    "url": "http://homeassistant.local:8123",
     "connection_method": "rest|websocket"
   }
   // ... command-specific metadata

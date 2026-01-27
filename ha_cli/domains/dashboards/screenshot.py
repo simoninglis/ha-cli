@@ -30,7 +30,7 @@ def get_credentials() -> tuple[str, str, str]:
     load_dotenv()
 
     # Support both HA_URL and HOME_ASSISTANT_URL for consistency with other CLI commands
-    url = os.environ.get("HOME_ASSISTANT_URL") or os.environ.get("HA_URL", "http://10.0.20.35:8123")
+    url = os.environ.get("HOME_ASSISTANT_URL") or os.environ.get("HA_URL", "http://homeassistant.local:8123")
     username = os.environ.get("HA_USERNAME", "")
     password = os.environ.get("HA_PASSWORD", "")
 

@@ -1,8 +1,8 @@
 # Home Assistant WebSocket API Testing Results
 
-**Tested against**: Home Assistant 2025.6.0 at 10.0.20.35:8123  
-**Date**: 2025-06-13  
-**Connection**: WebSocket API at `ws://10.0.20.35:8123/api/websocket`
+**Tested against**: Home Assistant 2025.6.0
+**Date**: 2025-06-13
+**Connection**: WebSocket API at `ws://<your-ha-host>:8123/api/websocket`
 
 ## Executive Summary
 

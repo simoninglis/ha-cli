@@ -12,7 +12,7 @@ The ha-cli tool now supports automatic loading of environment variables from a `
 2. Edit `.env` with your Home Assistant credentials:
    ```bash
    # Your Home Assistant URL
-   HOME_ASSISTANT_URL=http://10.0.20.35:8123
+   HOME_ASSISTANT_URL=http://homeassistant.local:8123
    
    # Your Long-Lived Access Token
    HOME_ASSISTANT_TOKEN=your-token-here
@@ -25,7 +25,7 @@ The ha-cli tool now supports automatic loading of environment variables from a `
 The tool looks for credentials in this order:
 1. **Command line arguments** (`--url` and `--token`)
 2. **Environment variables** (including those from `.env` file)
-3. **Config file** (`~/.ha-cli/config.json`)
+3. **Config file** (`~/.config/home-assistant-cli/config.json`)
 4. **Interactive prompt** (if all else fails)
 
 ## Supported Environment Variables
@@ -45,7 +45,7 @@ The tool looks for credentials in this order:
 
 If you prefer not to use `.env` files, you can still export variables:
 ```bash
-export HOME_ASSISTANT_URL="http://10.0.20.35:8123"
+export HOME_ASSISTANT_URL="http://homeassistant.local:8123"
 export HOME_ASSISTANT_TOKEN="your-token-here"
 ```
 

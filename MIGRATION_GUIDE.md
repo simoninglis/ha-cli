@@ -15,10 +15,21 @@ The `ha-automation` command continues to work exactly as before. All your existi
 
 ## Installation
 
-### Using Poetry (Recommended)
+### Using pip (Recommended)
 
 ```bash
-cd tools/ha-automation-cli
+# From PyPI (when published)
+pip install ha-cli
+
+# Or from GitHub
+pip install git+https://github.com/singlis/ha-cli.git
+```
+
+### Using Poetry (Development)
+
+```bash
+git clone https://github.com/singlis/ha-cli.git
+cd ha-cli
 poetry install
 ```
 
@@ -75,7 +86,7 @@ ha-cli dashboards entities [url-path]
 
 Configuration remains the same. The tool uses the same:
 - Environment variables: `HA_URL`, `HA_TOKEN`
-- Config file: `~/.config/ha-cli/config.json`
+- Config file: `~/.config/home-assistant-cli/config.json`
 - Command-line options: `--url`, `--token`
 
 ## Python API Changes

@@ -6,30 +6,34 @@ This guide is for USING the ha-cli tool to manage Home Assistant configurations.
 Command-line interface for managing Home Assistant automations, dashboards, and other configurations. Use this tool alongside MCP for comprehensive Home Assistant control.
 
 ## Architecture
-- Home Assistant instance: 10.0.20.35:8123
-- MCP Server: Pre-configured on Home Assistant
-- Transport: SSE (Server-Sent Events)
-- Authentication: Long-Lived Access Token
-- Primary Interface: Claude Code with MCP tools
+- Home Assistant instance: Configure via `HA_URL` environment variable
+- Authentication: Long-Lived Access Token via `HA_TOKEN` environment variable
+- Config file: `~/.config/home-assistant-cli/config.json` (optional)
 
 ## Getting Credentials
 
 The ha-cli tool now supports automatic loading from `.env` files!
 
 ### Option 1: Use .env file (Recommended)
-1. A `.env` file has been created with credentials from `.mcp.json`
-2. The tool will automatically load these values - no export needed!
-3. See `ENV_SETUP.md` for details
+1. Copy `.env.example` to `.env`
+2. Fill in your Home Assistant URL and token
+3. The tool will automatically load these values - no export needed!
+4. See `ENV_SETUP.md` for details
 
-### Option 2: Manual setup
-1. **Find the Home Assistant URL and Token**: Check the `.mcp.json` file in the project root
-2. The URL is in `env.HOME_ASSISTANT_URL` 
-3. The token is in the `args` array after "Bearer"
-4. Use these values to set environment variables:
-   ```bash
-   export HA_URL="<url from .mcp.json>"
-   export HA_TOKEN="<token from .mcp.json>"
-   ```
+### Option 2: Environment variables
+```bash
+export HA_URL="http://homeassistant.local:8123"
+export HA_TOKEN="your-long-lived-access-token"
+```
+
+### Option 3: Config file
+Create `~/.config/home-assistant-cli/config.json`:
+```json
+{
+  "url": "http://homeassistant.local:8123",
+  "token": "your-long-lived-access-token"
+}
+```
 
 ## Installation & Running
 
@@ -47,9 +51,9 @@ poetry run ha-automation --help  # backward compatibility
 ## Quick Start
 
 ```bash
-# Set credentials from .mcp.json
-export HA_URL="http://10.0.20.35:8123"
-export HA_TOKEN="<token from .mcp.json>"
+# Set credentials (or use .env file)
+export HA_URL="http://homeassistant.local:8123"
+export HA_TOKEN="your-long-lived-access-token"
 
 # List automations (via WebSocket)
 poetry run ha-cli automations list
@@ -345,7 +349,7 @@ integration to be enabled (which most installations don't have).
 - Create/update/delete automations - use HA UI or edit `automations.yaml`
 
 ### Connection Issues
-- Verify credentials match those in `.mcp.json`
+- Verify credentials match those in `.env`
 - Check Home Assistant is accessible at the URL
 - Ensure the access token hasn't expired
 
@@ -376,7 +380,7 @@ See ha-rename documentation for full usage.
 
 ### Important Context
 - This tool is part of a larger entity renaming project
-- Always check credentials in `.mcp.json` first
+- Always check credentials in `.env` first
 - REST API may not be available for automations - use workarounds
 - For tool development, see `../CLAUDE.md`
 
