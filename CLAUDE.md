@@ -43,9 +43,6 @@ This tool uses Poetry. Always run commands with Poetry:
 # Run the CLI
 poetry run ha-cli --help
 poetry run ha-automation --help  # backward compatibility
-
-# Or use the convenience wrapper
-./ha-cli --help
 ```
 
 ## Quick Start

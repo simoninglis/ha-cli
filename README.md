@@ -71,7 +71,7 @@ Multi-domain command-line tool for managing Home Assistant configurations includ
 - Async/await architecture for performance
 - Rich terminal output with colors and tables
 - Comprehensive error handling and recovery
-- Extensive test coverage (301 tests)
+- Extensive test coverage (1,100+ tests)
 
 ## Installation
 
