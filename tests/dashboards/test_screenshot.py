@@ -65,7 +65,7 @@ class TestCredentials:
 
         url, username, password = get_credentials()
 
-        assert url == "http://10.0.20.35:8123"
+        assert url == "http://homeassistant.local:8123"
 
     def test_get_credentials_supports_ha_url(self, monkeypatch):
         """Test that HA_URL env var is supported as fallback."""

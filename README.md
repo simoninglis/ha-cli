@@ -447,7 +447,7 @@ Porcelain mode provides structured JSON output optimized for automation tools an
       "by_section": {"triggers": 2, "conditions": 1, "actions": 5}
     },
     "home_assistant": {
-      "url": "http://10.0.20.35:8123",
+      "url": "http://homeassistant.local:8123",
       "connection_method": "rest",
       "health": {"status": "healthy", "entities": 423, "components": 47}
     },
@@ -670,7 +670,7 @@ ha-automation control toggle bedroom_lights,kitchen_lights
 ### Using Environment Variables
 
 ```bash
-export HA_URL="http://10.0.20.35:8123"
+export HA_URL="http://homeassistant.local:8123"
 export HA_TOKEN="your-token-here"
 
 # Now you can use commands without --url/--token

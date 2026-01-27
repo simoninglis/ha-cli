@@ -19,7 +19,7 @@ if env_file.exists():
                 if key not in os.environ and not value.startswith("${"):
                     os.environ[key] = value
 
-HA_URL = os.environ.get("HOME_ASSISTANT_URL", "http://10.0.20.35:8123")
+HA_URL = os.environ.get("HOME_ASSISTANT_URL") or os.environ.get("HA_URL", "http://homeassistant.local:8123")
 HA_USERNAME = os.environ.get("HA_USERNAME", "")
 HA_PASSWORD = os.environ.get("HA_PASSWORD", "")
 

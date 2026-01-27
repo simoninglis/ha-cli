@@ -14,13 +14,13 @@ def main():
     dry_run = "--dry-run" in sys.argv or "-n" in sys.argv
     force = "--force" in sys.argv or "-f" in sys.argv
     
-    # Get credentials from environment or .mcp.json
-    ha_url = os.environ.get("HOME_ASSISTANT_URL", "http://10.0.20.35:8123")
-    ha_token = os.environ.get("HOME_ASSISTANT_TOKEN")
-    
+    # Get credentials from environment or .env file
+    ha_url = os.environ.get("HOME_ASSISTANT_URL") or os.environ.get("HA_URL", "http://homeassistant.local:8123")
+    ha_token = os.environ.get("HOME_ASSISTANT_TOKEN") or os.environ.get("HA_TOKEN")
+
     if not ha_token:
-        print("Error: HOME_ASSISTANT_TOKEN environment variable not set")
-        print("Please export it from the .mcp.json file in the project root")
+        print("Error: HOME_ASSISTANT_TOKEN or HA_TOKEN environment variable not set")
+        print("See ENV_SETUP.md for configuration details")
         sys.exit(1)
     
     print("Home Assistant Network Sensor Cleanup Tool")

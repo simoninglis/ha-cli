@@ -30,7 +30,7 @@ except Exception:
     HAS_CREDENTIALS = False
 
 # Default SSH settings for HA instance
-HA_HOST = os.environ.get("HA_HOST", "10.0.20.35")
+HA_HOST = os.environ.get("HA_HOST") or os.environ.get("HA_SSH_HOST", "homeassistant")
 HA_SSH_USER = os.environ.get("HA_SSH_USER", "root")
 
 

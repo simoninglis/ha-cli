@@ -13,7 +13,6 @@ From repository root (recommended):
     just smoke-test
 
 Or directly with pytest:
-    cd tools/ha-automation-cli
     poetry run pytest tests/test_smoke_frontend.py -v -m smoke
 
 Skip during regular unit test runs:
@@ -22,7 +21,7 @@ Skip during regular unit test runs:
 ## Requirements
 
 - HA_USERNAME and HA_PASSWORD in .env file (or environment)
-- Home Assistant accessible at HOME_ASSISTANT_URL (default: http://10.0.20.35:8123)
+- Home Assistant accessible at HOME_ASSISTANT_URL (default: http://homeassistant.local:8123)
 - Playwright browsers: poetry run playwright install chromium
 
 ## Integration
@@ -55,7 +54,7 @@ if env_file.exists():
                 if key not in os.environ and not value.startswith("${"):
                     os.environ[key] = value
 
-HA_URL = os.environ.get("HOME_ASSISTANT_URL", "http://10.0.20.35:8123")
+HA_URL = os.environ.get("HOME_ASSISTANT_URL", "http://homeassistant.local:8123")
 HA_USERNAME = os.environ.get("HA_USERNAME", "")
 HA_PASSWORD = os.environ.get("HA_PASSWORD", "")
 

@@ -55,3 +55,6 @@ dmypy.json
 
 # Dashboard backups
 dashboard_*.yaml
+
+# Entity dumps (may contain sensitive data)
+entities_*.json
