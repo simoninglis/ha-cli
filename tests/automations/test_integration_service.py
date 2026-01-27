@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ha_automation.client import HAClient
-from ha_automation.exceptions import AutomationNotFoundError, ValidationError
-from ha_automation.models import Automation
-from ha_automation.service import AutomationCRUD, AutomationWS
+from ha_cli.common.client import HAClient
+from ha_cli.common.exceptions import AutomationNotFoundError, ValidationError
+from ha_cli.domains.automations.models import Automation
+from ha_cli.domains.automations.service import AutomationCRUD, AutomationWS
 
 
 # Sample automation YAML for testing

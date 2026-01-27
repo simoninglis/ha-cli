@@ -13,18 +13,18 @@ dev: ## Install all dependencies including dev
 	poetry install
 
 lint: ## Run linting checks
-	poetry run ruff check ha_automation/ ha_cli/
-	poetry run mypy ha_automation/ ha_cli/
+	poetry run ruff check ha_cli/
+	poetry run mypy ha_cli/
 
 format: ## Format code
-	poetry run ruff format ha_automation/ ha_cli/
-	poetry run ruff check --fix ha_automation/ ha_cli/
+	poetry run ruff format ha_cli/
+	poetry run ruff check --fix ha_cli/
 
 test: ## Run tests
 	poetry run pytest tests/ -v
 
 coverage: ## Run tests with coverage
-	poetry run pytest tests/ --cov=ha_automation --cov-report=html --cov-report=term
+	poetry run pytest tests/ --cov=ha_cli --cov-report=html --cov-report=term
 
 build: ## Build the package
 	poetry build
@@ -40,11 +40,11 @@ clean: ## Clean build artifacts
 	find . -type f -name "*.pyc" -delete
 
 run: ## Run the CLI tool
-	poetry run ha-automation --help
+	poetry run ha-cli --help
 
 # Development shortcuts
 list: ## List automations (dev shortcut)
-	poetry run ha-automation list
+	poetry run ha-cli automations list
 
 shell: ## Open Python shell with project context
 	poetry run python

@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import ruamel.yaml
 
-from ha_automation.exceptions import NotFoundError, ValidationError
-from ha_automation.models import Automation
-from ha_automation.storage.file_automation_manager import FileAutomationManager
+from ha_cli.common.exceptions import NotFoundError, ValidationError
+from ha_cli.domains.automations.models import Automation
+from ha_cli.domains.automations.storage.file_automation_manager import FileAutomationManager
 
 
 @pytest.fixture

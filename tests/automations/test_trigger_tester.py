@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ha_automation.client import HAClient
-from ha_automation.trigger_tester import TriggerEvent, TriggerTester, TriggerTestResult
+from ha_cli.common.client import HAClient
+from ha_cli.domains.automations.trigger_tester import TriggerEvent, TriggerTester, TriggerTestResult
 
 
 class TestTriggerEvent:

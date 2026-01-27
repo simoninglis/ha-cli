@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ha_automation.exceptions import NotFoundError, ValidationError
-from ha_automation.models import Automation
-from ha_automation.storage.unified_automation_service import UnifiedAutomationService
+from ha_cli.common.exceptions import NotFoundError, ValidationError
+from ha_cli.domains.automations.models import Automation
+from ha_cli.domains.automations.storage.unified_automation_service import UnifiedAutomationService
 
 
 @pytest.fixture

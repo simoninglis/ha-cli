@@ -9,8 +9,8 @@ import httpx
 import websockets
 from websockets.exceptions import ConnectionClosedError
 
-from ha_automation.client import HAClient
-from ha_automation.exceptions import (
+from ha_cli.common.client import HAClient
+from ha_cli.common.exceptions import (
     AuthenticationError,
     ConnectionError,
     HAServerError,
@@ -129,7 +129,7 @@ class TestHAClientIntegration:
     @pytest.mark.asyncio
     async def test_rest_api_timeout(self, client):
         """Test REST API timeout error."""
-        from ha_automation.exceptions import TimeoutError
+        from ha_cli.common.exceptions import TimeoutError
         
         with patch('httpx.AsyncClient') as mock_httpx:
             mock_client = AsyncMock()

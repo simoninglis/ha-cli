@@ -2,7 +2,7 @@
 
 import pytest
 
-from ha_automation.storage.format_converter import FormatConverter
+from ha_cli.domains.automations.storage.format_converter import FormatConverter
 
 
 class TestFormatConverter:

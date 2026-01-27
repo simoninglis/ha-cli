@@ -2,8 +2,8 @@
 
 import pytest
 
-from ha_automation.models import Automation
-from ha_automation.storage.automation_type_detector import AutomationTypeDetector
+from ha_cli.domains.automations.models import Automation
+from ha_cli.domains.automations.storage.automation_type_detector import AutomationTypeDetector
 
 
 class TestAutomationTypeDetector:

@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ha_automation.client import HAClient
-from ha_automation.models import AutomationState
-from ha_automation.monitor import AutomationExecutionEvent, AutomationMonitor
+from ha_cli.common.client import HAClient
+from ha_cli.domains.automations.models import AutomationState
+from ha_cli.domains.automations.monitor import AutomationExecutionEvent, AutomationMonitor
 
 
 class TestAutomationMonitor:

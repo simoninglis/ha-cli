@@ -8,8 +8,8 @@ import pytest
 import websockets
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
-from ha_automation.client import HAClient
-from ha_automation.exceptions import AuthenticationError, TimeoutError, WebSocketError
+from ha_cli.common.client import HAClient
+from ha_cli.common.exceptions import AuthenticationError, TimeoutError, WebSocketError
 
 
 class TestWebSocketClient:
