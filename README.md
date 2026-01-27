@@ -75,25 +75,39 @@ Multi-domain command-line tool for managing Home Assistant configurations includ
 
 ## Installation
 
-### Using Poetry (Recommended)
+### Using pipx (Recommended)
 
 ```bash
-cd tools/ha-automation-cli
-poetry install
+# Install from GitHub (public)
+pipx install git+https://github.com/simoninglis/ha-cli.git
 
-# New multi-domain CLI
-poetry run ha-cli --help
+# Or install from Gitea (internal)
+pipx install git+https://prod-vm-gitea.internal.kellgari.com.au/singlis/ha-cli.git
 
-# Backward compatibility
-poetry run ha-automation --help
+# Run commands directly
+ha-cli --help
+ha-automation --help  # Backward compatibility alias
 ```
 
 ### Using pip
 
 ```bash
-cd tools/ha-automation-cli
-pip install -e .
-ha-automation --help
+# Install into a virtual environment (recommended)
+python3.11 -m venv ~/.venvs/ha-cli
+source ~/.venvs/ha-cli/bin/activate
+pip install git+https://github.com/simoninglis/ha-cli.git
+
+# Run commands
+ha-cli --help
+```
+
+### Development Installation
+
+```bash
+git clone https://github.com/simoninglis/ha-cli.git
+cd ha-cli
+poetry install
+poetry run ha-cli --help
 ```
 
 ## Understanding Automation Storage
@@ -127,8 +141,18 @@ The tool can be configured in multiple ways (in order of precedence):
 
 ### Environment Variables
 
-- `HA_URL` or `HOME_ASSISTANT_URL` - Home Assistant URL
+**Required:**
+- `HA_URL` or `HOME_ASSISTANT_URL` - Home Assistant URL (e.g., `http://homeassistant.local:8123`)
 - `HA_TOKEN` or `HOME_ASSISTANT_TOKEN` - Long-lived access token
+
+**Optional (for SSH-based commands like `system logs`):**
+- `HA_SSH_HOST` - SSH host for log/config commands (default: `homeassistant`)
+- `HA_SSH_USER` - SSH user (default: `root`)
+
+**Optional (for entity analysis links):**
+- `HA_FILE_EDITOR_URL` - File Editor addon URL for direct file links in analysis output
+
+Environment variables can be set in a `.env` file in your working directory.
 
 ### Configuration File
 

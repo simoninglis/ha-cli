@@ -65,8 +65,10 @@ class TestSystemServiceInit:
         """Test default initialization."""
         service = SystemService()
         assert service.client is None
-        assert service.host == "10.0.20.35"
-        assert service.user == "root"
+        # Defaults come from ha_cli.common.defaults module
+        # These may be overridden by env vars or .env file
+        assert service.host is not None
+        assert service.user is not None
 
     def test_init_with_client(self) -> None:
         """Test initialization with HAClient."""

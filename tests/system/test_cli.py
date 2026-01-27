@@ -566,6 +566,7 @@ class TestSystemCall:
             service="turn_on",
             entity_ids=None,
             service_data=None,
+            return_response=False,
         )
 
     @patch("ha_cli.domains.system.cli.get_client_config")
@@ -596,6 +597,7 @@ class TestSystemCall:
             service="turn_on",
             entity_ids=["light.office"],
             service_data=None,
+            return_response=False,
         )
 
     @patch("ha_cli.domains.system.cli.get_client_config")
@@ -631,6 +633,7 @@ class TestSystemCall:
             service="turn_on",
             entity_ids=["light.office", "light.kitchen"],
             service_data=None,
+            return_response=False,
         )
 
     @patch("ha_cli.domains.system.cli.get_client_config")
@@ -666,6 +669,7 @@ class TestSystemCall:
             service="set_temperature",
             entity_ids=["climate.lounge"],
             service_data={"temperature": 22},
+            return_response=False,
         )
 
     @patch("ha_cli.domains.system.cli.get_client_config")

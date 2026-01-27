@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
-from ...common.defaults import DEFAULT_SSH_HOST
+from ...common.defaults import DEFAULT_SSH_HOST, DEFAULT_SSH_USER
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +64,13 @@ class DeconzDevice:
 class DeconzService:
     """Service for interacting with deCONZ API."""
 
-    def __init__(self, ssh_host: str = DEFAULT_SSH_HOST):
+    def __init__(
+        self,
+        ssh_host: str = DEFAULT_SSH_HOST,
+        ssh_user: str = DEFAULT_SSH_USER,
+    ):
         self.ssh_host = ssh_host
+        self.ssh_user = ssh_user
         self._config: DeconzConfig | None = None
 
     def _run_ssh(self, cmd: str, timeout: int = SSH_TIMEOUT) -> str:
@@ -81,7 +86,8 @@ class DeconzService:
         Raises:
             SSHError: On connection failure or timeout
         """
-        ssh_args = ["ssh", *SSH_OPTIONS, self.ssh_host, cmd]
+        ssh_target = f"{self.ssh_user}@{self.ssh_host}"
+        ssh_args = ["ssh", *SSH_OPTIONS, ssh_target, cmd]
         logger.debug(f"Running SSH command: {' '.join(ssh_args)}")
 
         try:
