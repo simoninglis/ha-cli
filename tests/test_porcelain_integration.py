@@ -21,7 +21,7 @@ class TestAutomationsPorcelainIntegration:
                 "filters_applied": [],
                 "storage_breakdown": {"ui": 0, "file": 2},
                 "home_assistant": {
-                    "url": "http://10.0.20.35:8123",
+                    "url": "http://homeassistant.local:8123",
                     "connection_method": "rest"
                 },
                 "response_time_ms": 74
@@ -142,7 +142,7 @@ class TestDashboardsPorcelainIntegration:
                 "sidebar_count": 3,
                 "admin_only_count": 0,
                 "home_assistant": {
-                    "url": "http://10.0.20.35:8123",
+                    "url": "http://homeassistant.local:8123",
                     "connection_method": "rest"
                 },
                 "response_time_ms": 19
@@ -203,7 +203,7 @@ class TestDashboardsPorcelainIntegration:
                     "switch": 1
                 },
                 "home_assistant": {
-                    "url": "http://10.0.20.35:8123",
+                    "url": "http://homeassistant.local:8123",
                     "connection_method": "rest"
                 },
                 "response_time_ms": 22

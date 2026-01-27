@@ -37,24 +37,24 @@ class TestSystemInfo:
         info = SystemInfo(
             version="2025.12.1",
             installation_type="Home Assistant OS",
-            host="10.0.20.35",
+            host="homeassistant.local",
         )
         assert info.version == "2025.12.1"
         assert info.installation_type == "Home Assistant OS"
-        assert info.host == "10.0.20.35"
+        assert info.host == "homeassistant.local"
 
     def test_system_info_to_dict(self) -> None:
         """Test SystemInfo.to_dict()."""
         info = SystemInfo(
             version="2025.12.1",
             installation_type="Home Assistant OS",
-            host="10.0.20.35",
+            host="homeassistant.local",
         )
         result = info.to_dict()
         assert result == {
             "version": "2025.12.1",
             "installation_type": "Home Assistant OS",
-            "host": "10.0.20.35",
+            "host": "homeassistant.local",
         }
 
 
@@ -438,7 +438,7 @@ class TestSystemServiceSSH:
             }
         )
 
-        service = SystemService(client=mock_client, host="10.0.20.35")
+        service = SystemService(client=mock_client, host="homeassistant.local")
 
         with patch.object(service, "_run_ssh_command_async") as mock_ssh:
             result = await service.get_info()
@@ -453,7 +453,7 @@ class TestSystemServiceSSH:
         mock_client = MagicMock()
         mock_client._rest = AsyncMock(return_value=None)
 
-        service = SystemService(client=mock_client, host="10.0.20.35")
+        service = SystemService(client=mock_client, host="homeassistant.local")
 
         ssh_output = "version: 2025.12.1\nmachine: qemux86-64\n"
 

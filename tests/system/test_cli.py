@@ -468,7 +468,7 @@ class TestSystemInfo:
             return_value=SystemInfo(
                 version="2025.12.1",
                 installation_type="Home Assistant OS",
-                host="10.0.20.35",
+                host="homeassistant.local",
             )
         )
 
@@ -503,7 +503,7 @@ class TestSystemInfo:
             return_value=SystemInfo(
                 version="2025.12.1",
                 installation_type="Home Assistant OS",
-                host="10.0.20.35",
+                host="homeassistant.local",
             )
         )
 
@@ -525,7 +525,7 @@ class TestSystemInfo:
             return_value=SystemInfo(
                 version="2025.12.1",
                 installation_type="Home Assistant OS",
-                host="10.0.20.35",
+                host="homeassistant.local",
             )
         )
 

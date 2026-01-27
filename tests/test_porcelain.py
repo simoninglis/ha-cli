@@ -267,23 +267,23 @@ class TestSuggestionHelpers:
     def test_home_assistant_metadata(self):
         """Test Home Assistant metadata creation."""
         metadata = create_home_assistant_metadata(
-            "http://10.0.20.35:8123",
+            "http://homeassistant.local:8123",
             "websocket",
             "2024.12.0"
         )
         
-        assert metadata["url"] == "http://10.0.20.35:8123"
+        assert metadata["url"] == "http://homeassistant.local:8123"
         assert metadata["connection_method"] == "websocket"
         assert metadata["version"] == "2024.12.0"
     
     def test_home_assistant_metadata_no_version(self):
         """Test Home Assistant metadata without version."""
         metadata = create_home_assistant_metadata(
-            "http://10.0.20.35:8123",
+            "http://homeassistant.local:8123",
             "rest"
         )
         
-        assert metadata["url"] == "http://10.0.20.35:8123"
+        assert metadata["url"] == "http://homeassistant.local:8123"
         assert metadata["connection_method"] == "rest"
         assert "version" not in metadata
 
@@ -314,7 +314,7 @@ class TestPorcelainIntegration:
             "filters_applied": [],
             "storage_breakdown": {"ui": 0, "file": 1},
             "home_assistant": create_home_assistant_metadata(
-                "http://10.0.20.35:8123",
+                "http://homeassistant.local:8123",
                 "websocket",
                 "2024.12.0"
             )
@@ -329,7 +329,7 @@ class TestPorcelainIntegration:
         assert response_data["status"] == "success"
         assert response_data["data"] == data
         assert response_data["metadata"]["total_count"] == 1
-        assert response_data["metadata"]["home_assistant"]["url"] == "http://10.0.20.35:8123"
+        assert response_data["metadata"]["home_assistant"]["url"] == "http://homeassistant.local:8123"
         assert len(response_data["suggestions"]["common_actions"]) > 0
     
     def test_complete_error_workflow(self):

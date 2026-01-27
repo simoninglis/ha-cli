@@ -4,15 +4,21 @@
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
+from dotenv import load_dotenv
+
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
 from ha_cli.common.client import HAClient
+
+# Load .env file if present
+load_dotenv()
 
 
 def format_automation_state(state: dict) -> dict:
@@ -157,31 +163,19 @@ async def main():
     parser.add_argument("--reverse", action="store_true", help="Reverse sort order")
     
     args = parser.parse_args()
-    
-    # Load configuration from .mcp.json
-    mcp_config_path = Path(__file__).parent.parent.parent / ".mcp.json"
-    
-    if not mcp_config_path.exists():
-        print(f"Error: .mcp.json not found at {mcp_config_path}")
+
+    # Get credentials from environment variables
+    url = os.environ.get("HOME_ASSISTANT_URL") or os.environ.get("HA_URL")
+    token = os.environ.get("HOME_ASSISTANT_TOKEN") or os.environ.get("HA_TOKEN")
+
+    if not url:
+        print("Error: HOME_ASSISTANT_URL or HA_URL environment variable not set")
+        print("See ENV_SETUP.md for configuration details")
         sys.exit(1)
-    
-    with open(mcp_config_path) as f:
-        config = json.load(f)
-    
-    # Extract URL and token
-    ha_config = config.get("mcpServers", {}).get("home-assistant", {})
-    url = ha_config.get("env", {}).get("HOME_ASSISTANT_URL")
-    
-    # Extract token from args - it's after "Bearer" in the args list
-    args_list = ha_config.get("args", [])
-    token = None
-    for i, arg in enumerate(args_list):
-        if arg.startswith("Bearer "):
-            token = arg.replace("Bearer ", "")
-            break
-    
-    if not url or not token:
-        print("Error: Could not extract URL or token from .mcp.json")
+
+    if not token:
+        print("Error: HOME_ASSISTANT_TOKEN or HA_TOKEN environment variable not set")
+        print("See ENV_SETUP.md for configuration details")
         sys.exit(1)
     
     # Connect to Home Assistant

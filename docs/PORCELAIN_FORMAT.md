@@ -98,7 +98,7 @@ Error responses include troubleshooting guidance:
 ```json
 {
   "troubleshooting": [
-    "Check token in .mcp.json file",
+    "Check token in .env file or environment variables",
     "Verify Home Assistant URL is accessible",
     "Generate new long-lived access token"
   ],
