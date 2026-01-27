@@ -152,6 +152,10 @@ The tool can be configured in multiple ways (in order of precedence):
 **Optional (for entity analysis links):**
 - `HA_FILE_EDITOR_URL` - File Editor addon URL for direct file links in analysis output
 
+**Optional (for dashboard screenshots):**
+- `HA_USERNAME` - Home Assistant local username (for screenshot authentication)
+- `HA_PASSWORD` - Home Assistant local password (for screenshot authentication)
+
 Environment variables can be set in a `.env` file in your working directory.
 
 ### Configuration File
