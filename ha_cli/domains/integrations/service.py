@@ -273,22 +273,35 @@ class IntegrationService:
 
         return flows
 
+    @staticmethod
+    def _flow_type(*, options: bool = False, subentry: bool = False) -> str:
+        """Return the REST path component for exactly one flow kind."""
+        if options and subentry:
+            raise ValidationError("A flow cannot be both options and subentry")
+        if options:
+            return "options/flow"
+        if subentry:
+            return "subentries/flow"
+        return "flow"
+
     async def get_flow(
         self,
         flow_id: str,
         *,
         options: bool = False,
+        subentry: bool = False,
     ) -> ConfigFlowStep:
         """Get the current form and schema for an in-progress flow.
 
         Args:
-            flow_id: Config or options flow ID
+            flow_id: Config, options, or subentry flow ID
             options: Read an options flow rather than a config flow
+            subentry: Read a config-subentry flow rather than a config flow
 
         Returns:
             Current config flow step
         """
-        flow_type = "options/flow" if options else "flow"
+        flow_type = self._flow_type(options=options, subentry=subentry)
         result = await self.client._rest(
             "GET",
             f"/api/config/config_entries/{flow_type}/{flow_id}",
@@ -325,18 +338,20 @@ class IntegrationService:
         data: dict[str, Any] | None = None,
         *,
         options: bool = False,
+        subentry: bool = False,
     ) -> ConfigFlowStep:
-        """Submit data to a config or options flow step.
+        """Submit data to a config, options, or subentry flow step.
 
         Args:
-            flow_id: Config or options flow ID
+            flow_id: Config, options, or subentry flow ID
             data: Form data to submit (empty dict for no-input flows)
             options: Submit to an options flow rather than a config flow
+            subentry: Submit to a config-subentry flow rather than a config flow
 
         Returns:
             ConfigFlowStep with next step or result
         """
-        flow_type = "options/flow" if options else "flow"
+        flow_type = self._flow_type(options=options, subentry=subentry)
         result = await self.client._rest(
             "POST",
             f"/api/config/config_entries/{flow_type}/{flow_id}",
@@ -348,18 +363,59 @@ class IntegrationService:
 
         return ConfigFlowStep.from_dict(result)
 
-    async def cancel_flow(self, flow_id: str, *, options: bool = False) -> None:
-        """Cancel an in-progress config or options flow.
+    async def cancel_flow(
+        self,
+        flow_id: str,
+        *,
+        options: bool = False,
+        subentry: bool = False,
+    ) -> None:
+        """Cancel an in-progress config, options, or subentry flow.
 
         Args:
-            flow_id: Config or options flow ID
+            flow_id: Config, options, or subentry flow ID
             options: Cancel an options flow rather than a config flow
+            subentry: Cancel a config-subentry flow rather than a config flow
         """
-        flow_type = "options/flow" if options else "flow"
+        flow_type = self._flow_type(options=options, subentry=subentry)
         await self.client._rest(
             "DELETE",
             f"/api/config/config_entries/{flow_type}/{flow_id}",
         )
+
+    async def start_subentry_flow(
+        self,
+        entry_id: str,
+        subentry_type: str,
+    ) -> ConfigFlowStep:
+        """Start a config-subentry flow for an integration.
+
+        Args:
+            entry_id: Parent config entry ID
+            subentry_type: Integration-defined subentry type
+
+        Returns:
+            Initial config-subentry flow step
+
+        Raises:
+            NotFoundError: If the parent config entry does not exist
+            ValidationError: If Home Assistant returns an unexpected response
+        """
+        entry = await self.get_entry(entry_id)
+        if not entry:
+            raise NotFoundError(f"Config entry not found: {entry_id}")
+
+        result = await self.client._rest(
+            "POST",
+            "/api/config/config_entries/subentries/flow",
+            # HA's subentry flow manager uses a composite handler key.
+            json_data={"handler": [entry_id, subentry_type]},
+        )
+
+        if not result or not isinstance(result, dict):
+            raise ValidationError(f"Unexpected subentry flow response for {entry_id}")
+
+        return ConfigFlowStep.from_dict(result)
 
     async def start_options_flow(self, entry_id: str) -> ConfigFlowStep:
         """Start an options flow for a config entry.

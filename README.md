@@ -2,8 +2,9 @@
 
 Multi-domain command-line tool for managing Home Assistant configurations including automations, dashboards, and more.
 
-## Latest Updates (v0.3.2)
+## Latest Updates (v0.3.3)
 
+- **Config subentries**: Start, inspect, submit, and cancel newer integration subentry flows
 - **Integration config flows**: Inspect and submit pending forms, including multi-step and options flows, using JSON input
 - **🚀 Porcelain Mode**: New `--porcelain` flag provides structured JSON output optimized for Claude Code and automation tools
 - **🧠 Intelligent Analysis**: Automatic complexity analysis, entity dependency mapping, and performance optimization suggestions
@@ -58,13 +59,15 @@ Multi-domain command-line tool for managing Home Assistant configurations includ
 ```bash
 ha-cli integrations flow-show <flow-id> --json
 ha-cli integrations flow-submit <flow-id> --data-file form.json
+ha-cli integrations subentry-start <entry-id-or-domain> <subentry-type> --json
+ha-cli integrations flow-submit <flow-id> --subentry --data-file form.json
 ha-cli integrations options-show <entry-id-or-domain> --json
 ha-cli integrations options-update <entry-id-or-domain> --data-file options.json
 ```
 
-Use `--options` with `flow-show`, `flow-submit`, or `flow-cancel` when continuing
-an options flow returned by a multi-step options form. Submitted data is not
-included in command output, which avoids echoing secrets into logs.
+Use `--options` or `--subentry` with `flow-show`, `flow-submit`, and
+`flow-cancel` for the corresponding flow type. Submitted data is not included
+in command output, which avoids echoing secrets into logs.
 
 ### Tech Debt Audit (NEW!)
 - **dead-entities** - Find unavailable/unknown entities with integration grouping

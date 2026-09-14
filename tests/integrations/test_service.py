@@ -287,6 +287,31 @@ class TestConfigFlow:
         )
 
     @pytest.mark.asyncio()
+    async def test_get_subentry_flow(self, mock_client: MagicMock) -> None:
+        """Test reading the current config-subentry flow step."""
+        mock_client._rest.return_value = {
+            "type": "menu",
+            "flow_id": "subentry123",
+            "handler": "entry123",
+            "step_id": "user",
+            "menu_options": ["device", "entity"],
+        }
+
+        service = IntegrationService(mock_client)
+        step = await service.get_flow("subentry123", subentry=True)
+
+        assert step.menu_options == ["device", "entity"]
+        mock_client._rest.assert_called_once_with(
+            "GET",
+            "/api/config/config_entries/subentries/flow/subentry123",
+        )
+
+    def test_flow_type_rejects_conflicting_flags(self) -> None:
+        """A request cannot target two flow endpoint families."""
+        with pytest.raises(ValidationError, match="both options and subentry"):
+            IntegrationService._flow_type(options=True, subentry=True)
+
+    @pytest.mark.asyncio()
     async def test_start_flow(self, mock_client: MagicMock) -> None:
         """Test starting a config flow."""
         mock_client._rest.return_value = {
@@ -343,6 +368,29 @@ class TestConfigFlow:
         )
 
     @pytest.mark.asyncio()
+    async def test_submit_subentry_flow(self, mock_client: MagicMock) -> None:
+        """Test submitting data to a config-subentry flow."""
+        mock_client._rest.return_value = {
+            "type": "form",
+            "flow_id": "subentry123",
+            "handler": "entry123",
+            "step_id": "battery",
+        }
+
+        service = IntegrationService(mock_client)
+        await service.submit_flow(
+            "subentry123",
+            {"source_entity_id": "sensor.lock_battery"},
+            subentry=True,
+        )
+
+        mock_client._rest.assert_called_once_with(
+            "POST",
+            "/api/config/config_entries/subentries/flow/subentry123",
+            json_data={"source_entity_id": "sensor.lock_battery"},
+        )
+
+    @pytest.mark.asyncio()
     async def test_cancel_flow(self, mock_client: MagicMock) -> None:
         """Test cancelling a flow."""
         mock_client._rest.return_value = None
@@ -366,6 +414,49 @@ class TestConfigFlow:
         mock_client._rest.assert_called_once_with(
             "DELETE",
             "/api/config/config_entries/options/flow/options123",
+        )
+
+    @pytest.mark.asyncio()
+    async def test_cancel_subentry_flow(self, mock_client: MagicMock) -> None:
+        """Test cancelling a config-subentry flow."""
+        mock_client._rest.return_value = None
+
+        service = IntegrationService(mock_client)
+        await service.cancel_flow("subentry123", subentry=True)
+
+        mock_client._rest.assert_called_once_with(
+            "DELETE",
+            "/api/config/config_entries/subentries/flow/subentry123",
+        )
+
+    @pytest.mark.asyncio()
+    async def test_start_subentry_flow(self, mock_client: MagicMock) -> None:
+        """Test starting an integration-defined config-subentry flow."""
+        mock_client._ws_call.return_value = {
+            "config_entry": {
+                "entry_id": "entry123",
+                "domain": "battery_notes",
+                "title": "Battery Notes",
+                "state": "loaded",
+                "source": "user",
+            }
+        }
+        mock_client._rest.return_value = {
+            "type": "menu",
+            "flow_id": "subentry123",
+            "handler": "entry123",
+            "step_id": "user",
+            "menu_options": ["device", "entity"],
+        }
+
+        service = IntegrationService(mock_client)
+        step = await service.start_subentry_flow("entry123", "battery_note")
+
+        assert step.menu_options == ["device", "entity"]
+        mock_client._rest.assert_called_once_with(
+            "POST",
+            "/api/config/config_entries/subentries/flow",
+            json_data={"handler": ["entry123", "battery_note"]},
         )
 
     @pytest.mark.asyncio()

@@ -65,6 +65,17 @@ def _load_flow_data(
     return data
 
 
+def _flow_kind(*, options: bool, subentry: bool) -> str:
+    """Return a human-readable flow kind and reject conflicting flags."""
+    if options and subentry:
+        raise ValidationError("Use only one of --options or --subentry")
+    if options:
+        return "options"
+    if subentry:
+        return "subentry"
+    return "config"
+
+
 def _write_flow_step(
     step_data: dict[str, Any],
     *,
@@ -706,6 +717,9 @@ def show_flow(
     options: bool = typer.Option(
         False, "--options", help="Read an options flow"
     ),
+    subentry: bool = typer.Option(
+        False, "--subentry", help="Read a config-subentry flow"
+    ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
     token: str | None = typer.Option(None, "--token", help="Access token"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
@@ -723,7 +737,12 @@ def show_flow(
         async with HAClient(url_final, token_final) as client:
             service = IntegrationService(client)
             try:
-                step = await service.get_flow(flow_id, options=options)
+                flow_kind = _flow_kind(options=options, subentry=subentry)
+                step = await service.get_flow(
+                    flow_id,
+                    options=options,
+                    subentry=subentry,
+                )
             except (NotFoundError, ValidationError) as e:
                 if porcelain:
                     write_output(
@@ -742,7 +761,7 @@ def show_flow(
                 json_output=json_output,
                 metadata={
                     "flow_id": flow_id,
-                    "flow_type": "options" if options else "config",
+                    "flow_type": flow_kind,
                     "home_assistant": create_home_assistant_metadata(
                         url_final, "rest"
                     ),
@@ -768,6 +787,9 @@ def submit_flow(
     ),
     options: bool = typer.Option(
         False, "--options", help="Submit to an options flow"
+    ),
+    subentry: bool = typer.Option(
+        False, "--subentry", help="Submit to a config-subentry flow"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
     token: str | None = typer.Option(None, "--token", help="Access token"),
@@ -799,7 +821,13 @@ def submit_flow(
         async with HAClient(url_final, token_final) as client:
             service = IntegrationService(client)
             try:
-                step = await service.submit_flow(flow_id, data, options=options)
+                flow_kind = _flow_kind(options=options, subentry=subentry)
+                step = await service.submit_flow(
+                    flow_id,
+                    data,
+                    options=options,
+                    subentry=subentry,
+                )
             except (NotFoundError, ValidationError) as e:
                 if porcelain:
                     write_output(
@@ -818,7 +846,7 @@ def submit_flow(
                 json_output=json_output,
                 metadata={
                     "flow_id": flow_id,
-                    "flow_type": "options" if options else "config",
+                    "flow_type": flow_kind,
                     "complete": step.is_complete,
                     "home_assistant": create_home_assistant_metadata(
                         url_final, "rest"
@@ -827,6 +855,66 @@ def submit_flow(
             )
 
     asyncio.run(run_async_command(_submit(), command="integrations flow-submit"))
+
+
+@app.command("subentry-start")
+def start_subentry(
+    entry_id: str = typer.Argument(..., help="Parent config entry ID or domain"),
+    subentry_type: str = typer.Argument(
+        ..., help="Integration-defined subentry type"
+    ),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Start an integration-defined config-subentry flow."""
+    setup_logging(debug)
+    set_porcelain_mode(porcelain)
+
+    async def _start() -> None:
+        url_final, token_final = get_client_config(url, token)
+        async with HAClient(url_final, token_final) as client:
+            service = IntegrationService(client)
+            try:
+                entry = await service.find_entry(entry_id)
+                if not entry:
+                    raise NotFoundError(f"Config entry not found: {entry_id}")
+                step = await service.start_subentry_flow(
+                    entry.entry_id,
+                    subentry_type,
+                )
+            except (NotFoundError, ValidationError) as e:
+                if porcelain:
+                    write_output(
+                        PorcelainFormatter("integrations subentry-start").error(
+                            str(e), error_code="SUBENTRY_ERROR"
+                        )
+                    )
+                else:
+                    console.print(f"[red]Error:[/red] {escape(str(e))}")
+                sys.exit(EXIT_USAGE_ERROR)
+
+            _write_flow_step(
+                step.to_dict(),
+                command="integrations subentry-start",
+                porcelain=porcelain,
+                json_output=json_output,
+                metadata={
+                    "entry_id": entry.entry_id,
+                    "subentry_type": subentry_type,
+                    "home_assistant": create_home_assistant_metadata(
+                        url_final, "rest"
+                    ),
+                },
+            )
+
+    asyncio.run(
+        run_async_command(_start(), command="integrations subentry-start")
+    )
 
 
 @app.command("options-show")
@@ -972,6 +1060,9 @@ def cancel_flow(
     options: bool = typer.Option(
         False, "--options", help="Cancel an options flow"
     ),
+    subentry: bool = typer.Option(
+        False, "--subentry", help="Cancel a config-subentry flow"
+    ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
     token: str | None = typer.Option(None, "--token", help="Access token"),
     porcelain: bool = typer.Option(
@@ -992,7 +1083,12 @@ def cancel_flow(
             service = IntegrationService(client)
 
             try:
-                await service.cancel_flow(flow_id, options=options)
+                flow_kind = _flow_kind(options=options, subentry=subentry)
+                await service.cancel_flow(
+                    flow_id,
+                    options=options,
+                    subentry=subentry,
+                )
 
                 if porcelain:
                     assert formatter is not None
@@ -1000,7 +1096,7 @@ def cancel_flow(
                         {"flow_id": flow_id, "cancelled": True},
                         metadata={
                             "action": "cancelled",
-                            "flow_type": "options" if options else "config",
+                            "flow_type": flow_kind,
                             "home_assistant": create_home_assistant_metadata(
                                 url_final, "rest"
                             ),

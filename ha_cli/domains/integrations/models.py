@@ -152,10 +152,11 @@ class ConfigFlowStep:
     """A step in a config flow."""
 
     flow_id: str
-    handler: str  # domain
+    handler: str | list[str]  # domain, or [entry_id, subentry_type]
     step_id: str
     type: str  # form, create_entry, abort, external, etc.
     data_schema: list[dict[str, Any]] = field(default_factory=list)
+    menu_options: list[str] = field(default_factory=list)
     errors: dict[str, str] | None = None
     description_placeholders: dict[str, str] | None = None
     last_step: bool | None = None
@@ -172,6 +173,7 @@ class ConfigFlowStep:
             step_id=data.get("step_id") or "",
             type=data.get("type") or "form",
             data_schema=data.get("data_schema") or [],
+            menu_options=data.get("menu_options") or [],
             errors=data.get("errors"),
             description_placeholders=data.get("description_placeholders"),
             last_step=data.get("last_step"),
@@ -189,6 +191,8 @@ class ConfigFlowStep:
             "type": self.type,
             "data_schema": self.data_schema,
         }
+        if self.menu_options:
+            output["menu_options"] = self.menu_options
         if self.errors:
             output["errors"] = self.errors
         if self.description_placeholders:

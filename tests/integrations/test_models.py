@@ -179,6 +179,22 @@ class TestConfigFlowStep:
         assert step.requires_input is True
         assert step.is_complete is False
 
+    def test_from_dict_menu(self) -> None:
+        """Test parsing a config-subentry menu step."""
+        step = ConfigFlowStep.from_dict(
+            {
+                "type": "menu",
+                "flow_id": "subentry123",
+                "handler": ["entry123", "battery_note"],
+                "step_id": "user",
+                "menu_options": ["device", "entity"],
+            }
+        )
+
+        assert step.handler == ["entry123", "battery_note"]
+        assert step.menu_options == ["device", "entity"]
+        assert step.to_dict()["menu_options"] == ["device", "entity"]
+
     def test_from_dict_create_entry(self) -> None:
         """Test creating flow step from create_entry response."""
         data = {

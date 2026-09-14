@@ -22,6 +22,7 @@ def test_integrations_help_lists_flow_commands() -> None:
     assert result.exit_code == 0
     assert "flow-show" in result.stdout
     assert "flow-submit" in result.stdout
+    assert "subentry-start" in result.stdout
     assert "options-show" in result.stdout
     assert "options-update" in result.stdout
 
@@ -90,7 +91,11 @@ def test_flow_show_json(
     output = json.loads(result.stdout)
     assert output["flow_id"] == "flow123"
     assert output["data_schema"][0]["name"] == "battery_type"
-    mock_service.get_flow.assert_awaited_once_with("flow123", options=False)
+    mock_service.get_flow.assert_awaited_once_with(
+        "flow123",
+        options=False,
+        subentry=False,
+    )
 
 
 @patch("ha_cli.domains.integrations.cli.get_client_config")
@@ -133,4 +138,50 @@ def test_flow_submit_options_json(
         "options123",
         {"threshold": 20},
         options=True,
+        subentry=False,
+    )
+
+
+@patch("ha_cli.domains.integrations.cli.get_client_config")
+@patch("ha_cli.domains.integrations.cli.HAClient")
+@patch("ha_cli.domains.integrations.cli.IntegrationService")
+def test_subentry_start_json(
+    mock_service_class: MagicMock,
+    mock_client_class: MagicMock,
+    mock_config: MagicMock,
+) -> None:
+    """subentry-start resolves the parent and preserves menu options."""
+    mock_config.return_value = ("http://test:8123", "test-token")
+    mock_client_class.return_value.__aenter__.return_value = AsyncMock()
+    mock_service = MagicMock()
+    mock_service_class.return_value = mock_service
+    entry = MagicMock(entry_id="entry123")
+    mock_service.find_entry = AsyncMock(return_value=entry)
+    mock_service.start_subentry_flow = AsyncMock(
+        return_value=ConfigFlowStep(
+            flow_id="subentry123",
+            handler="entry123",
+            step_id="user",
+            type="menu",
+            menu_options=["device", "entity"],
+        )
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "integrations",
+            "subentry-start",
+            "battery_notes",
+            "battery_note",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    output = json.loads(result.stdout)
+    assert output["menu_options"] == ["device", "entity"]
+    mock_service.start_subentry_flow.assert_awaited_once_with(
+        "entry123",
+        "battery_note",
     )
