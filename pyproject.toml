@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ha-cli"
-version = "0.3.1"
+version = "0.3.2"
 description = "Multi-domain command-line tool for managing Home Assistant configurations"
 authors = ["Simbo <simbo@example.com>"]
 license = "MIT"

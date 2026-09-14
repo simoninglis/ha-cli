@@ -89,6 +89,20 @@ poetry run ha-cli dashboards delete <id>        # Delete dashboard
 poetry run ha-cli dashboards screenshot <name>  # Capture dashboard screenshot
 ```
 
+### Integration Configuration Commands
+```bash
+poetry run ha-cli integrations flows
+poetry run ha-cli integrations flow-show <flow-id> --json
+poetry run ha-cli integrations flow-submit <flow-id> --data-json '{"field":"value"}'
+poetry run ha-cli integrations flow-submit <flow-id> --data-file form.json
+poetry run ha-cli integrations options-show <entry-id-or-domain> --json
+poetry run ha-cli integrations options-update <entry-id-or-domain> --data-file options.json
+```
+
+`flow-show`, `flow-submit`, and `flow-cancel` accept `--options` when operating
+on a multi-step options flow. Prefer `--data-file` for complex or sensitive
+values; submitted form data is never included in command output.
+
 ### Audit Commands (Tech Debt Detection)
 ```bash
 poetry run ha-cli audit dead-entities           # Find unavailable/unknown entities

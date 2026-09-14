@@ -3,6 +3,8 @@
 import asyncio
 import json
 import sys
+from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -38,6 +40,47 @@ STATE_COLORS = {
     "failed_unload": "red",
     "migration_error": "red",
 }
+
+
+def _load_flow_data(
+    data_json: str | None,
+    data_file: Path | None,
+) -> dict[str, Any]:
+    """Load a flow submission object from exactly one JSON source."""
+    if (data_json is None) == (data_file is None):
+        raise ValidationError("Provide exactly one of --data-json or --data-file")
+
+    try:
+        if data_json is not None:
+            raw = data_json
+        else:
+            assert data_file is not None
+            raw = data_file.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as e:
+        raise ValidationError(f"Unable to read flow data: {e}") from e
+
+    if not isinstance(data, dict):
+        raise ValidationError("Flow data must be a JSON object")
+    return data
+
+
+def _write_flow_step(
+    step_data: dict[str, Any],
+    *,
+    command: str,
+    porcelain: bool,
+    json_output: bool,
+    metadata: dict[str, Any],
+) -> None:
+    """Write a flow step consistently across output modes."""
+    if porcelain:
+        formatter = PorcelainFormatter(command)
+        write_output(formatter.success(step_data, metadata=metadata))
+    elif json_output:
+        write_output(json.dumps(step_data, indent=2))
+    else:
+        console.print_json(data=step_data)
 
 
 @app.command("list")
@@ -89,10 +132,14 @@ def list_entries(
                         "total_count": len(entries),
                         "domains": domains,
                         "states": states,
-                        "filters_applied": {
-                            "domain": domain,
-                            "state": state,
-                        },
+                        "filters_applied": [
+                            value
+                            for value in (
+                                f"domain={domain}" if domain else None,
+                                f"state={state}" if state else None,
+                            )
+                            if value is not None
+                        ],
                         "home_assistant": create_home_assistant_metadata(
                             url_final, "websocket"
                         ),
@@ -653,9 +700,278 @@ def list_flows(
     asyncio.run(run_async_command(_flows(), command="integrations flows"))
 
 
+@app.command("flow-show")
+def show_flow(
+    flow_id: str = typer.Argument(..., help="Config or options flow ID"),
+    options: bool = typer.Option(
+        False, "--options", help="Read an options flow"
+    ),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Show the current form, defaults, and validation errors for a flow."""
+    setup_logging(debug)
+    set_porcelain_mode(porcelain)
+
+    async def _show() -> None:
+        url_final, token_final = get_client_config(url, token)
+        async with HAClient(url_final, token_final) as client:
+            service = IntegrationService(client)
+            try:
+                step = await service.get_flow(flow_id, options=options)
+            except (NotFoundError, ValidationError) as e:
+                if porcelain:
+                    write_output(
+                        PorcelainFormatter("integrations flow-show").error(
+                            str(e), error_code="FLOW_ERROR"
+                        )
+                    )
+                else:
+                    console.print(f"[red]Error:[/red] {escape(str(e))}")
+                sys.exit(EXIT_USAGE_ERROR)
+
+            _write_flow_step(
+                step.to_dict(),
+                command="integrations flow-show",
+                porcelain=porcelain,
+                json_output=json_output,
+                metadata={
+                    "flow_id": flow_id,
+                    "flow_type": "options" if options else "config",
+                    "home_assistant": create_home_assistant_metadata(
+                        url_final, "rest"
+                    ),
+                },
+            )
+
+    asyncio.run(run_async_command(_show(), command="integrations flow-show"))
+
+
+@app.command("flow-submit")
+def submit_flow(
+    flow_id: str = typer.Argument(..., help="Config or options flow ID"),
+    data_json: str | None = typer.Option(
+        None, "--data-json", help="Form data as a JSON object"
+    ),
+    data_file: Path | None = typer.Option(
+        None,
+        "--data-file",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Read form data from a JSON file",
+    ),
+    options: bool = typer.Option(
+        False, "--options", help="Submit to an options flow"
+    ),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Submit arbitrary JSON data to the current step of a flow."""
+    setup_logging(debug)
+    set_porcelain_mode(porcelain)
+
+    async def _submit() -> None:
+        try:
+            data = _load_flow_data(data_json, data_file)
+        except ValidationError as e:
+            if porcelain:
+                write_output(
+                    PorcelainFormatter("integrations flow-submit").error(
+                        str(e), error_code="VALIDATION_ERROR"
+                    )
+                )
+            else:
+                console.print(f"[red]Error:[/red] {escape(str(e))}")
+            sys.exit(EXIT_USAGE_ERROR)
+
+        url_final, token_final = get_client_config(url, token)
+        async with HAClient(url_final, token_final) as client:
+            service = IntegrationService(client)
+            try:
+                step = await service.submit_flow(flow_id, data, options=options)
+            except (NotFoundError, ValidationError) as e:
+                if porcelain:
+                    write_output(
+                        PorcelainFormatter("integrations flow-submit").error(
+                            str(e), error_code="FLOW_ERROR"
+                        )
+                    )
+                else:
+                    console.print(f"[red]Error:[/red] {escape(str(e))}")
+                sys.exit(EXIT_USAGE_ERROR)
+
+            _write_flow_step(
+                step.to_dict(),
+                command="integrations flow-submit",
+                porcelain=porcelain,
+                json_output=json_output,
+                metadata={
+                    "flow_id": flow_id,
+                    "flow_type": "options" if options else "config",
+                    "complete": step.is_complete,
+                    "home_assistant": create_home_assistant_metadata(
+                        url_final, "rest"
+                    ),
+                },
+            )
+
+    asyncio.run(run_async_command(_submit(), command="integrations flow-submit"))
+
+
+@app.command("options-show")
+def show_options(
+    entry_id: str = typer.Argument(..., help="Config entry ID or domain name"),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Show an integration's options form without changing its configuration."""
+    setup_logging(debug)
+    set_porcelain_mode(porcelain)
+
+    async def _show() -> None:
+        url_final, token_final = get_client_config(url, token)
+        async with HAClient(url_final, token_final) as client:
+            service = IntegrationService(client)
+            try:
+                entry = await service.find_entry(entry_id)
+                if not entry:
+                    raise NotFoundError(f"Config entry not found: {entry_id}")
+                step = await service.start_options_flow(entry.entry_id)
+                await service.cancel_flow(step.flow_id, options=True)
+            except (NotFoundError, ValidationError) as e:
+                if porcelain:
+                    write_output(
+                        PorcelainFormatter("integrations options-show").error(
+                            str(e), error_code="OPTIONS_ERROR"
+                        )
+                    )
+                else:
+                    console.print(f"[red]Error:[/red] {escape(str(e))}")
+                sys.exit(EXIT_USAGE_ERROR)
+
+            _write_flow_step(
+                step.to_dict(),
+                command="integrations options-show",
+                porcelain=porcelain,
+                json_output=json_output,
+                metadata={
+                    "entry_id": entry.entry_id,
+                    "read_only": True,
+                    "home_assistant": create_home_assistant_metadata(
+                        url_final, "rest"
+                    ),
+                },
+            )
+
+    asyncio.run(run_async_command(_show(), command="integrations options-show"))
+
+
+@app.command("options-update")
+def update_options(
+    entry_id: str = typer.Argument(..., help="Config entry ID or domain name"),
+    data_json: str | None = typer.Option(
+        None, "--data-json", help="Options as a JSON object"
+    ),
+    data_file: Path | None = typer.Option(
+        None,
+        "--data-file",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Read options from a JSON file",
+    ),
+    url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
+    token: str | None = typer.Option(None, "--token", help="Access token"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    porcelain: bool = typer.Option(
+        False, "--porcelain", help="Machine-readable output"
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """Start an options flow and submit one JSON form step."""
+    setup_logging(debug)
+    set_porcelain_mode(porcelain)
+
+    async def _update() -> None:
+        try:
+            data = _load_flow_data(data_json, data_file)
+        except ValidationError as e:
+            if porcelain:
+                write_output(
+                    PorcelainFormatter("integrations options-update").error(
+                        str(e), error_code="VALIDATION_ERROR"
+                    )
+                )
+            else:
+                console.print(f"[red]Error:[/red] {escape(str(e))}")
+            sys.exit(EXIT_USAGE_ERROR)
+
+        url_final, token_final = get_client_config(url, token)
+        async with HAClient(url_final, token_final) as client:
+            service = IntegrationService(client)
+            options_step = None
+            try:
+                entry = await service.find_entry(entry_id)
+                if not entry:
+                    raise NotFoundError(f"Config entry not found: {entry_id}")
+                options_step = await service.start_options_flow(entry.entry_id)
+                step = await service.submit_flow(
+                    options_step.flow_id,
+                    data,
+                    options=True,
+                )
+            except (NotFoundError, ValidationError) as e:
+                if options_step is not None:
+                    await service.cancel_flow(options_step.flow_id, options=True)
+                if porcelain:
+                    write_output(
+                        PorcelainFormatter("integrations options-update").error(
+                            str(e), error_code="OPTIONS_ERROR"
+                        )
+                    )
+                else:
+                    console.print(f"[red]Error:[/red] {escape(str(e))}")
+                sys.exit(EXIT_USAGE_ERROR)
+
+            _write_flow_step(
+                step.to_dict(),
+                command="integrations options-update",
+                porcelain=porcelain,
+                json_output=json_output,
+                metadata={
+                    "entry_id": entry.entry_id,
+                    "complete": step.is_complete,
+                    "home_assistant": create_home_assistant_metadata(
+                        url_final, "rest"
+                    ),
+                },
+            )
+
+    asyncio.run(run_async_command(_update(), command="integrations options-update"))
+
+
 @app.command("flow-cancel")
 def cancel_flow(
-    flow_id: str = typer.Argument(..., help="Config flow ID to cancel"),
+    flow_id: str = typer.Argument(..., help="Config or options flow ID to cancel"),
+    options: bool = typer.Option(
+        False, "--options", help="Cancel an options flow"
+    ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
     token: str | None = typer.Option(None, "--token", help="Access token"),
     porcelain: bool = typer.Option(
@@ -676,7 +992,7 @@ def cancel_flow(
             service = IntegrationService(client)
 
             try:
-                await service.cancel_flow(flow_id)
+                await service.cancel_flow(flow_id, options=options)
 
                 if porcelain:
                     assert formatter is not None
@@ -684,6 +1000,7 @@ def cancel_flow(
                         {"flow_id": flow_id, "cancelled": True},
                         metadata={
                             "action": "cancelled",
+                            "flow_type": "options" if options else "config",
                             "home_assistant": create_home_assistant_metadata(
                                 url_final, "rest"
                             ),

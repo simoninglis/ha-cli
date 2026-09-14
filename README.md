@@ -2,8 +2,9 @@
 
 Multi-domain command-line tool for managing Home Assistant configurations including automations, dashboards, and more.
 
-## Latest Updates (v0.3.1)
+## Latest Updates (v0.3.2)
 
+- **Integration config flows**: Inspect and submit pending forms, including multi-step and options flows, using JSON input
 - **🚀 Porcelain Mode**: New `--porcelain` flag provides structured JSON output optimized for Claude Code and automation tools
 - **🧠 Intelligent Analysis**: Automatic complexity analysis, entity dependency mapping, and performance optimization suggestions
 - **🔍 Advanced Issue Detection**: Proactive identification of automation antipatterns and configuration problems
@@ -47,6 +48,23 @@ Multi-domain command-line tool for managing Home Assistant configurations includ
 - **Create/Delete** new dashboards
 - **Extract entities** referenced in dashboards
 - **Update entity references** for bulk renaming
+
+### Integration Configuration Flows
+- **Inspect** pending config-flow forms and their schemas
+- **Submit** arbitrary JSON form data to multi-step config flows
+- **Inspect and update** integration options without editing `.storage`
+- **Load form data from files** to avoid shell quoting and support repeatable operations
+
+```bash
+ha-cli integrations flow-show <flow-id> --json
+ha-cli integrations flow-submit <flow-id> --data-file form.json
+ha-cli integrations options-show <entry-id-or-domain> --json
+ha-cli integrations options-update <entry-id-or-domain> --data-file options.json
+```
+
+Use `--options` with `flow-show`, `flow-submit`, or `flow-cancel` when continuing
+an options flow returned by a multi-step options form. Submitted data is not
+included in command output, which avoids echoing secrets into logs.
 
 ### Tech Debt Audit (NEW!)
 - **dead-entities** - Find unavailable/unknown entities with integration grouping

@@ -249,6 +249,44 @@ class TestConfigFlow:
         assert flows[0].handler == "zwave_js"
 
     @pytest.mark.asyncio()
+    async def test_get_config_flow(self, mock_client: MagicMock) -> None:
+        """Test reading the current config flow step."""
+        mock_client._rest.return_value = {
+            "type": "form",
+            "flow_id": "flow123",
+            "handler": "test",
+            "step_id": "battery",
+            "data_schema": [{"name": "battery_type", "required": True}],
+        }
+
+        service = IntegrationService(mock_client)
+        step = await service.get_flow("flow123")
+
+        assert step.step_id == "battery"
+        mock_client._rest.assert_called_once_with(
+            "GET",
+            "/api/config/config_entries/flow/flow123",
+        )
+
+    @pytest.mark.asyncio()
+    async def test_get_options_flow(self, mock_client: MagicMock) -> None:
+        """Test reading the current options flow step."""
+        mock_client._rest.return_value = {
+            "type": "form",
+            "flow_id": "options123",
+            "handler": "entry123",
+            "step_id": "init",
+        }
+
+        service = IntegrationService(mock_client)
+        await service.get_flow("options123", options=True)
+
+        mock_client._rest.assert_called_once_with(
+            "GET",
+            "/api/config/config_entries/options/flow/options123",
+        )
+
+    @pytest.mark.asyncio()
     async def test_start_flow(self, mock_client: MagicMock) -> None:
         """Test starting a config flow."""
         mock_client._rest.return_value = {
@@ -282,6 +320,29 @@ class TestConfigFlow:
         assert step.is_complete is True
 
     @pytest.mark.asyncio()
+    async def test_submit_options_flow(self, mock_client: MagicMock) -> None:
+        """Test submitting data to an options flow."""
+        mock_client._rest.return_value = {
+            "type": "create_entry",
+            "flow_id": "options123",
+            "handler": "entry123",
+            "title": "",
+        }
+
+        service = IntegrationService(mock_client)
+        await service.submit_flow(
+            "options123",
+            {"threshold": 20},
+            options=True,
+        )
+
+        mock_client._rest.assert_called_once_with(
+            "POST",
+            "/api/config/config_entries/options/flow/options123",
+            json_data={"threshold": 20},
+        )
+
+    @pytest.mark.asyncio()
     async def test_cancel_flow(self, mock_client: MagicMock) -> None:
         """Test cancelling a flow."""
         mock_client._rest.return_value = None
@@ -293,6 +354,70 @@ class TestConfigFlow:
             "DELETE",
             "/api/config/config_entries/flow/flow123",
         )
+
+    @pytest.mark.asyncio()
+    async def test_cancel_options_flow(self, mock_client: MagicMock) -> None:
+        """Test cancelling an options flow."""
+        mock_client._rest.return_value = None
+
+        service = IntegrationService(mock_client)
+        await service.cancel_flow("options123", options=True)
+
+        mock_client._rest.assert_called_once_with(
+            "DELETE",
+            "/api/config/config_entries/options/flow/options123",
+        )
+
+    @pytest.mark.asyncio()
+    async def test_start_options_flow(self, mock_client: MagicMock) -> None:
+        """Test starting an options flow for a supported config entry."""
+        mock_client._ws_call.return_value = {
+            "config_entry": {
+                "entry_id": "entry123",
+                "domain": "battery_notes",
+                "title": "Battery Notes",
+                "state": "loaded",
+                "source": "user",
+                "supports_options": True,
+            }
+        }
+        mock_client._rest.return_value = {
+            "type": "form",
+            "flow_id": "options123",
+            "handler": "entry123",
+            "step_id": "init",
+            "data_schema": [],
+        }
+
+        service = IntegrationService(mock_client)
+        step = await service.start_options_flow("entry123")
+
+        assert step.flow_id == "options123"
+        mock_client._rest.assert_called_once_with(
+            "POST",
+            "/api/config/config_entries/options/flow",
+            json_data={"handler": "entry123"},
+        )
+
+    @pytest.mark.asyncio()
+    async def test_start_options_flow_rejects_unsupported_entry(
+        self, mock_client: MagicMock
+    ) -> None:
+        """Test rejecting options for an entry without an options flow."""
+        mock_client._ws_call.return_value = {
+            "config_entry": {
+                "entry_id": "entry123",
+                "domain": "test",
+                "title": "Test",
+                "state": "loaded",
+                "source": "user",
+                "supports_options": False,
+            }
+        }
+
+        service = IntegrationService(mock_client)
+        with pytest.raises(ValidationError, match="does not support options"):
+            await service.start_options_flow("entry123")
 
 
 class TestSetupIntegration:

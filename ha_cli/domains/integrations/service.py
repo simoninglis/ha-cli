@@ -273,6 +273,32 @@ class IntegrationService:
 
         return flows
 
+    async def get_flow(
+        self,
+        flow_id: str,
+        *,
+        options: bool = False,
+    ) -> ConfigFlowStep:
+        """Get the current form and schema for an in-progress flow.
+
+        Args:
+            flow_id: Config or options flow ID
+            options: Read an options flow rather than a config flow
+
+        Returns:
+            Current config flow step
+        """
+        flow_type = "options/flow" if options else "flow"
+        result = await self.client._rest(
+            "GET",
+            f"/api/config/config_entries/{flow_type}/{flow_id}",
+        )
+
+        if not result or not isinstance(result, dict):
+            raise ValidationError(f"Unexpected flow response for flow {flow_id}")
+
+        return ConfigFlowStep.from_dict(result)
+
     async def start_flow(self, domain: str) -> ConfigFlowStep:
         """Start a config flow for an integration.
 
@@ -297,19 +323,23 @@ class IntegrationService:
         self,
         flow_id: str,
         data: dict[str, Any] | None = None,
+        *,
+        options: bool = False,
     ) -> ConfigFlowStep:
-        """Submit data to a config flow step.
+        """Submit data to a config or options flow step.
 
         Args:
-            flow_id: Config flow ID
+            flow_id: Config or options flow ID
             data: Form data to submit (empty dict for no-input flows)
+            options: Submit to an options flow rather than a config flow
 
         Returns:
             ConfigFlowStep with next step or result
         """
+        flow_type = "options/flow" if options else "flow"
         result = await self.client._rest(
             "POST",
-            f"/api/config/config_entries/flow/{flow_id}",
+            f"/api/config/config_entries/{flow_type}/{flow_id}",
             json_data=data or {},
         )
 
@@ -318,16 +348,50 @@ class IntegrationService:
 
         return ConfigFlowStep.from_dict(result)
 
-    async def cancel_flow(self, flow_id: str) -> None:
-        """Cancel an in-progress config flow.
+    async def cancel_flow(self, flow_id: str, *, options: bool = False) -> None:
+        """Cancel an in-progress config or options flow.
 
         Args:
-            flow_id: Config flow ID
+            flow_id: Config or options flow ID
+            options: Cancel an options flow rather than a config flow
         """
+        flow_type = "options/flow" if options else "flow"
         await self.client._rest(
             "DELETE",
-            f"/api/config/config_entries/flow/{flow_id}",
+            f"/api/config/config_entries/{flow_type}/{flow_id}",
         )
+
+    async def start_options_flow(self, entry_id: str) -> ConfigFlowStep:
+        """Start an options flow for a config entry.
+
+        Args:
+            entry_id: Config entry ID
+
+        Returns:
+            Initial options flow step
+
+        Raises:
+            NotFoundError: If the config entry does not exist
+            ValidationError: If the entry has no options flow or response is invalid
+        """
+        entry = await self.get_entry(entry_id)
+        if not entry:
+            raise NotFoundError(f"Config entry not found: {entry_id}")
+        if not entry.supports_options:
+            raise ValidationError(
+                f"Config entry does not support options: {entry_id} ({entry.domain})"
+            )
+
+        result = await self.client._rest(
+            "POST",
+            "/api/config/config_entries/options/flow",
+            json_data={"handler": entry_id},
+        )
+
+        if not result or not isinstance(result, dict):
+            raise ValidationError(f"Unexpected options flow response for {entry_id}")
+
+        return ConfigFlowStep.from_dict(result)
 
     # ==========================================================================
     # High-Level Operations
