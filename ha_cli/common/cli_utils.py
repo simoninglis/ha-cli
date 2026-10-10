@@ -8,7 +8,7 @@ from collections.abc import Awaitable
 from datetime import UTC, datetime
 from typing import TypeVar
 
-import click
+import typer
 from rich.console import Console
 
 from .exceptions import EXIT_HA_ERROR, EXIT_NETWORK_ERROR, HAAutomationError
@@ -144,9 +144,11 @@ async def run_async_command(coro: Awaitable[T], command: str = "unknown") -> T:
             if e.details:
                 logger.debug(f"Error details: {e.details}")
         sys.exit(EXIT_HA_ERROR)
-    except click.UsageError as e:
+    except typer.BadParameter as e:
         # A usage error (e.g. a literal token passed to --token): Click prints it
         # without a traceback; porcelain mode still gets structured output.
+        # typer.BadParameter, not click's: typer >= 0.2x vendors Click, and click is
+        # not one of our dependencies.
         if _porcelain_mode:
             _emit_porcelain_error(
                 command=command,
