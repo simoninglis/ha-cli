@@ -345,6 +345,37 @@ def get_token_from_env(token_value: str) -> str:
     return token_value
 
 
+ENV_VAR_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+
+
+def resolve_cli_token(name: str) -> str:
+    """Resolve a --token argument, which must be the NAME of an environment variable.
+
+    A token value on the command line is visible to every user on the host via
+    `ps` / /proc/<pid>/cmdline, so a literal token is refused. The error never
+    repeats the argument, because the argument may be the token.
+
+    Args:
+        name: The --token argument, e.g. "HA_TOKEN"
+
+    Returns:
+        The token held in that environment variable
+
+    Raises:
+        ValueError: If the argument is not an env var name, or the var is unset
+    """
+    if not ENV_VAR_NAME.match(name):
+        raise ValueError(
+            "--token takes the NAME of an environment variable holding the token "
+            "(e.g. --token HA_TOKEN), never the token itself: a value on the command "
+            "line is visible to every user on this host via ps. Set HA_TOKEN instead."
+        )
+    value = os.environ.get(name)
+    if not value:
+        raise ValueError(f"--token {name}: that environment variable is not set")
+    return value
+
+
 class RegexValidationError(ValueError):
     """Raised when user-provided regex pattern is invalid."""
 

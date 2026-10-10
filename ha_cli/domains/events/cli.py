@@ -75,7 +75,7 @@ def listen(
     count: int = typer.Option(0, "--count", "-n", help="Stop after N events (0=unlimited)"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output JSONL format"),
     url: str | None = typer.Option(None, "--url", envvar="HA_URL", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", envvar="HA_TOKEN", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
     """Listen for Home Assistant events in real-time.

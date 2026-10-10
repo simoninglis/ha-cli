@@ -93,7 +93,7 @@ def _handle_error(
 @app.command("status")
 def cloud_status(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -224,7 +224,7 @@ def cloud_status(
 def alexa_entities(
     exposed_only: bool = typer.Option(False, "--exposed", "-e", help="Show only exposed entities"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -306,7 +306,7 @@ def alexa_entities(
 @alexa_app.command("sync")
 def alexa_sync(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -400,7 +400,7 @@ def alexa_expose(
         None, "--from-file", "-f", help="YAML file with entity list"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -519,7 +519,7 @@ def alexa_hide(
         None, "--all-except", help="Hide all except entities in YAML file"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -672,7 +672,7 @@ def alexa_sync_filter(
         False, "--dry-run", help="Show what would change without making changes"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:

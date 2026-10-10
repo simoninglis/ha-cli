@@ -27,7 +27,7 @@ console = Console()
 @app.command("list")
 def list_areas(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     show_counts: bool = typer.Option(
         True, "--counts/--no-counts", help="Show device/entity counts"
     ),
@@ -113,7 +113,7 @@ def list_areas(
 def show_area(
     area_id: str = typer.Argument(..., help="Area ID or name to show"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -195,7 +195,7 @@ def show_area(
 @app.command("floors")
 def list_floors(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -252,7 +252,7 @@ def list_floors(
 @app.command("labels")
 def list_labels(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -309,7 +309,7 @@ def list_labels(
 @app.command("audit")
 def audit_areas(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -456,7 +456,7 @@ def create_area(
         None, "--labels", "-l", help="Comma-separated label IDs"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -532,7 +532,7 @@ def rename_area(
     area_id: str = typer.Argument(..., help="Area ID to rename"),
     new_name: str = typer.Argument(..., help="New name for the area"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -613,7 +613,7 @@ def update_area(
         None, "--labels", "-l", help="Comma-separated label IDs (replaces existing)"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -703,7 +703,7 @@ def delete_area(
         False, "--force", "-f", help="Delete even if area has devices/entities"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
     ),

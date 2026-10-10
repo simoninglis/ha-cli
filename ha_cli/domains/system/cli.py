@@ -37,7 +37,7 @@ console = Console()
 @app.command("restart")
 def restart(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     host: str = typer.Option(DEFAULT_SSH_HOST, "--host", "-h", help="SSH host (fallback)"),
     user: str = typer.Option(DEFAULT_SSH_USER, "--user", "-u", help="SSH user (fallback)"),
     check_first: bool = typer.Option(
@@ -190,7 +190,7 @@ def reload(
         help="Component to reload (automations, scripts, scenes, groups, etc.)",
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -338,7 +338,7 @@ def logs(
         False, "--errors-only", "-e", help="Show only error log via API (no SSH needed)"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL (for --errors-only)"),
-    token: str | None = typer.Option(None, "--token", help="Access token (for --errors-only)"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     host: str = typer.Option(DEFAULT_SSH_HOST, "--host", "-h", help="SSH host (for full logs)"),
     user: str = typer.Option(DEFAULT_SSH_USER, "--user", "-u", help="SSH user (for full logs)"),
     raw: bool = typer.Option(False, "--raw", help="Output raw logs without formatting"),
@@ -528,7 +528,7 @@ def call(
         False, "--return-response", "-r", help="Request response data from service"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -655,7 +655,7 @@ def template(
     file: str | None = typer.Option(None, "--file", "-f", help="Read template from file (- for stdin)"),
     raw: bool = typer.Option(False, "--raw", help="Output without formatting"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -778,7 +778,7 @@ def integrations(
     domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by integration domain"),
     unhealthy: bool = typer.Option(False, "--unhealthy", help="Show only non-loaded entries"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -935,7 +935,7 @@ def logbook(
     entity: str | None = typer.Option(None, "--entity", "-e", help="Filter by entity ID"),
     limit: int = typer.Option(100, "--limit", "-n", help="Maximum entries (0 for unlimited)"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"

@@ -32,7 +32,7 @@ console = Console()
 @app.command("list")
 def list_zones(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -107,7 +107,7 @@ def list_zones(
 def show_zone(
     zone_id: str = typer.Argument(..., help="Zone ID or name to show"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -191,7 +191,7 @@ def create_zone(
         False, "--passive", "-p", help="Hide from UI and device tracker"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -274,7 +274,7 @@ def update_zone(
         None, "--passive/--no-passive", help="Set passive mode"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -352,7 +352,7 @@ def delete_zone(
         False, "--force", "-f", help="Skip confirmation prompt"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
     ),

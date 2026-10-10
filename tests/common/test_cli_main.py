@@ -1,5 +1,7 @@
 """Tests for main CLI entry point (ha_cli/cli.py)."""
 
+import re
+
 from typer.testing import CliRunner
 
 from ha_cli.cli import app
@@ -64,3 +66,17 @@ class TestMainCLI:
         """Test invalid command shows error."""
         result = runner.invoke(app, ["nonexistent"])
         assert result.exit_code != 0
+
+
+class TestLiteralTokenRefused:
+    """--token names an env var. A literal token is a usage error that never echoes it."""
+
+    LITERAL = "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ4In0.c2lnbmF0dXJl"
+
+    def test_literal_token_is_a_usage_error(self) -> None:
+        result = runner.invoke(app, ["areas", "list", "--url", "http://ha.local:8123", "--token", self.LITERAL])
+        flat = " ".join(re.sub(r"[│╭╮╰╯─]", " ", result.output).split())   # rich wraps it in a box
+        assert result.exit_code == 2
+        assert "NAME of an environment variable" in flat
+        assert self.LITERAL not in result.output
+        assert self.LITERAL not in flat

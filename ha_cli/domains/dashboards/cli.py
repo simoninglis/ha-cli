@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 @app.command()
 def list(
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
@@ -188,7 +188,7 @@ def list(
 def read(
     url_path: str | None = typer.Argument(None, help="Dashboard URL path (omit for default)"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     format: str = typer.Option("yaml", "--format", "-f", help="Output format: yaml or json"),
     output: str | None = typer.Option(None, "--output", "-o", help="Output file"),
@@ -239,7 +239,7 @@ def read(
 def backup(
     url_path: str | None = typer.Argument(None, help="Dashboard URL path (omit for default)"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     output: str | None = typer.Option(None, "--output", "-o", help="Output file (auto-generated if omitted)"),
     format: str = typer.Option("yaml", "--format", "-f", help="Output format: yaml or json"),
@@ -272,7 +272,7 @@ def restore(
     input_file: str = typer.Argument(..., help="Backup file to restore from"),
     url_path: str | None = typer.Option(None, "--url-path", "-p", help="Dashboard URL path (omit for default)"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     validate_only: bool = typer.Option(False, "--validate-only", help="Only validate without restoring"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
@@ -309,7 +309,7 @@ def restore(
 def entities(
     url_path: str | None = typer.Argument(None, help="Dashboard URL path (omit for default)"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
@@ -513,7 +513,7 @@ def create(
     url_path: str = typer.Argument(..., help="URL path for the dashboard"),
     title: str = typer.Argument(..., help="Dashboard title"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     icon: str | None = typer.Option(None, "--icon", "-i", help="Icon (e.g., mdi:view-dashboard)"),
     no_sidebar: bool = typer.Option(False, "--no-sidebar", help="Don't show in sidebar"),
@@ -548,7 +548,7 @@ def create(
 def delete(
     dashboard_id: str = typer.Argument(..., help="Dashboard ID to delete"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
@@ -578,7 +578,7 @@ def delete(
 def views(
     url_path: str = typer.Argument(None, help="Dashboard URL path (blank for default)"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),

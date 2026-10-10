@@ -205,7 +205,7 @@ Create `~/.config/home-assistant-cli/config.json`:
 All commands support these options:
 
 - `--url/-u` - Home Assistant URL
-- `--token/-t` - Access token or environment variable name
+- `--token/-t` - **Name** of the environment variable holding the token (default `HA_TOKEN`). A literal token is refused: the command line is visible to every user on the host via `ps`
 - `--timeout` - Request timeout in seconds (default: 10)
 - `--json` - JSON output (where applicable)
 - `--porcelain` - Structured output optimized for automation tools (NEW!)
@@ -231,7 +231,7 @@ ha-automation list --storage file    # Only file-based automations
 ha-automation list --storage all     # All automations (default)
 
 # With custom URL/token
-ha-automation list --url http://ha.local:8123 --token YOUR_TOKEN
+ha-automation list --url http://ha.local:8123 --token HA_TOKEN   # the variable's NAME, never the token
 ```
 
 #### Create Automation

@@ -307,7 +307,7 @@ poetry run ha-cli dashboards entities <url-path> --porcelain
 - `--json`: Output in JSON format
 - `--yaml`: Output in YAML format (dashboards)
 - `--url`: Override Home Assistant URL
-- `--token`: Override access token
+- `--token`: name of the env var holding the token (e.g. `--token OTHER_HA_TOKEN`); a literal token is refused because argv is public (`ps`)
 - `--help`: Show command help
 
 ## Usage Examples

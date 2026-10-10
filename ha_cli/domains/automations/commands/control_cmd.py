@@ -19,7 +19,7 @@ console = Console()
 def enable(
     automation_id: str = typer.Argument(..., help="Automation ID to enable"),
     url: str | None = typer.Option(None, "--url", "-u"),
-    token: str | None = typer.Option(None, "--token", "-t"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout"),
     porcelain: bool = typer.Option(False, "--porcelain"),
     debug: bool = typer.Option(False, "--debug"),
@@ -67,7 +67,7 @@ def enable(
 def disable(
     automation_id: str = typer.Argument(..., help="Automation ID to disable"),
     url: str | None = typer.Option(None, "--url", "-u"),
-    token: str | None = typer.Option(None, "--token", "-t"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout"),
     porcelain: bool = typer.Option(False, "--porcelain"),
     debug: bool = typer.Option(False, "--debug"),
@@ -114,7 +114,7 @@ def disable(
 
 def reload(
     url: str | None = typer.Option(None, "--url", "-u"),
-    token: str | None = typer.Option(None, "--token", "-t"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout"),
     porcelain: bool = typer.Option(False, "--porcelain"),
     debug: bool = typer.Option(False, "--debug"),

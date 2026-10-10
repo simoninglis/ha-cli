@@ -129,7 +129,7 @@ def _output_result(
 @app.command("dead-entities")
 def dead_entities(
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
     domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain"),
     integration: str | None = typer.Option(None, "--integration", "-i", help="Filter by integration"),
@@ -174,7 +174,7 @@ def dead_entities(
 @app.command("duplicates")
 def duplicates(
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
     show_disabled: bool = typer.Option(False, "--show-disabled", help="Include disabled entities"),
     ignore_pattern: list[str] | None = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
@@ -214,7 +214,7 @@ def duplicates(
 @app.command("broken-automations")
 def broken_automations(
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
     ignore_pattern: list[str] | None = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
@@ -252,7 +252,7 @@ def broken_automations(
 @app.command("fragile-automations")
 def fragile_automations(
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
     ignore_pattern: list[str] | None = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
@@ -290,7 +290,7 @@ def fragile_automations(
 @app.command("unused-automations")
 def unused_automations(
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
     days: int = typer.Option(90, "--days", help="Days threshold for unused"),
     include_disabled: bool = typer.Option(False, "--include-disabled", help="Include disabled automations"),
@@ -330,7 +330,7 @@ def unused_automations(
 @app.command("trigger-stats")
 def trigger_stats(
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
     top: int = typer.Option(20, "--top", help="Number of results to show"),
     days: int | None = typer.Option(None, "--days", help="Filter to last N days"),
@@ -370,7 +370,7 @@ def trigger_stats(
 @app.command("integrations")
 def integrations(
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(30, "--timeout", help="Request timeout"),
     ignore_pattern: list[str] | None = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output in porcelain format"),
@@ -449,7 +449,7 @@ def integrations(
 @app.command("all")
 def all_checks(
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(60, "--timeout", help="Request timeout"),
     severity: str | None = typer.Option(None, "--severity", help="Filter by severity (error, warning, info)"),
     ignore_pattern: list[str] | None = typer.Option(None, "--ignore-pattern", help="Regex patterns to ignore"),

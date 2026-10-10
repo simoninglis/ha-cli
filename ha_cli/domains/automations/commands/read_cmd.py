@@ -28,7 +28,7 @@ console = Console()
 def read(
     automation_id: str = typer.Argument(..., help="Automation ID to read"),
     url: str | None = typer.Option(None, "--url", "-u"),
-    token: str | None = typer.Option(None, "--token", "-t"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout"),
     json_output: bool = typer.Option(False, "--json"),
     porcelain: bool = typer.Option(False, "--porcelain"),

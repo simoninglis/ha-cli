@@ -23,7 +23,7 @@ The ha-cli tool now supports automatic loading of environment variables from a `
 ## Configuration Priority
 
 The tool looks for credentials in this order:
-1. **Command line arguments** (`--url` and `--token`)
+1. **Command line arguments** (`--url`, and `--token` naming the env var that holds the token; a literal token is refused)
 2. **Environment variables** (including those from `.env` file)
 3. **Config file** (`~/.config/home-assistant-cli/config.json`)
 4. **Interactive prompt** (if all else fails)

@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 @app.command()
 def list(
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     search: str | None = typer.Option(None, "--search", "-s", help="Search pattern (regex)"),
     domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain"),
@@ -267,7 +267,7 @@ def state(
     value_only: bool = typer.Option(False, "--value-only", "-v", help="Output state value only"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Structured JSON output"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -371,7 +371,7 @@ def state(
 def export(
     output: str = typer.Argument(..., help="Output CSV file path"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     search: str | None = typer.Option(None, "--search", "-s", help="Search pattern (regex)"),
     domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain"),
@@ -408,7 +408,7 @@ def export(
 def backup(
     output: str | None = typer.Option(None, "--output", "-o", help="Output CSV file (auto-generated if omitted)"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -452,7 +452,7 @@ def rename(
     search: str = typer.Option(..., "--search", "-s", help="Search pattern (regex)"),
     replace: str = typer.Option(..., "--replace", "-r", help="Replace pattern (regex)"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be renamed without doing it"),
@@ -617,7 +617,7 @@ def rename(
 def import_operations(
     csv_file: str = typer.Argument(..., help="CSV file containing rename operations"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be renamed without doing it"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
@@ -716,7 +716,7 @@ def import_operations(
 def analyze(
     entity_id: str | None = typer.Argument(None, help="Entity ID to analyze"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     search: str | None = typer.Option(None, "--search", "-s", help="Search pattern for batch analysis"),
     domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain for batch analysis"),
@@ -951,7 +951,7 @@ def update(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Structured JSON output"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -1133,7 +1133,7 @@ def update_batch(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Structured JSON output"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -1330,7 +1330,7 @@ def delete(
     search: str | None = typer.Option(None, "--search", "-s", help="Search pattern (regex) for entities to delete"),
     entity_ids: List[str] | None = typer.Option(None, "--entity-id", "-e", help="Specific entity IDs to delete"),
     url: str | None = typer.Option(None, "--url", "-u", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", "-t", help="Access token or env var name"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout"),
     domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be deleted without doing it"),

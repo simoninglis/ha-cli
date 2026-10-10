@@ -2,9 +2,10 @@
 
 import json
 import os
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from ha_cli.common.config import get_client_config
 
@@ -17,11 +18,12 @@ class TestGetClientConfig:
         # Set up environment variables that should be overridden
         with patch.dict(os.environ, {
             "HA_URL": "http://env.local:8123",
-            "HA_TOKEN": "env_token"
+            "HA_TOKEN": "env_token",
+            "ARGS_TOKEN": "args_token",
         }):
             url, token = get_client_config(
                 url="http://args.local:8123",
-                token="args_token",
+                token="ARGS_TOKEN",  # --token names an env var, never the token
                 interactive=False
             )
 
@@ -146,12 +148,13 @@ class TestGetClientConfig:
         """Test that partial args are supplemented by environment variables."""
         with patch.dict(os.environ, {
             "HA_URL": "http://env.local:8123",
-            "HA_TOKEN": "env_token"
+            "HA_TOKEN": "env_token",
+            "ARGS_TOKEN": "args_token",
         }, clear=True):
             with patch("ha_cli.common.config.load_dotenv"):
-                # Only provide token via args
+                # Only provide token via args (as the name of an env var)
                 url, token = get_client_config(
-                    token="args_token",
+                    token="ARGS_TOKEN",
                     interactive=False
                 )
 
@@ -213,6 +216,64 @@ class TestGetTokenFromEnv:
 
         # Without underscore, not treated as env var
         assert result == "NONEXISTENT_VAR"
+
+
+class TestResolveCliToken:
+    """--token takes an env var NAME; a literal token on the command line is refused."""
+
+    LITERAL = "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ4In0.c2lnbmF0dXJl"
+
+    def test_env_var_name_resolves(self) -> None:
+        from ha_cli.common.utils import resolve_cli_token
+
+        with patch.dict(os.environ, {"HA_TOKEN": "actual_token"}):
+            assert resolve_cli_token("HA_TOKEN") == "actual_token"
+
+    def test_literal_token_refused_without_echoing_it(self) -> None:
+        from ha_cli.common.utils import resolve_cli_token
+
+        with pytest.raises(ValueError, match="NAME of an environment variable") as exc:
+            resolve_cli_token(self.LITERAL)
+        assert "NAME of an environment variable" in str(exc.value)
+        assert self.LITERAL not in str(exc.value)
+
+    @pytest.mark.parametrize("value", ["this_is_a_literal_token", "Ha_Token", "HA-TOKEN", "", " HA_TOKEN"])
+    def test_non_env_var_names_refused(self, value: str) -> None:
+        from ha_cli.common.utils import resolve_cli_token
+
+        with pytest.raises(ValueError, match="NAME of an environment variable"):
+            resolve_cli_token(value)
+
+    def test_unset_env_var_refused(self) -> None:
+        from ha_cli.common.utils import resolve_cli_token
+
+        with patch.dict(os.environ, {}, clear=True), pytest.raises(ValueError, match="not set"):
+            resolve_cli_token("HA_TOKEN")
+
+    def test_get_client_config_refuses_literal_cli_token(self) -> None:
+        import typer
+
+        from ha_cli.common.config import get_client_config
+
+        with pytest.raises(typer.BadParameter, match="NAME of an environment variable") as exc:
+            get_client_config("http://ha.local:8123", self.LITERAL, interactive=False)
+        assert self.LITERAL not in str(exc.value)
+
+    def test_get_client_config_cli_env_var_name(self) -> None:
+        from ha_cli.common.config import get_client_config
+
+        with patch.dict(os.environ, {"OTHER_HA_TOKEN": "t2"}, clear=True):
+            assert get_client_config("http://ha.local:8123", "OTHER_HA_TOKEN", interactive=False) == (
+                "http://ha.local:8123",
+                "t2",
+            )
+
+    def test_env_token_still_used_without_flag(self) -> None:
+        """No --token: HA_TOKEN's value comes from the environment, not argv."""
+        from ha_cli.common.config import get_client_config
+
+        with patch.dict(os.environ, {"HA_URL": "http://ha.local:8123", "HA_TOKEN": self.LITERAL}, clear=True):
+            assert get_client_config(None, None, interactive=False) == ("http://ha.local:8123", self.LITERAL)
 
 
 class TestGetConfigPath:

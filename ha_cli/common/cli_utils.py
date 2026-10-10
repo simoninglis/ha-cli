@@ -8,6 +8,7 @@ from collections.abc import Awaitable
 from datetime import UTC, datetime
 from typing import TypeVar
 
+import click
 from rich.console import Console
 
 from .exceptions import EXIT_HA_ERROR, EXIT_NETWORK_ERROR, HAAutomationError
@@ -143,6 +144,18 @@ async def run_async_command(coro: Awaitable[T], command: str = "unknown") -> T:
             if e.details:
                 logger.debug(f"Error details: {e.details}")
         sys.exit(EXIT_HA_ERROR)
+    except click.UsageError as e:
+        # A usage error (e.g. a literal token passed to --token): Click prints it
+        # without a traceback; porcelain mode still gets structured output.
+        if _porcelain_mode:
+            _emit_porcelain_error(
+                command=command,
+                error_type=e.__class__.__name__,
+                message=e.format_message(),
+                response_time_ms=int((time.time() - start_time) * 1000),
+            )
+            sys.exit(e.exit_code)
+        raise
     except Exception as e:
         response_time_ms = int((time.time() - start_time) * 1000)
         if _porcelain_mode:

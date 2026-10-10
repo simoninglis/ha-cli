@@ -61,7 +61,7 @@ def _parse_repair_id(repair_id: str) -> tuple[str, str] | None:
 @app.command("list")
 def list_repairs(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     include_ignored: bool = typer.Option(
         False, "--all", "-a", help="Include ignored/dismissed repairs"
     ),
@@ -184,7 +184,7 @@ def show_repair(
         ..., help="Repair ID in format domain/issue_id"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -301,7 +301,7 @@ def ignore_repair(
         ..., help="Repair ID in format domain/issue_id"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
     ),
@@ -385,7 +385,7 @@ def unignore_repair(
         ..., help="Repair ID in format domain/issue_id"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
     ),

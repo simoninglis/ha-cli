@@ -97,7 +97,7 @@ def _write_flow_step(
 @app.command("list")
 def list_entries(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     domain: str | None = typer.Option(
         None, "--domain", "-d", help="Filter by integration domain"
     ),
@@ -201,7 +201,7 @@ def list_entries(
 def show_entry(
     entry_id: str = typer.Argument(..., help="Config entry ID or domain name"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -280,7 +280,7 @@ def show_entry(
 def enable_entry(
     entry_id: str = typer.Argument(..., help="Config entry ID"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
     ),
@@ -365,7 +365,7 @@ def enable_entry(
 def disable_entry(
     entry_id: str = typer.Argument(..., help="Config entry ID"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
     ),
@@ -450,7 +450,7 @@ def disable_entry(
 def delete_entry(
     entry_id: str = typer.Argument(..., help="Config entry ID"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     force: bool = typer.Option(
         False, "--force", "-f", help="Skip confirmation prompt"
     ),
@@ -547,7 +547,7 @@ def delete_entry(
 def setup_integration(
     domain_name: str = typer.Argument(..., help="Integration domain to set up"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     host: str | None = typer.Option(
         None, "--host", "-h", help="Host for network integrations (e.g., ESPHome)"
     ),
@@ -634,7 +634,7 @@ def setup_integration(
 @app.command("flows")
 def list_flows(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -721,7 +721,7 @@ def show_flow(
         False, "--subentry", help="Read a config-subentry flow"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -792,7 +792,7 @@ def submit_flow(
         False, "--subentry", help="Submit to a config-subentry flow"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -864,7 +864,7 @@ def start_subentry(
         ..., help="Integration-defined subentry type"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -921,7 +921,7 @@ def start_subentry(
 def show_options(
     entry_id: str = typer.Argument(..., help="Config entry ID or domain name"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -985,7 +985,7 @@ def update_options(
         help="Read options from a JSON file",
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
@@ -1064,7 +1064,7 @@ def cancel_flow(
         False, "--subentry", help="Cancel a config-subentry flow"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
     ),

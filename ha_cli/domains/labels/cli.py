@@ -84,7 +84,7 @@ def _handle_error(
 @app.command("list")
 def list_labels(
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -158,7 +158,7 @@ def create_label(
         None, "--description", "-d", help="Description"
     ),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -222,7 +222,7 @@ def delete_label(
     label_id: str = typer.Argument(..., help="Label ID to delete"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -305,7 +305,7 @@ def assign_label(
     entity_id: str = typer.Argument(..., help="Entity ID"),
     label_id: str = typer.Argument(..., help="Label ID to assign"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -353,7 +353,7 @@ def remove_label(
     entity_id: str = typer.Argument(..., help="Entity ID"),
     label_id: str = typer.Argument(..., help="Label ID to remove"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
@@ -400,7 +400,7 @@ def remove_label(
 def list_entities(
     label_id: str = typer.Argument(..., help="Label ID"),
     url: str | None = typer.Option(None, "--url", help="Home Assistant URL"),
-    token: str | None = typer.Option(None, "--token", help="Access token"),
+    token: str | None = typer.Option(None, "--token", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     porcelain: bool = typer.Option(False, "--porcelain", help="Output structured JSON"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:

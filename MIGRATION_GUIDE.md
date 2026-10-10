@@ -87,7 +87,7 @@ ha-cli dashboards entities [url-path]
 Configuration remains the same. The tool uses the same:
 - Environment variables: `HA_URL`, `HA_TOKEN`
 - Config file: `~/.config/home-assistant-cli/config.json`
-- Command-line options: `--url`, `--token`
+- Command-line options: `--url`, `--token` (the **name** of an env var; literal tokens are refused since 2026-10)
 
 ## Python API Changes
 

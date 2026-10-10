@@ -45,7 +45,7 @@ def _handle_not_found_error(automation_id: str, formatter: PorcelainFormatter | 
 def create(
     file_path: str = typer.Argument(..., help="Path to YAML/JSON automation file"),
     url: str | None = typer.Option(None, "--url", "-u"),
-    token: str | None = typer.Option(None, "--token", "-t"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without creating"),
     porcelain: bool = typer.Option(False, "--porcelain"),
@@ -96,7 +96,7 @@ def update(
     automation_id: str = typer.Argument(..., help="Automation ID to update"),
     file_path: str = typer.Argument(..., help="Path to YAML/JSON automation file"),
     url: str | None = typer.Option(None, "--url", "-u"),
-    token: str | None = typer.Option(None, "--token", "-t"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without updating"),
     porcelain: bool = typer.Option(False, "--porcelain"),
@@ -146,7 +146,7 @@ def update(
 def delete(
     automation_id: str = typer.Argument(..., help="Automation ID to delete"),
     url: str | None = typer.Option(None, "--url", "-u"),
-    token: str | None = typer.Option(None, "--token", "-t"),
+    token: str | None = typer.Option(None, "--token", "-t", help="Name of the env var holding the token (default: HA_TOKEN); never the token itself"),
     timeout: int = typer.Option(10, "--timeout"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without deleting"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),

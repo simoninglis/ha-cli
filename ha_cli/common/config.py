@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-from .utils import get_config_path, get_token_from_env, load_config, save_config
+from .utils import get_config_path, get_token_from_env, load_config, resolve_cli_token, save_config
 
 
 def get_client_config(
@@ -26,7 +26,7 @@ def get_client_config(
     
     Args:
         url: Home Assistant URL from command line
-        token: Access token from command line
+        token: Name of the env var holding the token, from --token
         timeout: Request timeout (not used in this function)
         interactive: Whether to prompt for missing values
         
@@ -39,7 +39,16 @@ def get_client_config(
     # Load .env file if it exists (from current directory or parent directories)
     load_dotenv()
     
-    # 1. Try command line args
+    # 1. Try command line args. --token names an env var; a literal token is refused,
+    #    because argv is readable by every user on the host.
+    if token is not None:
+        try:
+            token = resolve_cli_token(token)
+        except ValueError as e:
+            import typer
+
+            # A usage error, printed by Click without a traceback; `from None` drops the chain.
+            raise typer.BadParameter(str(e), param_hint="'--token'") from None
     if url and token:
         return url, get_token_from_env(token)
     
