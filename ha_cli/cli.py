@@ -26,6 +26,7 @@ from .domains.dashboards import cli as dashboards_cli
 from .domains.deconz import cli as deconz_cli
 from .domains.entities import cli as entities_cli
 from .domains.events import cli as events_cli
+from .domains.hacs import cli as hacs_cli
 from .domains.integrations import cli as integrations_cli
 from .domains.labels import cli as labels_cli
 from .domains.repairs import cli as repairs_cli
@@ -41,6 +42,7 @@ app.add_typer(dashboards_cli.app, name="dashboards")
 app.add_typer(deconz_cli.app, name="deconz")
 app.add_typer(entities_cli.app, name="entities")
 app.add_typer(events_cli.app, name="events")
+app.add_typer(hacs_cli.app, name="hacs")
 app.add_typer(integrations_cli.app, name="integrations")
 app.add_typer(labels_cli.app, name="labels")
 app.add_typer(repairs_cli.app, name="repairs")
