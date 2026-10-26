@@ -325,26 +325,6 @@ def get_config_path() -> Path:
     return canonical_path
 
 
-def get_token_from_env(token_value: str) -> str:
-    """Get token value, checking if it's an env var name.
-    
-    Args:
-        token_value: Token or env var name
-        
-    Returns:
-        Actual token value
-    """
-    # If token looks like an env var name (all caps with underscores)
-    if token_value.isupper() and "_" in token_value:
-        # Try to get from environment
-        env_value = os.environ.get(token_value)
-        if env_value:
-            return env_value
-    
-    # Otherwise return as-is
-    return token_value
-
-
 ENV_VAR_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 

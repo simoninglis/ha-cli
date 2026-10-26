@@ -140,6 +140,16 @@ class ConfigurationError(HAAutomationError):
     pass
 
 
+class MissingCredentialsError(ConfigurationError, ValueError):
+    """No Home Assistant URL and/or token could be found, and no prompt was possible.
+
+    Also a ValueError, which is what get_client_config raised before it had a type of
+    its own, so existing `except ValueError` callers keep working.
+    """
+
+    pass
+
+
 class AutomationNotFoundError(NotFoundError):
     """Raised when a specific automation is not found.
 

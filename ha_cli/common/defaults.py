@@ -8,10 +8,10 @@ Environment variables can be set directly or via a .env file in the working dire
 
 import os
 
-from dotenv import load_dotenv
+from .envfile import load_env_file
 
-# Load .env file if present (before reading env vars)
-load_dotenv()
+# Load .env file if present (before reading env vars). Never a token: see envfile.py
+load_env_file()
 
 # SSH connection defaults
 DEFAULT_SSH_HOST = os.environ.get("HA_SSH_HOST", "homeassistant")

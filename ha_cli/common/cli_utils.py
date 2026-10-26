@@ -11,7 +11,13 @@ from typing import TypeVar
 import typer
 from rich.console import Console
 
-from .exceptions import EXIT_HA_ERROR, EXIT_NETWORK_ERROR, HAAutomationError
+from .exceptions import (
+    EXIT_HA_ERROR,
+    EXIT_NETWORK_ERROR,
+    EXIT_USAGE_ERROR,
+    ConfigurationError,
+    HAAutomationError,
+)
 
 # Type variable for async command return type
 T = TypeVar('T')
@@ -129,6 +135,19 @@ async def run_async_command(coro: Awaitable[T], command: str = "unknown") -> T:
     start_time = time.time()
     try:
         return await coro
+    except ConfigurationError as e:
+        # Local setup problem (e.g. HA_URL / HA_TOKEN not set): a usage error with a
+        # one-line message, not an HA error and not a traceback.
+        if _porcelain_mode:
+            _emit_porcelain_error(
+                command=command,
+                error_type=e.__class__.__name__,
+                message=e.message,
+                response_time_ms=int((time.time() - start_time) * 1000),
+            )
+        else:
+            console.print(f"[red]Error:[/red] {e.message}")
+        sys.exit(EXIT_USAGE_ERROR)
     except HAAutomationError as e:
         response_time_ms = int((time.time() - start_time) * 1000)
         if _porcelain_mode:
