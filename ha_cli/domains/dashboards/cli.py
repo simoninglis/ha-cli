@@ -666,6 +666,10 @@ def screenshot(
     This command navigates to the specified dashboard, waits for it to render,
     and captures a screenshot. Useful for verifying dashboard changes after deployment.
 
+    Logs in with HA_TOKEN when it is set (no password needed), otherwise with
+    HA_USERNAME / HA_PASSWORD. A rejected login is an error, never a screenshot of
+    the login page.
+
     Examples:
         ha-cli dashboards screenshot room-lounge
         ha-cli dashboards screenshot mobile-home --output /tmp/mobile.png

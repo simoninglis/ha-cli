@@ -20,8 +20,9 @@ Skip during regular unit test runs:
 
 ## Requirements
 
-- HA_USERNAME and HA_PASSWORD in .env file (or environment)
-- Home Assistant accessible at HOME_ASSISTANT_URL (default: http://homeassistant.local:8123)
+- HA_TOKEN in the environment (e.g. via bao-run), or HA_USERNAME and HA_PASSWORD
+  in .env / the environment
+- Home Assistant at HOME_ASSISTANT_URL or HA_URL (default: http://homeassistant.local:8123)
 - Playwright browsers: poetry run playwright install chromium
 
 ## Integration
@@ -34,29 +35,30 @@ See docs/troubleshooting.md#frontend-loading-data-spinner for diagnosis.
 
 import asyncio
 import json
-import os
 import re
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import pytest
 from playwright.async_api import async_playwright, Page, WebSocket
 
-# Load .env file
-env_file = Path(__file__).parent.parent / ".env"
-if env_file.exists():
-    with open(env_file) as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, _, value = line.partition("=")
-                if key not in os.environ and not value.startswith("${"):
-                    os.environ[key] = value
+from ha_cli.common.frontend_auth import (
+    FrontendAuth,
+    FrontendAuthError,
+    assert_logged_in,
+    ensure_logged_in,
+    prepare_context,
+    resolve_frontend_auth,
+    resolve_frontend_url,
+    settle,
+)
 
-HA_URL = os.environ.get("HOME_ASSISTANT_URL", "http://homeassistant.local:8123")
-HA_USERNAME = os.environ.get("HA_USERNAME", "")
-HA_PASSWORD = os.environ.get("HA_PASSWORD", "")
+# HA_TOKEN (e.g. via bao-run) or HA_USERNAME/HA_PASSWORD; see ha_cli/common/frontend_auth.py
+try:
+    AUTH: FrontendAuth | None = resolve_frontend_auth()
+except FrontendAuthError:
+    AUTH = None
+HA_URL = AUTH.url if AUTH else resolve_frontend_url()
 
 # Critical WebSocket requests that must respond for frontend to load
 CRITICAL_WS_TYPES = [
@@ -71,8 +73,17 @@ CRITICAL_WS_TYPES = [
 @pytest.fixture
 def skip_if_no_credentials():
     """Skip tests if HA credentials are not configured."""
-    if not HA_USERNAME or not HA_PASSWORD:
-        pytest.skip("HA_USERNAME and HA_PASSWORD environment variables required")
+    if AUTH is None:
+        pytest.skip("HA_TOKEN, or HA_USERNAME and HA_PASSWORD, required")
+
+
+async def wait_for_success(tracker: "WebSocketTracker", msg_type: str, timeout_s: float = 30) -> bool:
+    """Poll until `msg_type` has succeeded, or give up after `timeout_s`."""
+    for _ in range(int(timeout_s * 2)):
+        if tracker.succeeded(msg_type):
+            return True
+        await asyncio.sleep(0.5)
+    return tracker.succeeded(msg_type)
 
 
 class WebSocketTracker:
@@ -89,7 +100,8 @@ class WebSocketTracker:
             msg_id = data.get("id")
             msg_type = data.get("type", "unknown")
             if msg_id:
-                self.sent[msg_id] = {"type": msg_type, "data": data}
+                # Type only: never keep frame contents (the auth frame carries the token)
+                self.sent[msg_id] = {"type": msg_type}
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -109,6 +121,13 @@ class WebSocketTracker:
         except (json.JSONDecodeError, TypeError):
             pass
 
+    def succeeded(self, msg_type: str) -> bool:
+        """True once a request of this type got a successful response."""
+        return any(
+            req["type"] == msg_type and self.received.get(mid, {}).get("success") is True
+            for mid, req in self.sent.items()
+        )
+
     def get_unanswered_requests(self) -> dict[int, dict[str, Any]]:
         """Return requests that never received responses."""
         unanswered_ids = set(self.sent.keys()) - set(self.received.keys())
@@ -122,13 +141,6 @@ class WebSocketTracker:
             for req in unanswered.values()
             if req["type"] in CRITICAL_WS_TYPES
         ]
-
-    def is_recorder_responding(self) -> bool:
-        """Check if recorder/info received a response."""
-        for mid, req in self.sent.items():
-            if req["type"] == "recorder/info":
-                return mid in self.received
-        return True  # If not requested, assume OK
 
 
 @pytest.mark.asyncio
@@ -145,6 +157,7 @@ async def test_frontend_loads(skip_if_no_credentials):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
+        await prepare_context(context, AUTH)
         page = await context.new_page()
 
         # Track failed HTTP requests
@@ -161,25 +174,32 @@ async def test_frontend_loads(skip_if_no_credentials):
         page.on("websocket", handle_ws)
 
         # Navigate to HA
-        await page.goto(HA_URL, timeout=60000, wait_until="networkidle")
+        await page.goto(HA_URL, timeout=60000, wait_until="load")
+        await settle(page)
 
-        # Handle login if needed
-        if "/auth" in page.url:
-            await asyncio.sleep(2)
-            await page.fill('input[name="username"]', HA_USERNAME)
-            await page.fill('input[name="password"]', HA_PASSWORD)
-            await page.click("ha-button")
-            await asyncio.sleep(5)
+        # Log in if needed (no-op with a token; a rejected token fails here)
+        await ensure_logged_in(page, AUTH)
 
-        # Wait for WebSocket activity to settle
-        await asyncio.sleep(15)
+        # The frontend must actually come up: config and dashboard loaded over an
+        # authenticated websocket. An empty trace is a failure, not a pass.
+        ready = await wait_for_success(tracker, "lovelace/config")
+
+        # Wait for remaining WebSocket activity to settle
+        await asyncio.sleep(10)
 
         # Take screenshot for debugging
         await page.screenshot(path="/tmp/ha_smoke_test.png")
 
+        # Still logged in after everything settled (a late auth failure lands on /auth)
+        assert_logged_in(page, AUTH, "after the frontend loaded")
+
         await browser.close()
 
     # Assertions
+    assert ready and tracker.succeeded("get_config"), (
+        "The frontend never finished loading: no successful get_config / lovelace/config. "
+        f"Requests seen: {sorted({r['type'] for r in tracker.sent.values()})}"
+    )
     critical_unanswered = tracker.get_critical_unanswered()
     assert len(critical_unanswered) == 0, (
         f"Critical WebSocket requests did not receive responses: {critical_unanswered}. "
@@ -188,7 +208,7 @@ async def test_frontend_loads(skip_if_no_credentials):
     )
 
     # Check recorder specifically (the most common cause of frontend hang)
-    assert tracker.is_recorder_responding(), (
+    assert tracker.succeeded("recorder/info"), (
         "recorder/info WebSocket request did not receive a response. "
         "This is the most common cause of the 'Loading data' spinner. "
         "Check recorder configuration - avoid restrictive include: filters."
@@ -205,11 +225,11 @@ async def test_recorder_info_responds(skip_if_no_credentials):
     This is the most critical check - if recorder/info hangs, the frontend hangs.
     """
     tracker = WebSocketTracker()
-    recorder_responded = False
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
+        await prepare_context(context, AUTH)
         page = await context.new_page()
 
         def handle_ws(ws: WebSocket):
@@ -218,31 +238,22 @@ async def test_recorder_info_responds(skip_if_no_credentials):
 
         page.on("websocket", handle_ws)
 
-        await page.goto(HA_URL, timeout=60000, wait_until="networkidle")
+        await page.goto(HA_URL, timeout=60000, wait_until="load")
+        await settle(page)
 
-        if "/auth" in page.url:
-            await asyncio.sleep(2)
-            await page.fill('input[name="username"]', HA_USERNAME)
-            await page.fill('input[name="password"]', HA_PASSWORD)
-            await page.click("ha-button")
-            await asyncio.sleep(5)
+        await ensure_logged_in(page, AUTH)
 
-        # Wait specifically for recorder/info
-        for _ in range(30):  # 30 second timeout
-            await asyncio.sleep(1)
-            if tracker.is_recorder_responding():
-                # Check if we actually got a recorder/info request and response
-                for mid, req in tracker.sent.items():
-                    if req["type"] == "recorder/info" and mid in tracker.received:
-                        recorder_responded = True
-                        break
-            if recorder_responded:
-                break
+        # Wait (bounded) for a SUCCESSFUL recorder/info - an error response is not health -
+        # and for the dashboard config, so an empty trace can't pass
+        recorder_responded = await wait_for_success(tracker, "recorder/info")
+        dashboard_loaded = await wait_for_success(tracker, "lovelace/config")
 
+        assert_logged_in(page, AUTH)
         await browser.close()
 
+    assert dashboard_loaded, "The dashboard never loaded (no successful lovelace/config)"
     assert recorder_responded, (
-        "recorder/info never received a response within 30 seconds. "
+        "recorder/info never succeeded within 30 seconds. "
         "The recorder integration may be blocked. "
         "See docs/troubleshooting.md#frontend-loading-data-spinner"
     )
@@ -262,6 +273,7 @@ async def test_no_critical_http_failures(skip_if_no_credentials):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
+        await prepare_context(context, AUTH)
         page = await context.new_page()
 
         page.on("requestfailed", lambda req: failed_requests.append({
@@ -269,16 +281,28 @@ async def test_no_critical_http_failures(skip_if_no_credentials):
             "failure": str(req.failure),
         }))
 
-        await page.goto(HA_URL, timeout=60000, wait_until="networkidle")
+        tracker = WebSocketTracker()
 
-        if "/auth" in page.url:
-            await asyncio.sleep(2)
-            await page.fill('input[name="username"]', HA_USERNAME)
-            await page.fill('input[name="password"]', HA_PASSWORD)
-            await page.click("ha-button")
-            await asyncio.sleep(10)
+        def handle_ws(ws: WebSocket):
+            ws.on("framesent", lambda payload: tracker.handle_frame_sent(payload))
+            ws.on("framereceived", lambda payload: tracker.handle_frame_received(payload))
+
+        page.on("websocket", handle_ws)
+
+        await page.goto(HA_URL, timeout=60000, wait_until="load")
+        await settle(page)
+
+        await ensure_logged_in(page, AUTH)
+
+        # Let the dashboard load its resources before judging what failed: closing
+        # straight after login would see no requests at all and pass.
+        ready = await wait_for_success(tracker, "lovelace/config")
+        await settle(page)
+        assert_logged_in(page, AUTH)
 
         await browser.close()
+
+    assert ready, "The dashboard never loaded (no successful lovelace/config): nothing was checked"
 
     def is_critical_failure(url: str) -> bool:
         """Determine if a failed request is critical (should fail the test).
@@ -352,11 +376,11 @@ async def test_lovelace_config_loads(skip_if_no_credentials):
     Verify Lovelace dashboard configuration loads successfully.
     """
     tracker = WebSocketTracker()
-    lovelace_loaded = False
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
+        await prepare_context(context, AUTH)
         page = await context.new_page()
 
         def handle_ws(ws: WebSocket):
@@ -365,25 +389,16 @@ async def test_lovelace_config_loads(skip_if_no_credentials):
 
         page.on("websocket", handle_ws)
 
-        await page.goto(HA_URL, timeout=60000, wait_until="networkidle")
+        await page.goto(HA_URL, timeout=60000, wait_until="load")
+        await settle(page)
 
-        if "/auth" in page.url:
-            await asyncio.sleep(2)
-            await page.fill('input[name="username"]', HA_USERNAME)
-            await page.fill('input[name="password"]', HA_PASSWORD)
-            await page.click("ha-button")
-            await asyncio.sleep(10)
+        await ensure_logged_in(page, AUTH)
+
+        # Wait (bounded) for the dashboard config, rather than closing straight away
+        lovelace_loaded = await wait_for_success(tracker, "lovelace/config")
+        assert_logged_in(page, AUTH)
 
         await browser.close()
-
-    # Check lovelace/config received a response
-    for mid, req in tracker.sent.items():
-        if req["type"] == "lovelace/config":
-            if mid in tracker.received:
-                resp = tracker.received[mid]
-                if resp.get("success") is True:
-                    lovelace_loaded = True
-                    break
 
     assert lovelace_loaded, (
         "Lovelace configuration did not load successfully. "

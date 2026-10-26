@@ -1,54 +1,34 @@
 """Playwright-based dashboard screenshot capture.
 
 Captures screenshots of Home Assistant dashboards for visual verification.
-Reuses credential and browser patterns from test_smoke_frontend.py.
+Logs in with HA_TOKEN when set (no password needed), else HA_USERNAME/HA_PASSWORD:
+see common/frontend_auth.py.
 """
 
 import asyncio
-import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
-
-def get_credentials() -> tuple[str, str, str]:
-    """Get Home Assistant credentials from environment.
-
-    Loads from .env file if present, then checks environment variables.
-    Supports both HA_URL and HOME_ASSISTANT_URL for the base URL.
-
-    Returns:
-        Tuple of (url, username, password)
-
-    Raises:
-        ValueError: If required credentials are missing
-    """
-    # Use python-dotenv for proper .env parsing (handles quotes, exports, comments)
-    load_dotenv()
-
-    # Support both HA_URL and HOME_ASSISTANT_URL for consistency with other CLI commands
-    url = os.environ.get("HOME_ASSISTANT_URL") or os.environ.get("HA_URL", "http://homeassistant.local:8123")
-    username = os.environ.get("HA_USERNAME", "")
-    password = os.environ.get("HA_PASSWORD", "")
-
-    if not username or not password:
-        raise ValueError(
-            "HA_USERNAME and HA_PASSWORD environment variables are required. "
-            "Set them in .env file or export them."
-        )
-
-    return url, username, password
+from ...common.frontend_auth import (
+    FrontendAuth,
+    assert_logged_in,
+    ensure_logged_in,
+    prepare_context,
+    resolve_frontend_auth,
+    settle,
+)
 
 
 async def capture_dashboard_screenshot(
     dashboard_name: str,
-    output_path: Optional[str] = None,
+    output_path: str | None = None,
     viewport_width: int = 1024,
     viewport_height: int = 768,
     wait_seconds: int = 5,
+    auth: FrontendAuth | None = None,
 ) -> str:
     """Capture a screenshot of a Home Assistant dashboard.
 
@@ -58,18 +38,20 @@ async def capture_dashboard_screenshot(
         viewport_width: Browser viewport width (default: 1024 for tablets)
         viewport_height: Browser viewport height (default: 768 for tablets)
         wait_seconds: Seconds to wait after page load for rendering (default: 5)
+        auth: Credentials; resolved from the environment when omitted
 
     Returns:
         Path to the saved screenshot file
 
     Raises:
-        ValueError: If credentials are missing
+        FrontendAuthError: (a ValueError) If credentials are missing or rejected
         playwright.async_api.Error: If browser operations fail
     """
-    url, username, password = get_credentials()
+    if auth is None:
+        auth = resolve_frontend_auth()
+    url = auth.url.rstrip("/")
 
-    # Normalize URL and dashboard name (strip trailing/leading slashes)
-    url = url.rstrip("/")
+    # Normalize dashboard name (strip trailing/leading slashes)
     dashboard_name = dashboard_name.strip("/") if dashboard_name else ""
 
     # Build dashboard URL
@@ -79,7 +61,7 @@ async def capture_dashboard_screenshot(
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         safe_name = dashboard_name.replace("/", "-") if dashboard_name else "default"
-        output_path = f"/tmp/dashboard-{safe_name}-{timestamp}.png"
+        output_path = str(Path(tempfile.gettempdir()) / f"dashboard-{safe_name}-{timestamp}.png")
 
     # Ensure output directory exists
     output_dir = Path(output_path).parent
@@ -87,28 +69,29 @@ async def capture_dashboard_screenshot(
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={"width": viewport_width, "height": viewport_height}
-        )
-        page = await context.new_page()
-
         try:
-            # Navigate to dashboard
-            await page.goto(dashboard_url, timeout=60000, wait_until="networkidle")
+            context = await browser.new_context(
+                viewport={"width": viewport_width, "height": viewport_height}
+            )
+            # Blocks navigation off the HA origin; seeds the token if there is one
+            await prepare_context(context, auth)
+            page = await context.new_page()
 
-            # Handle login if needed
-            if "/auth" in page.url:
-                await asyncio.sleep(2)
-                await page.fill('input[name="username"]', username)
-                await page.fill('input[name="password"]', password)
-                await page.click("ha-button")
+            # Navigate to dashboard. "load", then a bounded wait for network idle:
+            # dashboards with live cameras or streams never go idle, and waiting
+            # for that outright timed out on mobile-home.
+            await page.goto(dashboard_url, timeout=60000, wait_until="load")
+            await settle(page)
 
-                # Wait for redirect after login - use flexible pattern
-                await page.wait_for_url(f"**/{dashboard_name}*" if dashboard_name else "**", timeout=30000)
-                await page.wait_for_load_state("networkidle")
+            # Log in if the frontend asked (password auth). With a token, a login
+            # page means the token was rejected: raise rather than capture it.
+            await ensure_logged_in(page, auth)
 
             # Wait for dashboard to fully render
             await asyncio.sleep(wait_seconds)
+
+            # The frontend can still bounce to /auth once its websocket auth fails
+            assert_logged_in(page, auth, f"instead of /{dashboard_name}")
 
             # Capture screenshot
             await page.screenshot(path=output_path, full_page=True)
