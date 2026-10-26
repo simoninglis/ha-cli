@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, List
 
 import typer
-from rich import print
 from rich.console import Console
 from rich.table import Table
 
@@ -252,7 +251,7 @@ def list(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                print(error_output)
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -359,7 +358,7 @@ def state(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                print(error_output)
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise
@@ -753,7 +752,7 @@ def analyze(
                         "impact_level": impact_analysis.impact_level,
                         "recommendations": impact_analysis.recommendations,
                     }
-                    print(json.dumps(data, indent=2))
+                    write_output(json.dumps(data, indent=2))
                     
                 else:
                     # Rich console output
@@ -860,7 +859,7 @@ def analyze(
                             for entity, analysis in analysis_results
                         ]
                     }
-                    print(json.dumps(data, indent=2))
+                    write_output(json.dumps(data, indent=2))
                     
                 else:
                     # Rich console output for batch analysis
@@ -1400,7 +1399,7 @@ def delete(
                     if porcelain:
                         assert formatter is not None  # Type narrowing for mypy
                         output = formatter.success([], {"entities_found": 0}, {"message": "No entities found to delete"})
-                        print(output)
+                        write_output(output)
                     else:
                         console.print("[yellow]No entities found matching the criteria[/yellow]")
                     return
@@ -1433,7 +1432,7 @@ def delete(
                     
                     if dry_run:
                         output = formatter.success(data, metadata, suggestions)
-                        print(output)
+                        write_output(output)
                         return
                 
                 elif json_output:
@@ -1450,7 +1449,7 @@ def delete(
                         "dry_run": dry_run,
                         "total": len(entities_to_delete)
                     }
-                    print(json.dumps(json_preview, indent=2))
+                    write_output(json.dumps(json_preview, indent=2))
                     
                     if dry_run:
                         return
@@ -1543,7 +1542,7 @@ def delete(
                         result_suggestions["warnings"].append("Failed deletions may indicate entities are in use")
 
                     output = formatter.success(results_data, metadata, result_suggestions)
-                    print(output)
+                    write_output(output)
 
                 elif json_output:
                     # JSON results
@@ -1555,7 +1554,7 @@ def delete(
                             "failed": failure_count
                         }
                     }
-                    print(json.dumps(json_data, indent=2))
+                    write_output(json.dumps(json_data, indent=2))
                     
                 else:
                     # Rich console output
@@ -1576,7 +1575,7 @@ def delete(
         except Exception as e:
             if porcelain and formatter:
                 error_output = formatter.error(e)
-                print(error_output)
+                write_output(error_output)
                 sys.exit(EXIT_HA_ERROR)
             else:
                 raise

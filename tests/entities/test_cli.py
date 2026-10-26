@@ -182,6 +182,48 @@ class TestStateCommand:
         assert output["data"]["state"] == "on"
         assert "metadata" in output
 
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_state_porcelain_long_values_stay_valid_json(self, mock_service_class, mock_client_class, runner):
+        """Porcelain must not be wrapped or markup-parsed like rich output (jq choked on it)."""
+        long_value = "x" * 300 + " [red]not markup[/red]"
+        mock_service = AsyncMock()
+        mock_service.get_state.return_value = {
+            "entity_id": "sensor.long",
+            "state": long_value,
+            "attributes": {},
+        }
+        mock_service_class.return_value = mock_service
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(cli.app, ["state", "sensor.long", "--porcelain"], env={"COLUMNS": "40"})
+
+        assert result.exit_code == 0
+        assert json.loads(result.output)["data"]["state"] == long_value
+
+    @patch("ha_cli.domains.entities.cli.HAClient")
+    @patch("ha_cli.domains.entities.cli.EntityService")
+    def test_state_porcelain_error_is_valid_json(self, mock_service_class, mock_client_class, runner):
+        from ha_cli.common.exceptions import NotFoundError
+
+        mock_service = AsyncMock()
+        mock_service.get_state.side_effect = NotFoundError(
+            "Resource not found: /api/states/camera.nonexistent_x - Entity not found." * 3
+        )
+        mock_service_class.return_value = mock_service
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(cli.app, ["state", "camera.nonexistent_x", "--porcelain"], env={"COLUMNS": "40"})
+
+        assert result.exit_code != 0
+        assert json.loads(result.output)["status"] == "error"
+
     def test_state_mutually_exclusive_flags(self, runner):
         """Test that --value-only and --porcelain are mutually exclusive."""
         result = runner.invoke(cli.app, ["state", "light.office", "--value-only", "--porcelain"])
