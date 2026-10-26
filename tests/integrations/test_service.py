@@ -614,3 +614,98 @@ class TestSetupIntegration:
 
         with pytest.raises(ValidationError, match="aborted"):
             await service.setup_integration("test")
+
+
+class TestSetupWithData:
+    """--data form fields, rejected input, and settling (ha-cli for #239 local_file)."""
+
+    FORM = {
+        "type": "form",
+        "flow_id": "flow9",
+        "handler": "local_file",
+        "step_id": "user",
+        "data_schema": [
+            {"type": "string", "name": "name", "required": True, "default": "Local File"},
+            {"type": "string", "name": "file_path", "required": True},
+        ],
+    }
+
+    @pytest.mark.asyncio()
+    async def test_data_fills_and_overrides_defaults(self, mock_client: MagicMock) -> None:
+        mock_client._rest.side_effect = [
+            self.FORM,
+            {"type": "create_entry", "flow_id": "flow9", "handler": "local_file", "title": "Radar",
+             "result": {"entry_id": "e1", "domain": "local_file", "title": "Radar"}},
+        ]
+        service = IntegrationService(mock_client)
+        result = await service.setup_integration(
+            "local_file", data={"name": "Radar", "file_path": "/config/r.gif"}
+        )
+        assert result.entry_id == "e1"
+        submitted = mock_client._rest.call_args_list[1].kwargs["json_data"]
+        assert submitted == {"name": "Radar", "file_path": "/config/r.gif"}
+
+    @pytest.mark.asyncio()
+    async def test_missing_field_hint_mentions_data(self, mock_client: MagicMock) -> None:
+        mock_client._rest.side_effect = [self.FORM, None]
+        service = IntegrationService(mock_client)
+        with pytest.raises(ValidationError, match="file_path.*--data"):
+            await service.setup_integration("local_file")
+
+    @pytest.mark.asyncio()
+    async def test_rejected_input_reports_errors_and_cancels(self, mock_client: MagicMock) -> None:
+        mock_client._rest.side_effect = [
+            self.FORM,
+            {**self.FORM, "errors": {"file_path": "not_readable_path"}},
+            None,  # cancel
+        ]
+        service = IntegrationService(mock_client)
+        with pytest.raises(ValidationError, match="rejected.*file_path: not_readable_path"):
+            await service.setup_integration("local_file", data={"file_path": "/nope"})
+        assert mock_client._rest.call_args_list[2].args[0] == "DELETE"
+
+    @pytest.mark.asyncio()
+    async def test_wait_until_settled_polls_to_loaded(self, mock_client: MagicMock) -> None:
+        states = iter(["setup_in_progress", "setup_in_progress", "loaded"])
+        mock_client._ws_call.side_effect = lambda *a, **k: {
+            "config_entry": {"entry_id": "e1", "domain": "x", "title": "X", "state": next(states)}
+        }
+        service = IntegrationService(mock_client)
+        entry = await service.wait_until_settled("e1", timeout=5, interval=0)
+        assert entry is not None and entry.state == "loaded"
+
+    @pytest.mark.asyncio()
+    async def test_wait_until_settled_returns_failure_state(self, mock_client: MagicMock) -> None:
+        mock_client._ws_call.return_value = {
+            "config_entry": {"entry_id": "e1", "domain": "x", "title": "X", "state": "setup_error"}
+        }
+        service = IntegrationService(mock_client)
+        entry = await service.wait_until_settled("e1", timeout=5, interval=0)
+        assert entry is not None and entry.state == "setup_error"
+
+    @pytest.mark.asyncio()
+    async def test_wait_until_settled_times_out_with_pending_state(self, mock_client: MagicMock) -> None:
+        mock_client._ws_call.return_value = {
+            "config_entry": {"entry_id": "e1", "domain": "x", "title": "X", "state": "setup_in_progress"}
+        }
+        service = IntegrationService(mock_client)
+        entry = await service.wait_until_settled("e1", timeout=0.05, interval=0.01)
+        assert entry is not None and entry.state == "setup_in_progress"
+
+    @pytest.mark.asyncio()
+    async def test_find_by_title_is_exact_and_domain_scoped(self, mock_client: MagicMock) -> None:
+        mock_client._ws_call.return_value = [
+            {"entry_id": "a", "domain": "local_file", "title": "Radar", "state": "loaded"},
+            {"entry_id": "b", "domain": "local_file", "title": "Radar 2", "state": "loaded"},
+            {"entry_id": "c", "domain": "generic", "title": "Radar", "state": "loaded"},
+        ]
+        service = IntegrationService(mock_client)
+        assert [e.entry_id for e in await service.find_by_title("local_file", "Radar")] == ["a"]
+
+    @pytest.mark.asyncio()
+    @pytest.mark.parametrize("timeout", [float("inf"), float("nan"), -1.0])
+    async def test_wait_until_settled_rejects_unbounded_timeouts(self, mock_client: MagicMock, timeout) -> None:
+        service = IntegrationService(mock_client)
+        with pytest.raises(ValueError, match="finite"):
+            await service.wait_until_settled("e1", timeout=timeout)
+        mock_client._ws_call.assert_not_called()

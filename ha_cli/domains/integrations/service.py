@@ -1,5 +1,7 @@
 """Service layer for integrations domain."""
 
+import asyncio
+import math
 from typing import Any, cast
 
 from ...common.client import HAClient
@@ -458,6 +460,7 @@ class IntegrationService:
         domain: str,
         host: str | None = None,
         port: int | None = None,
+        data: dict[str, Any] | None = None,
     ) -> ConfigEntryResult:
         """Set up an integration via config flow.
 
@@ -470,6 +473,7 @@ class IntegrationService:
             domain: Integration domain
             host: Host for network-based integrations (e.g., ESPHome)
             port: Port for network-based integrations
+            data: Form fields for the first step; override defaults, --host and --port
 
         Returns:
             ConfigEntryResult with created entry info
@@ -503,6 +507,8 @@ class IntegrationService:
                 form_data["port"] = port if port else defaults.get("port", 6053)
             elif field_name in defaults:
                 form_data[field_name] = defaults[field_name]
+        if data:
+            form_data.update(data)
 
         # Check if we have all required fields
         missing = [f for f in required_fields if f not in form_data]
@@ -516,8 +522,8 @@ class IntegrationService:
                 hint = "Use --host <ip_or_hostname> [--port <port>] options."
             else:
                 hint = (
-                    "This integration requires interactive setup. "
-                    "Please use the Home Assistant UI."
+                    "Pass them with --data '{\"field\": ...}' (or --data-file for "
+                    "secrets), or use the Home Assistant UI."
                 )
             raise ValidationError(
                 f"Missing required fields for {domain}: {', '.join(missing)}. {hint}"
@@ -531,6 +537,11 @@ class IntegrationService:
         step_count = 0
         while not result.is_complete and not result.is_aborted and step_count < max_steps:
             step_count += 1
+            if result.requires_input and result.errors:
+                # The integration rejected what we submitted (bad path, unreachable host...)
+                await self.cancel_flow(result.flow_id)
+                errors = ", ".join(f"{k}: {v}" for k, v in result.errors.items())
+                raise ValidationError(f"{domain} rejected the setup data ({errors})")
             if result.requires_input:
                 # We don't support interactive multi-step flows
                 await self.cancel_flow(result.flow_id)
@@ -551,3 +562,28 @@ class IntegrationService:
             )
 
         return ConfigEntryResult.from_create_response(result.to_dict())
+
+    async def find_by_title(self, domain: str, title: str) -> list[ConfigEntry]:
+        """Entries of `domain` titled exactly `title`."""
+        return [e for e in await self.list_entries(domain=domain) if e.title == title]
+
+    async def wait_until_settled(
+        self, entry_id: str, timeout: float = 15.0, interval: float = 0.5
+    ) -> ConfigEntry | None:
+        """Poll a new entry until it has finished setting up (or `timeout` passes).
+
+        Returns the last state seen, or None if the entry doesn't exist.
+
+        Raises:
+            ValueError: If timeout isn't a finite number >= 0 (inf/nan would poll forever)
+        """
+        if not math.isfinite(timeout) or timeout < 0:
+            raise ValueError(f"timeout must be a finite number of seconds >= 0, not {timeout}")
+        pending = {"not_loaded", "setup_in_progress", "unknown"}
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while True:
+            entry = await self.get_entry(entry_id)
+            if entry is None or entry.state not in pending or loop.time() >= deadline:
+                return entry
+            await asyncio.sleep(interval)

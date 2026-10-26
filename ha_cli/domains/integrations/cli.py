@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -19,7 +20,7 @@ from ...common.cli_utils import (
 )
 from ...common.client import HAClient
 from ...common.config import get_client_config
-from ...common.exceptions import EXIT_USAGE_ERROR, NotFoundError, ValidationError
+from ...common.exceptions import EXIT_HA_ERROR, EXIT_USAGE_ERROR, NotFoundError, ValidationError
 from ...common.porcelain import PorcelainFormatter, create_home_assistant_metadata
 from .service import IntegrationService
 
@@ -554,23 +555,69 @@ def setup_integration(
     port: int | None = typer.Option(
         None, "--port", "-p", help="Port for network integrations"
     ),
+    data: str | None = typer.Option(
+        None, "--data", "-d", help="JSON object of form fields for the first step. Visible in ps: no secrets"
+    ),
+    data_file: str | None = typer.Option(
+        None, "--data-file", help="Read the --data JSON from a file ('-' for stdin); use this for secrets"
+    ),
+    if_missing: str | None = typer.Option(
+        None, "--if-missing", help="Skip setup if a DOMAIN entry with this exact title already exists (idempotent)"
+    ),
+    wait: float = typer.Option(
+        15.0, "--wait", min=0, max=600, help="Seconds (0-600) to wait for the new entry to finish loading"
+    ),
     porcelain: bool = typer.Option(
         False, "--porcelain", help="Machine-readable output"
     ),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ) -> None:
-    """Set up a new integration via config flow.
+    """Set up a new integration via config flow, and check it loaded.
 
     For simple integrations (media_extractor, etc.), no options are needed.
     For network integrations (ESPHome), use --host and optionally --port.
+    Anything else takes its form fields as JSON via --data / --data-file.
+
+    Exit status is non-zero unless the entry ends up loaded: a created entry
+    that fails to set up is an error, not a success. With --if-missing, an
+    existing entry of that title is checked the same way instead of duplicated.
 
     Examples:
         ha-cli integrations setup media_extractor
         ha-cli integrations setup esphome --host 10.0.20.50
         ha-cli integrations setup esphome --host 10.0.20.51 --port 6053
+        ha-cli integrations setup local_file --if-missing "Radar" \\
+            --data '{"name": "Radar", "file_path": "/config/radar.gif"}'
     """
     setup_logging(debug)
     set_porcelain_mode(porcelain)
+
+    def _usage(message: str) -> None:
+        if porcelain:
+            write_output(PorcelainFormatter("integrations setup").error(message, error_code="VALIDATION_ERROR"))
+        else:
+            console.print(f"[red]Error:[/red] {escape(message)}")
+        sys.exit(EXIT_USAGE_ERROR)
+
+    if not math.isfinite(wait):  # nan slips past Click's min/max
+        _usage("--wait must be a number of seconds between 0 and 600")
+    form: dict[str, Any] | None = None
+    if data is not None and data_file is not None:
+        _usage("Use --data or --data-file, not both")
+    raw = data
+    if data_file is not None:
+        try:
+            raw = sys.stdin.read() if data_file == "-" else Path(data_file).read_text()
+        except OSError as e:
+            _usage(f"Cannot read --data-file: {e.strerror}")
+    if raw is not None:
+        try:
+            form = json.loads(raw)
+        except json.JSONDecodeError as e:
+            # Never echo the input: it may hold a password
+            _usage(f"--data is not valid JSON (line {e.lineno}, column {e.colno})")
+        if not isinstance(form, dict):
+            _usage("--data must be a JSON object")
 
     async def _setup() -> None:
         formatter = PorcelainFormatter("integrations setup") if porcelain else None
@@ -580,53 +627,74 @@ def setup_integration(
         async with HAClient(url_final, token_final) as client:
             service = IntegrationService(client)
 
+            def _error(message: str, code: str, exit_code: int) -> None:
+                if formatter:
+                    write_output(formatter.error(message, error_code=code))
+                else:
+                    console.print(f"[red]Error:[/red] {escape(message)}")
+                sys.exit(exit_code)
+
+            action = "created"
             try:
-                result = await service.setup_integration(
-                    domain=domain_name,
-                    host=host,
-                    port=port,
+                existing = await service.find_by_title(domain_name, if_missing) if if_missing else []
+                if len(existing) > 1:
+                    _error(
+                        f"{len(existing)} {domain_name} entries are titled '{if_missing}': "
+                        "resolve the duplicates first",
+                        "AMBIGUOUS_MATCH",
+                        EXIT_USAGE_ERROR,
+                    )
+                if existing:
+                    action = "exists"
+                    entry_id, title = existing[0].entry_id, existing[0].title
+                else:
+                    result = await service.setup_integration(
+                        domain=domain_name,
+                        host=host,
+                        port=port,
+                        data=form,
+                    )
+                    entry_id, title = result.entry_id, result.title
+            except (ValidationError, NotFoundError) as e:
+                _error(str(e), "NOT_FOUND" if isinstance(e, NotFoundError) else "VALIDATION_ERROR", EXIT_USAGE_ERROR)
+                return
+
+            # Verify the entry actually loaded: a created entry can still fail setup
+            entry = await service.wait_until_settled(entry_id, timeout=wait if action == "created" else 0)
+            state = entry.state if entry else "missing"
+            if state != "loaded":
+                reason = f" ({entry.reason})" if entry and entry.reason else ""
+                _error(
+                    f"'{title}' ({domain_name}) is {state}{reason}, not loaded"
+                    + (" (already existed)" if action == "exists" else ""),
+                    "HA_ERROR",
+                    EXIT_HA_ERROR,
                 )
 
-                if porcelain:
-                    assert formatter is not None
-                    output = formatter.success(
-                        result.to_dict(),
-                        metadata={
-                            "action": "created",
-                            "domain": domain_name,
-                            "home_assistant": create_home_assistant_metadata(
-                                url_final, "rest"
-                            ),
-                        },
-                        suggestions={
-                            "common_actions": [
-                                "List integrations: ha-cli integrations list",
-                                f"Show details: ha-cli integrations show {result.entry_id}",
-                            ]
-                        },
-                    )
-                    write_output(output)
-                else:
-                    console.print(
-                        f"[green]Created '[bold]{escape(result.title)}[/bold]' ({result.domain})[/green]"
-                    )
-                    console.print(f"  Entry ID: {result.entry_id}")
-            except ValidationError as e:
-                if porcelain:
-                    assert formatter is not None
-                    output = formatter.error(str(e), error_code="VALIDATION_ERROR")
-                    write_output(output)
-                else:
-                    console.print(f"[red]Error:[/red] {escape(str(e))}")
-                sys.exit(EXIT_USAGE_ERROR)
-            except NotFoundError as e:
-                if porcelain:
-                    assert formatter is not None
-                    output = formatter.error(str(e), error_code="NOT_FOUND")
-                    write_output(output)
-                else:
-                    console.print(f"[red]Error:[/red] {escape(str(e))}")
-                sys.exit(EXIT_USAGE_ERROR)
+            if formatter:
+                output = formatter.success(
+                    {"entry_id": entry_id, "domain": domain_name, "title": title, "state": state},
+                    metadata={
+                        "action": action,
+                        "domain": domain_name,
+                        "home_assistant": create_home_assistant_metadata(
+                            url_final, "rest"
+                        ),
+                    },
+                    suggestions={
+                        "common_actions": [
+                            "List integrations: ha-cli integrations list",
+                            f"Show details: ha-cli integrations show {entry_id}",
+                        ]
+                    },
+                )
+                write_output(output)
+            else:
+                verb = "Exists" if action == "exists" else "Created"
+                console.print(
+                    f"[green]{verb} '[bold]{escape(title)}[/bold]' ({domain_name}), loaded[/green]"
+                )
+                console.print(f"  Entry ID: {entry_id}")
 
     asyncio.run(run_async_command(_setup(), command="integrations setup"))
 
