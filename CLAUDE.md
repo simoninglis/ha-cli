@@ -6,34 +6,24 @@ This guide is for USING the ha-cli tool to manage Home Assistant configurations.
 Command-line interface for managing Home Assistant automations, dashboards, and other configurations. Use this tool alongside MCP for comprehensive Home Assistant control.
 
 ## Architecture
-- Home Assistant instance: Configure via `HA_URL` environment variable
-- Authentication: Long-Lived Access Token via `HA_TOKEN` environment variable
-- Config file: `~/.config/home-assistant-cli/config.json` (optional)
+- Home Assistant instance: `HA_URL` (environment, `.env`, or the config file)
+- Authentication: Long-Lived Access Token in the `HA_TOKEN` environment variable **only**
+- Config file: `~/.config/home-assistant-cli/config.json` (optional; URL only)
 
 ## Getting Credentials
 
-The ha-cli tool now supports automatic loading from `.env` files!
+**The token comes from the environment and nowhere else.** A token in a `.env` file or
+in the config file is ignored with a warning, and ha-cli never writes one to disk.
+Inject it per command from your secret store (e.g. `bao-run ... -- ha-cli ...`), or
+`export` it in the shell you're working in.
 
-### Option 1: Use .env file (Recommended)
-1. Copy `.env.example` to `.env`
-2. Fill in your Home Assistant URL and token
-3. The tool will automatically load these values - no export needed!
-4. See `ENV_SETUP.md` for details
-
-### Option 2: Environment variables
-```bash
-export HA_URL="http://homeassistant.local:8123"
-export HA_TOKEN="your-long-lived-access-token"
-```
-
-### Option 3: Config file
-Create `~/.config/home-assistant-cli/config.json`:
-```json
-{
-  "url": "http://homeassistant.local:8123",
-  "token": "your-long-lived-access-token"
-}
-```
+- `HA_URL`: environment, a `.env` file, or `{"url": ...}` in the config file
+- `HA_TOKEN` (or `HOME_ASSISTANT_TOKEN`): environment only
+- `--token NAME` names a different environment variable; a literal token is refused (argv is public via `ps`)
+- Missing values: at a terminal ha-cli prompts (the token is used for that run only);
+  anywhere else (agents, cron, pipes) it fails fast with exit 1 naming what's missing
+- `dashboards screenshot` and the frontend smoke tests log the browser in with `HA_TOKEN`;
+  `HA_USERNAME`/`HA_PASSWORD` are the fallback
 
 ## Installation & Running
 
@@ -48,9 +38,8 @@ poetry run ha-automation --help  # backward compatibility
 ## Quick Start
 
 ```bash
-# Set credentials (or use .env file)
+# Credentials: HA_URL anywhere; HA_TOKEN from the environment only (see above)
 export HA_URL="http://homeassistant.local:8123"
-export HA_TOKEN="your-long-lived-access-token"
 
 # List automations (via WebSocket)
 poetry run ha-cli automations list
@@ -152,6 +141,18 @@ poetry run ha-cli labels entities <label_id>    # List entities with label
 1. `ha-cli labels create routine_kitchen_remote --icon mdi:lightbulb-group --color orange`
 2. `ha-cli labels assign light.kitchen_ceiling routine_kitchen_remote`
 3. Use in automations: `target: { label_id: routine_kitchen_remote }`
+
+### HACS Commands
+```bash
+poetry run ha-cli hacs list [--category plugin] [--updates]  # What HACS records as installed
+poetry run ha-cli hacs audit                    # HACS records vs dashboard resources (exit 0 clean, 1 findings, 2 error)
+poetry run ha-cli hacs remove <owner/name|id>   # Shows what it deletes, confirms, verifies afterwards
+```
+
+HACS can lose track of an installed card (`installed: false` with its files and
+dashboard resource still live): no update notices, and `hacs remove` would delete a
+card in use. `hacs audit` reports these as `untracked`. `remove` with `--porcelain`
+needs `--force`; it never removes HACS itself.
 
 ### Repairs Commands (System Health)
 ```bash

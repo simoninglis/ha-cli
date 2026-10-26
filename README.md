@@ -4,6 +4,11 @@ Multi-domain command-line tool for managing Home Assistant configurations includ
 
 ## Latest Updates (v0.3.3)
 
+- **Never hangs, never stores a token**: without a terminal, a missing URL or token is an immediate error (exit 1) instead of a prompt that waits forever; tokens are taken only from the environment (a token in `.env` or the config file is ignored with a warning) and never written to disk
+- **Token login for screenshots and smoke tests**: the browser uses `HA_TOKEN`, so no HA password is needed; it cannot be navigated off the HA origin, and a rejected login is an error rather than a screenshot of the login page
+- **HACS**: `hacs list`, `hacs audit` (HACS records vs dashboard resources) and a verified `hacs remove`
+- **Idempotent integration setup**: `integrations setup --data/--data-file --if-missing`, failing unless the entry loads
+- **Porcelain fix**: `entities` JSON output is no longer wrapped or markup-parsed (long values produced invalid JSON)
 - **Config subentries**: Start, inspect, submit, and cancel newer integration subentry flows
 - **Integration config flows**: Inspect and submit pending forms, including multi-step and options flows, using JSON input
 - **🚀 Porcelain Mode**: New `--porcelain` flag provides structured JSON output optimized for Claude Code and automation tools
@@ -68,6 +73,28 @@ ha-cli integrations options-update <entry-id-or-domain> --data-file options.json
 Use `--options` or `--subentry` with `flow-show`, `flow-submit`, and
 `flow-cancel` for the corresponding flow type. Submitted data is not included
 in command output, which avoids echoing secrets into logs.
+
+### HACS
+- **List** what HACS records as installed, with pending updates
+- **Audit** HACS's records against the dashboard resources: cards HACS has lost
+  track of (no update notices; removing one deletes a card in use), `/hacsfiles`
+  resources no repository owns, installed cards nothing loads
+- **Remove** a repository: shows what will be deleted, confirms, then verifies it's gone
+
+```bash
+ha-cli hacs list --updates
+ha-cli hacs audit --porcelain
+ha-cli hacs remove custom-cards/bom-radar-card
+```
+
+`integrations setup` also takes form fields for any integration, idempotently, and
+exits non-zero unless the entry actually loads:
+
+```bash
+ha-cli integrations setup local_file --if-missing "Radar" \
+  --data '{"name": "Radar", "file_path": "/config/radar.gif"}'
+ha-cli integrations setup <domain> --data-file form.json   # secrets: argv is visible in ps
+```
 
 ### Tech Debt Audit (NEW!)
 - **dead-entities** - Find unavailable/unknown entities with integration grouping
@@ -155,16 +182,19 @@ The CLI tool automatically detects which type an automation is and handles it ap
 
 The tool can be configured in multiple ways (in order of precedence):
 
-1. **Command-line arguments** - Highest priority
+1. **Command-line arguments** - `--url`, and `--token NAME` (an env var's name)
 2. **Environment variables**
-3. **Configuration file** - `~/.config/home-assistant-cli/config.json`
-4. **Interactive prompt** - If no config found
+3. **Configuration file** - `~/.config/home-assistant-cli/config.json` (URL only)
+4. **Interactive prompt** - only at a terminal; elsewhere a missing value is an immediate error
+
+**The token is only ever taken from the environment.** A token in `.env` or in the
+config file is ignored with a warning, and ha-cli never writes one to disk.
 
 ### Environment Variables
 
 **Required:**
 - `HA_URL` or `HOME_ASSISTANT_URL` - Home Assistant URL (e.g., `http://homeassistant.local:8123`)
-- `HA_TOKEN` or `HOME_ASSISTANT_TOKEN` - Long-lived access token
+- `HA_TOKEN` or `HOME_ASSISTANT_TOKEN` - Long-lived access token (environment only)
 
 **Optional (for SSH-based commands like `system logs`):**
 - `HA_SSH_HOST` - SSH host for log/config commands (default: `homeassistant`)
@@ -173,11 +203,12 @@ The tool can be configured in multiple ways (in order of precedence):
 **Optional (for entity analysis links):**
 - `HA_FILE_EDITOR_URL` - File Editor addon URL for direct file links in analysis output
 
-**Optional (for dashboard screenshots):**
-- `HA_USERNAME` - Home Assistant local username (for screenshot authentication)
-- `HA_PASSWORD` - Home Assistant local password (for screenshot authentication)
+**Optional (for dashboard screenshots and smoke tests):** the browser logs in with
+`HA_TOKEN`; without one it uses the HA login form:
+- `HA_USERNAME` - Home Assistant local username
+- `HA_PASSWORD` - Home Assistant local password
 
-Environment variables can be set in a `.env` file in your working directory.
+Non-secret variables can be set in a `.env` file.
 
 ### Configuration File
 
@@ -185,8 +216,7 @@ Create `~/.config/home-assistant-cli/config.json`:
 
 ```json
 {
-  "url": "http://homeassistant.local:8123",
-  "token": "your-long-lived-access-token"
+  "url": "http://homeassistant.local:8123"
 }
 ```
 
