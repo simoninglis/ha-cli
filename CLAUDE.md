@@ -154,6 +154,27 @@ dashboard resource still live): no update notices, and `hacs remove` would delet
 card in use. `hacs audit` reports these as `untracked`. `remove` with `--porcelain`
 needs `--force`; it never removes HACS itself.
 
+### Assist, Updates and Media Commands (check the effect, not the call)
+```bash
+poetry run ha-cli assist pipelines list                     # * = preferred (satellites on "preferred" follow it)
+poetry run ha-cli assist test "turn off the pendant" -p "GPT Bedroom"   # LOCAL/AGENT, reply, timings (asks first)
+poetry run ha-cli assist test --file phrases.txt -p "GPT Bedroom" --yes --porcelain
+poetry run ha-cli assist ask "is the pendant on"            # built-in agent only: what works offline / is an alias known
+poetry run ha-cli updates list [--available | --problems]   # "no version reported" = the check is failing, not up to date
+poetry run ha-cli updates check <update.entity>
+poetry run ha-cli updates install <update.entity>           # watches through the restart, confirms the version (exit 3 if not)
+poetry run ha-cli media tts-test <media_player> [...]       # PLAYED only if the player reached "playing" (exit 3 otherwise)
+```
+
+All three report what happened rather than whether HA accepted the call: a
+`tts.speak` succeeds when the device can't fetch the audio, an `update.install`
+returns before (or long after) the device has restarted. `assist test`/`ask`
+run phrases for real, so a command acts on the house: they confirm first, and
+`--porcelain`/`--json` need `--yes`, as does `updates install --porcelain`.
+
+Streaming commands use `HAClient.ws_stream()`; wrap it in
+`contextlib.aclosing` so leaving the loop early unsubscribes immediately.
+
 ### Repairs Commands (System Health)
 ```bash
 poetry run ha-cli repairs list                  # List all active repairs

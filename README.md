@@ -96,6 +96,26 @@ ha-cli integrations setup local_file --if-missing "Radar" \
 ha-cli integrations setup <domain> --data-file form.json   # secrets: argv is visible in ps
 ```
 
+### Assist, updates and TTS: did it actually happen?
+- **`assist test`** runs phrases through a pipeline and shows, per phrase, whether
+  the built-in agent handled it locally or it went to the pipeline's agent (often
+  an LLM), the reply and timings. **`assist ask`** sends phrases to one agent.
+  Both run for real and confirm first.
+- **`updates install`** watches an install through the device restart and only
+  reports success once the entity and the device both report the new version.
+  `updates list` flags entities that report no version at all: their own update
+  check is failing.
+- **`media tts-test`** speaks a short clip and passes only if the player reached
+  `playing`, because `tts.speak` succeeds even when the device can't fetch the audio.
+
+```bash
+ha-cli assist pipelines list
+ha-cli assist test "is the bedroom pendant on" -p "GPT Bedroom" --yes
+ha-cli updates list --problems
+ha-cli updates install update.home_assistant_voice_09ebde
+ha-cli media tts-test media_player.home_assistant_voice_09f860_media_player
+```
+
 ### Tech Debt Audit (NEW!)
 - **dead-entities** - Find unavailable/unknown entities with integration grouping
 - **duplicates** - Find duplicate entities with _2, _3, _4 suffixes
