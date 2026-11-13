@@ -111,6 +111,24 @@ def test_parse_when_rejects(bad: str) -> None:
         parse_when(bad, BNE)
 
 
+def test_naive_trace_timestamps_are_not_trusted() -> None:
+    from ha_cli.domains.traces.models import parse_ts
+    assert parse_ts("2026-11-13T04:18:08") is None
+    assert parse_ts("2026-11-13T04:18:08+00:00") is not None
+    runs = [_run("automation", "a", "r1", "2026-11-13T04:18:08")]   # no offset
+    result = asyncio.run(svc(FakeHA(runs=runs, details={})).around(
+        parse_when("2026-11-13 14:18:09", BNE), timedelta(seconds=30), ("automation",)))
+    assert result.shown == 0                                          # and no TypeError
+
+
+def test_oversized_windows_are_validation_errors() -> None:
+    with pytest.raises(ValidationError):
+        parse_duration("1" + "0" * 30 + "h")
+    with pytest.raises(ValidationError):
+        asyncio.run(svc(FakeHA(runs=[], details={})).around(
+            parse_when("2026-11-13 14:18:09", BNE), timedelta(days=999_999_999)))
+
+
 def test_parse_duration() -> None:
     assert parse_duration("90") == timedelta(seconds=90)
     assert parse_duration("90s") == timedelta(seconds=90)
@@ -363,6 +381,7 @@ def malformed(good: dict[str, Any]) -> dict[str, Any]:
         "trace not a mapping": {**good, "trace": ["x"]},
         "no timestamp": {k: v for k, v in good.items() if k != "timestamp"},
         "no start": {**good, "timestamp": {}},
+        "start without offset": {**good, "timestamp": {"start": "2026-11-13T04:18:08"}},
         "timestamp not a mapping": {**good, "timestamp": ["2026-11-13T04:18:08+00:00"]},
         "other run": {**good, "run_id": "r9"},
         "other item": {**good, "item_id": "unrelated"},
@@ -544,6 +563,18 @@ def test_cli_list_without_ha_zone_says_utc() -> None:
     assert "HA's time zone couldn't be read" in flat(out)
     refused = invoke(FakeHA(tz="Not/AZone"), ["list", "automation.office_ble_away_signal", "--since", "14:00"])
     assert refused.exit_code == 1
+
+
+@pytest.mark.parametrize("args", [
+    ["show", "automation.office_ble_away_signal", "x", "--at", "14:18", "--porcelain"],
+    ["around", "14:18", "--domain", "light", "--porcelain"],
+])
+def test_cli_early_errors_are_structured_under_porcelain(args: list[str]) -> None:
+    result = invoke(FakeHA(), args)
+    assert result.exit_code == 1
+    body = json.loads(result.output)
+    assert body["status"] == "error"
+    assert body["error"]["code"] == "VALIDATION_ERROR"
 
 
 def test_cli_around_rejects_other_domains() -> None:

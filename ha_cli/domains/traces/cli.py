@@ -226,8 +226,8 @@ def show(
     set_porcelain_mode(porcelain)
     _check_flags(json_output, porcelain)
     if run_id and at:
-        console.print("[red]Error:[/red] Give a run id or --at, not both")
-        sys.exit(EXIT_USAGE_ERROR)
+        _fail(PorcelainFormatter("traces show") if porcelain else None,
+              "Give a run id or --at, not both", "VALIDATION_ERROR")
 
     async def _show() -> None:
         formatter = PorcelainFormatter("traces show") if porcelain else None
@@ -349,8 +349,8 @@ def around(
     domains = tuple(dict.fromkeys(domain or DOMAINS))
     bad = [d for d in domains if d not in DOMAINS]
     if bad:
-        console.print(f"[red]Error:[/red] --domain must be automation or script, not {escape(', '.join(bad))}")
-        sys.exit(EXIT_USAGE_ERROR)
+        _fail(PorcelainFormatter("traces around") if porcelain else None,
+              f"--domain must be automation or script, not {', '.join(bad)}", "VALIDATION_ERROR")
 
     async def _around() -> None:
         formatter = PorcelainFormatter("traces around") if porcelain else None

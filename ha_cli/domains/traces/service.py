@@ -79,7 +79,10 @@ def parse_duration(text: str) -> timedelta:
     if not m:
         raise ValidationError(f"Not a duration: {text!r} (e.g. 90s, 2m, 1h)")
     value = float(m.group(1))
-    return timedelta(seconds=value * {"": 1, "s": 1, "m": 60, "h": 3600}[m.group(2)])
+    try:
+        return timedelta(seconds=value * {"": 1, "s": 1, "m": 60, "h": 3600}[m.group(2)])
+    except OverflowError as e:
+        raise ValidationError(f"Duration too large: {text!r}") from e
 
 
 def group_chains(details: list[TraceDetail]) -> list[list[TraceDetail]]:
@@ -272,7 +275,10 @@ class TracesService:
         """
         domains = tuple(dict.fromkeys(domains))  # a repeated --domain must not fetch twice
         center = center.astimezone(UTC)
-        lo, hi = center - window, center + window
+        try:
+            lo, hi = center - window, center + window
+        except OverflowError as e:
+            raise ValidationError("That window runs past the calendar: narrow --window") from e
         lists = await asyncio.gather(*(self.list_runs(d) for d in domains))
         result = AroundResult(lo=lo, hi=hi, domains=list(domains))
         hits: list[TraceRun] = []

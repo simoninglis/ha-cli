@@ -12,13 +12,18 @@ _BUILTIN_VARS = {"trigger", "this", "context"}
 
 
 def parse_ts(value: Any) -> datetime | None:
-    """An ISO timestamp from a trace, or None."""
+    """An ISO timestamp from a trace, or None.
+
+    One without an offset is None too: it can't be compared with the UTC
+    bounds of a window, and rendering would read it in the host's zone.
+    """
     if not isinstance(value, str) or not value:
         return None
     try:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
+    return parsed if parsed.utcoffset() is not None else None
 
 
 def _iso(value: datetime | None) -> str | None:
