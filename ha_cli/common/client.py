@@ -6,7 +6,7 @@ import json
 import logging
 import ssl
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -841,6 +841,77 @@ class HAClient:
                     await self._ws.send(json.dumps(unsub_message))
                 except Exception as e:
                     logger.debug(f"Error unsubscribing from trigger during cleanup: {e}")
+
+    async def ws_stream(
+        self,
+        msg_type: str,
+        *,
+        unsubscribe: bool = True,
+        **kwargs: Any,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Send any streaming WebSocket command and yield its event payloads.
+
+        Covers commands that answer with a result and then a run of events under
+        the same id: ``subscribe_entities``, ``assist_pipeline/run``,
+        ``bluetooth/subscribe_advertisements``. The caller decides when to stop
+        (break out of the loop) and should wrap the stream in
+        ``contextlib.aclosing``: a ``break`` alone leaves the generator open until
+        it is garbage-collected, so the routing entry isn't removed and, when
+        ``unsubscribe`` is set, HA isn't told to drop the subscription. Commands that
+        end on their own (a pipeline run) can pass ``unsubscribe=False``.
+
+        Raises:
+            WebSocketError: If the command is rejected or the connection drops
+        """
+        await self._ensure_ws_connected()
+        if not self._ws:
+            raise WebSocketError("WebSocket not connected")
+
+        sub_id = self._next_ws_id()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._ws_subscriptions[sub_id] = queue
+        try:
+            await self._ws.send(json.dumps({"id": sub_id, "type": msg_type, **kwargs}))
+            confirm = await asyncio.wait_for(queue.get(), timeout=30)
+            if confirm.get("type") == "_connection_closed":
+                raise WebSocketError(f"Connection closed: {confirm.get('error')}")
+            if confirm.get("type") == "result" and not confirm.get("success"):
+                error = confirm.get("error", {})
+                raise WebSocketError(f"{error.get('code', 'unknown')}: {error.get('message', 'Unknown error')}")
+            if confirm.get("type") == "event":
+                # Some commands stream before (or instead of) a separate result
+                yield confirm.get("event", {})
+            while True:
+                data = await queue.get()
+                if data.get("type") == "_connection_closed":
+                    raise WebSocketError(f"Connection closed: {data.get('error')}")
+                if data.get("type") == "event":
+                    yield data.get("event", {})
+        finally:
+            self._ws_subscriptions.pop(sub_id, None)
+            if unsubscribe and self._ws and not self._ws.closed:
+                try:
+                    await self._ws.send(json.dumps(
+                        {"id": self._next_ws_id(), "type": "unsubscribe_events", "subscription": sub_id}
+                    ))
+                except Exception as e:
+                    logger.debug(f"Error unsubscribing {msg_type} during cleanup: {e}")
+
+    async def call_service_ws(
+        self,
+        domain: str,
+        service: str,
+        *,
+        target: dict[str, Any] | None = None,
+        service_data: dict[str, Any] | None = None,
+    ) -> Any:
+        """Call a service over the WebSocket. Success means HA accepted it, not that it took effect."""
+        kwargs: dict[str, Any] = {"domain": domain, "service": service}
+        if target:
+            kwargs["target"] = target
+        if service_data:
+            kwargs["service_data"] = service_data
+        return await self._ws_call("call_service", **kwargs)
 
     def _sanitize_value(self, value: Any) -> Any:
         """Recursively sanitize a value by removing control characters from strings."""

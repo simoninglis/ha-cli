@@ -1,6 +1,7 @@
 """Tests for WebSocket client functionality."""
 
 import asyncio
+import contextlib
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -275,6 +276,47 @@ class TestWebSocketClient:
             
             assert len(events) == 1
             assert events[0]["variables"]["trigger"]["platform"] == "time"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("unsubscribe", [True, False])
+    async def test_ws_stream_yields_events_and_unsubscribes_only_when_asked(self, client, mock_websocket, unsubscribe):
+        """ws_stream sends the command with its fields, yields events, and cleans up."""
+        mock_websocket.recv.side_effect = [
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+            json.dumps({"id": 1, "type": "result", "success": True, "result": None}),
+            json.dumps({"id": 1, "type": "event", "event": {"type": "run-start"}}),
+            json.dumps({"id": 1, "type": "event", "event": {"type": "run-end"}}),
+        ]
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
+            seen = []
+            stream = client.ws_stream("assist_pipeline/run", unsubscribe=unsubscribe, input={"text": "hi"})
+            async with contextlib.aclosing(stream):
+                async for ev in stream:
+                    seen.append(ev["type"])
+                    if ev["type"] == "run-end":
+                        break
+        assert seen == ["run-start", "run-end"]
+        sent = [json.loads(c.args[0]) for c in mock_websocket.send.call_args_list]
+        run = next(m for m in sent if m.get("type") == "assist_pipeline/run")
+        assert run["input"] == {"text": "hi"}
+        unsubs = [m for m in sent if m.get("type") == "unsubscribe_events"]
+        assert len(unsubs) == (1 if unsubscribe else 0)
+        assert 1 not in client._ws_subscriptions
+
+    @pytest.mark.asyncio
+    async def test_ws_stream_rejected_command_raises(self, client, mock_websocket):
+        """A failed result is an error, never an empty stream."""
+        mock_websocket.recv.side_effect = [
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+            json.dumps({"id": 1, "type": "result", "success": False,
+                        "error": {"code": "unknown_command", "message": "Unknown command."}}),
+        ]
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
+            with pytest.raises(WebSocketError, match="unknown_command"):
+                async for _ in client.ws_stream("nope/nope"):
+                    pass
     
     @pytest.mark.asyncio
     async def test_get_states(self, client, mock_websocket):
