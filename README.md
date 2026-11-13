@@ -118,6 +118,28 @@ ha-cli updates install update.home_assistant_voice_09ebde
 ha-cli media tts-test media_player.home_assistant_voice_09f860_media_player
 ```
 
+### Traces: why did that automation do that?
+HA keeps the last few runs of every automation and script (5 unless the
+automation sets `stored_traces`). These read them without the trace UI:
+
+- **`traces list`** shows one automation's or script's stored runs, plus how
+  many HA kept and how far back they go. That way "nothing at 14:18" and
+  "14:18 has rolled off" read differently.
+- **`traces show`** walks one run step by step: the trigger's from/to states
+  *with their attributes*, what each condition saw, each service call.
+- **`traces around`** puts every run near a time on one timeline. A script
+  started by an automation is shown under it, because they share a context.
+  Runs that stopped at their conditions are hidden unless you pass `--all`.
+
+Automations are named by entity_id or by their YAML `id:` (traces are keyed by
+the id, which is not the entity_id). Times are in HA's time zone.
+
+```bash
+ha-cli traces around 14:18:09 --window 1m
+ha-cli traces list automation.office_ble_away_signal --since 14:00
+ha-cli traces show automation.office_ble_away_signal --at 14:18:09
+```
+
 ### Tech Debt Audit (NEW!)
 - **dead-entities** - Find unavailable/unknown entities with integration grouping
 - **duplicates** - Find duplicate entities with _2, _3, _4 suffixes

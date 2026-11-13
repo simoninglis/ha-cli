@@ -1,0 +1,420 @@
+{
+ "list_ble": [
+  {
+   "last_step": "action/2/then/0",
+   "run_id": "3e31a971938a313193e7b25ac641d64b",
+   "state": "stopped",
+   "script_execution": "finished",
+   "timestamp": {
+    "start": "2026-11-13T04:18:08.795103+00:00",
+    "finish": "2026-11-13T04:18:08.797700+00:00"
+   },
+   "domain": "automation",
+   "item_id": "office_ble_away_signal",
+   "trigger": "state of binary_sensor.simon_in_office"
+  },
+  {
+   "last_step": "action/2/then/0",
+   "run_id": "85c751e6f01f175ad487d031f880bfd0",
+   "state": "stopped",
+   "script_execution": "finished",
+   "timestamp": {
+    "start": "2026-11-13T04:24:13.750350+00:00",
+    "finish": "2026-11-13T04:24:13.753225+00:00"
+   },
+   "domain": "automation",
+   "item_id": "office_ble_away_signal",
+   "trigger": "state of binary_sensor.simon_in_office"
+  }
+ ],
+ "get_ble": {
+  "last_step": "action/2/then/0",
+  "run_id": "3e31a971938a313193e7b25ac641d64b",
+  "state": "stopped",
+  "script_execution": "finished",
+  "timestamp": {
+   "start": "2026-11-13T04:18:08.795103+00:00",
+   "finish": "2026-11-13T04:18:08.797700+00:00"
+  },
+  "domain": "automation",
+  "item_id": "office_ble_away_signal",
+  "trigger": "state of binary_sensor.simon_in_office",
+  "trace": {
+   "trigger/0": [
+    {
+     "path": "trigger/0",
+     "timestamp": "2026-11-13T04:18:08.795161+00:00",
+     "changed_variables": {
+      "this": {
+       "entity_id": "automation.office_ble_away_signal_lock_pc_shorten_timer",
+       "state": "on",
+       "attributes": {
+        "id": "office_ble_away_signal",
+        "last_triggered": "2026-11-13T00:01:15.247152+00:00",
+        "mode": "single",
+        "current": 0,
+        "friendly_name": "Office: BLE Away Signal (Lock PC + Shorten Timer)"
+       },
+       "last_changed": "2026-11-12T23:03:38.126317+00:00",
+       "last_reported": "2026-11-13T00:01:15.249580+00:00",
+       "last_updated": "2026-11-13T00:01:15.249580+00:00",
+       "context": {
+        "id": "01M793AQFEB2KDGC32GAN0DGHM",
+        "parent_id": "01M79371B5SXR01XQTGPZ5T3CW",
+        "user_id": null
+       }
+      },
+      "trigger": {
+       "id": "0",
+       "idx": "0",
+       "alias": null,
+       "platform": "state",
+       "entity_id": "binary_sensor.simon_in_office",
+       "from_state": {
+        "entity_id": "binary_sensor.simon_in_office",
+        "state": "on",
+        "attributes": {
+         "phone_room": "Master",
+         "watch_ultra2_room": "Master",
+         "watch_ultra1_room": "Bathroom",
+         "device_class": "occupancy",
+         "icon": "mdi:account-check",
+         "friendly_name": "Simon In Office"
+        },
+        "last_changed": "2026-11-13T01:28:44.545959+00:00",
+        "last_reported": "2026-11-13T04:15:53.074856+00:00",
+        "last_updated": "2026-11-13T04:15:53.074856+00:00",
+        "context": {
+         "id": "01M79HWZ7J472C5ACCYGG0NCG7",
+         "parent_id": null,
+         "user_id": null
+        }
+       },
+       "to_state": {
+        "entity_id": "binary_sensor.simon_in_office",
+        "state": "off",
+        "attributes": {
+         "phone_room": "Master",
+         "watch_ultra2_room": "Master",
+         "watch_ultra1_room": "Bathroom",
+         "device_class": "occupancy",
+         "icon": "mdi:account-check",
+         "friendly_name": "Simon In Office"
+        },
+        "last_changed": "2026-11-13T04:16:08.794488+00:00",
+        "last_reported": "2026-11-13T04:16:08.794488+00:00",
+        "last_updated": "2026-11-13T04:16:08.794488+00:00",
+        "context": {
+         "id": "01M79HXEJTPHX91VZ1YFPW4NGK",
+         "parent_id": null,
+         "user_id": null
+        }
+       },
+       "for": {
+        "__type": "<class 'datetime.timedelta'>",
+        "total_seconds": 120.0
+       },
+       "attribute": null,
+       "description": "state of binary_sensor.simon_in_office"
+      }
+     }
+    }
+   ],
+   "condition/0": [
+    {
+     "path": "condition/0",
+     "timestamp": "2026-11-13T04:18:08.795185+00:00",
+     "result": {
+      "result": true
+     }
+    }
+   ],
+   "condition/0/entity_id/0": [
+    {
+     "path": "condition/0/entity_id/0",
+     "timestamp": "2026-11-13T04:18:08.795201+00:00",
+     "result": {
+      "result": true,
+      "state": "ready",
+      "wanted_state": "ready"
+     }
+    }
+   ],
+   "condition/1": [
+    {
+     "path": "condition/1",
+     "timestamp": "2026-11-13T04:18:08.795226+00:00",
+     "result": {
+      "result": true,
+      "entities": []
+     }
+    }
+   ],
+   "action/0": [
+    {
+     "path": "action/0",
+     "timestamp": "2026-11-13T04:18:08.795670+00:00",
+     "changed_variables": {
+      "context": {
+       "id": "01M79J13RV0R3RY1C4TAPB7CRZ",
+       "parent_id": "01M79HXEJTPHX91VZ1YFPW4NGK",
+       "user_id": null
+      }
+     },
+     "result": {
+      "choice": "then"
+     }
+    }
+   ],
+   "action/0/if": [
+    {
+     "path": "action/0/if",
+     "timestamp": "2026-11-13T04:18:08.795715+00:00",
+     "result": {
+      "result": true
+     }
+    }
+   ],
+   "action/0/if/condition/0": [
+    {
+     "path": "action/0/if/condition/0",
+     "timestamp": "2026-11-13T04:18:08.795735+00:00",
+     "result": {
+      "result": true
+     }
+    }
+   ],
+   "action/0/if/condition/0/entity_id/0": [
+    {
+     "path": "action/0/if/condition/0/entity_id/0",
+     "timestamp": "2026-11-13T04:18:08.795749+00:00",
+     "result": {
+      "result": true,
+      "state": "off",
+      "wanted_state": "off"
+     }
+    }
+   ],
+   "action/0/then/0": [
+    {
+     "path": "action/0/then/0",
+     "timestamp": "2026-11-13T04:18:08.795848+00:00",
+     "child_id": {
+      "domain": "script",
+      "item_id": "office_pc_lock",
+      "run_id": "9e8c89c763c97f5d17a5bafaa9bdf6d5"
+     },
+     "result": {
+      "params": {
+       "domain": "script",
+       "service": "turn_on",
+       "service_data": {},
+       "target": {
+        "entity_id": [
+         "script.office_pc_lock"
+        ]
+       }
+      },
+      "running_script": true
+     }
+    }
+   ],
+   "action/1": [
+    {
+     "path": "action/1",
+     "timestamp": "2026-11-13T04:18:08.796945+00:00",
+     "changed_variables": {
+      "shortened_minutes": 2
+     }
+    }
+   ],
+   "action/2": [
+    {
+     "path": "action/2",
+     "timestamp": "2026-11-13T04:18:08.796983+00:00",
+     "result": {
+      "choice": "then"
+     }
+    }
+   ],
+   "action/2/if": [
+    {
+     "path": "action/2/if",
+     "timestamp": "2026-11-13T04:18:08.797008+00:00",
+     "result": {
+      "result": true
+     }
+    }
+   ],
+   "action/2/if/condition/0": [
+    {
+     "path": "action/2/if/condition/0",
+     "timestamp": "2026-11-13T04:18:08.797023+00:00",
+     "result": {
+      "result": true,
+      "entities": [
+       "timer.office_presence_timeout"
+      ]
+     }
+    }
+   ],
+   "action/2/then/0": [
+    {
+     "path": "action/2/then/0",
+     "timestamp": "2026-11-13T04:18:08.797198+00:00",
+     "result": {
+      "params": {
+       "domain": "timer",
+       "service": "start",
+       "service_data": {
+        "duration": {
+         "minutes": 2
+        },
+        "entity_id": [
+         "timer.office_presence_timeout"
+        ]
+       },
+       "target": {
+        "entity_id": [
+         "timer.office_presence_timeout"
+        ]
+       }
+      },
+      "running_script": false
+     }
+    }
+   ]
+  },
+  "config": {
+   "id": "office_ble_away_signal",
+   "alias": "Office: BLE Away Signal (Lock PC + Shorten Timer)"
+  },
+  "context": {
+   "id": "01M79J13RV0R3RY1C4TAPB7CRZ",
+   "parent_id": "01M79HXEJTPHX91VZ1YFPW4NGK",
+   "user_id": null
+  }
+ },
+ "get_lock_skip": {
+  "last_step": "sequence/1/then/1",
+  "run_id": "1b8b44a532414b8e15c7b302386e3e66",
+  "state": "stopped",
+  "script_execution": "finished",
+  "timestamp": {
+   "start": "2026-11-13T05:05:05.189011+00:00",
+   "finish": "2026-11-13T05:05:05.190472+00:00"
+  },
+  "domain": "script",
+  "item_id": "office_pc_lock",
+  "trace": {
+   "sequence/0": [
+    {
+     "path": "sequence/0",
+     "timestamp": "2026-11-13T05:05:05.189417+00:00",
+     "changed_variables": {
+      "this": {
+       "entity_id": "script.office_pc_lock",
+       "state": "off",
+       "attributes": {
+        "last_triggered": "2026-11-13T04:49:44.312007+00:00",
+        "mode": "single",
+        "current": 0,
+        "icon": "mdi:monitor-lock",
+        "friendly_name": "Office: Lock PC"
+       },
+       "last_changed": "2026-11-13T05:04:27.537848+00:00",
+       "last_reported": "2026-11-13T05:04:27.537848+00:00",
+       "last_updated": "2026-11-13T05:04:27.537848+00:00",
+       "context": {
+        "id": "01M79MNXCHY37E2E5FS57F3HYH",
+        "parent_id": null,
+        "user_id": null
+       }
+      },
+      "automatic": true,
+      "context": {
+       "id": "01M79MQ254NT865M6V99PRCQY3",
+       "parent_id": null,
+       "user_id": "00000000000000000000000000000000"
+      }
+     },
+     "result": {
+      "result": true,
+      "entities": [
+       "sensor.office_pc_session",
+       "button.office_pc_lock_workstation"
+      ]
+     }
+    }
+   ],
+   "sequence/1": [
+    {
+     "path": "sequence/1",
+     "timestamp": "2026-11-13T05:05:05.189660+00:00",
+     "result": {
+      "choice": "then"
+     }
+    }
+   ],
+   "sequence/1/if": [
+    {
+     "path": "sequence/1/if",
+     "timestamp": "2026-11-13T05:05:05.189743+00:00",
+     "result": {
+      "result": true
+     }
+    }
+   ],
+   "sequence/1/if/condition/0": [
+    {
+     "path": "sequence/1/if/condition/0",
+     "timestamp": "2026-11-13T05:05:05.189784+00:00",
+     "result": {
+      "result": true,
+      "entities": [
+       "timer.dippy_bird_keep_awake_expiry",
+       "input_boolean.dippy_bird_keep_awake"
+      ]
+     }
+    }
+   ],
+   "sequence/1/then/0": [
+    {
+     "path": "sequence/1/then/0",
+     "timestamp": "2026-11-13T05:05:05.190042+00:00",
+     "result": {
+      "params": {
+       "domain": "logbook",
+       "service": "log",
+       "service_data": {
+        "name": "Office PC lock",
+        "message": "skipped: Dippy Bird keep-awake is on",
+        "entity_id": "input_boolean.dippy_bird_keep_awake"
+       },
+       "target": {}
+      },
+      "running_script": false
+     }
+    }
+   ],
+   "sequence/1/then/1": [
+    {
+     "path": "sequence/1/then/1",
+     "timestamp": "2026-11-13T05:05:05.190173+00:00",
+     "result": {
+      "stop": "Dippy Bird keep-awake is on",
+      "error": false
+     }
+    }
+   ]
+  },
+  "config": {
+   "alias": "Office: Lock PC"
+  },
+  "context": {
+   "id": "01M79MQ254NT865M6V99PRCQY3",
+   "parent_id": null,
+   "user_id": "00000000000000000000000000000000"
+  }
+ }
+}

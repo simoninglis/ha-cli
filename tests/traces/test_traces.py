@@ -1,0 +1,359 @@
+"""Tests for the traces domain, against payloads recorded from a live HA."""
+
+import asyncio
+import copy
+import json
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
+
+import pytest
+from typer.testing import CliRunner
+
+from ha_cli.common.exceptions import NotFoundError, ValidationError, WebSocketError
+from ha_cli.domains.traces.cli import app
+from ha_cli.domains.traces.models import TraceDetail, TraceRun, duration_seconds, summarise_result
+from ha_cli.domains.traces.service import MAX_AROUND_RUNS, TracesService, group_chains, parse_duration, parse_when
+
+runner = CliRunner()
+FIX = json.loads((Path(__file__).parent / "fixtures.json").read_text())
+BNE = ZoneInfo("Australia/Brisbane")
+
+STATES = [
+    {"entity_id": "automation.office_ble_away_signal_lock_pc_shorten_timer",
+     "attributes": {"id": "office_ble_away_signal"}},
+    {"entity_id": "automation.no_id_ui_thing", "attributes": {}},
+    {"entity_id": "script.office_pc_lock", "attributes": {}},
+    {"entity_id": "light.office", "attributes": {}},
+]
+
+
+def _run(domain: str, item_id: str, run_id: str, start: str, execution: str = "finished",
+         trigger: str | None = None) -> dict[str, Any]:
+    return {"domain": domain, "item_id": item_id, "run_id": run_id, "state": "stopped",
+            "script_execution": execution, "last_step": "action/0", "trigger": trigger,
+            "timestamp": {"start": start, "finish": start}}
+
+
+def _detail(run: dict[str, Any], context_id: str | None, parent_id: str | None = None) -> dict[str, Any]:
+    return {**run, "trace": {}, "config": {"alias": run["item_id"]},
+            "context": {"id": context_id, "parent_id": parent_id, "user_id": None}}
+
+
+class FakeHA:
+    """trace/list, trace/get and get_states over a fixed set of runs."""
+
+    def __init__(self, runs: list[dict[str, Any]] | None = None,
+                 details: dict[str, dict[str, Any]] | None = None, tz: str = "Australia/Brisbane",
+                 gone: set[str] | None = None, broken: set[str] | None = None) -> None:
+        self.runs = runs if runs is not None else list(FIX["list_ble"])
+        self.details = details if details is not None else {FIX["get_ble"]["run_id"]: FIX["get_ble"]}
+        self.tz = tz
+        self.gone = gone or set()
+        self.broken = broken or set()
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def get_states(self) -> list[dict[str, Any]]:
+        return STATES
+
+    async def _ws_call(self, msg_type: str, **kwargs: Any) -> Any:
+        self.calls.append((msg_type, kwargs))
+        if msg_type == "get_config":
+            return {"time_zone": self.tz}
+        if msg_type == "trace/list":
+            return [r for r in self.runs if r["domain"] == kwargs["domain"]
+                    and ("item_id" not in kwargs or r["item_id"] == kwargs["item_id"])]
+        if msg_type == "trace/get":
+            rid = kwargs["run_id"]
+            if rid in self.broken:
+                raise WebSocketError("unknown_error: boom")
+            if rid in self.gone or rid not in self.details:
+                raise WebSocketError("not_found: The trace could not be found")
+            return self.details[rid]
+        raise AssertionError(msg_type)
+
+
+def svc(fake: FakeHA) -> TracesService:
+    return TracesService(fake)  # type: ignore[arg-type]
+
+
+# --- parsing -----------------------------------------------------------------
+
+def test_parse_when_clock_is_today_in_ha_zone() -> None:
+    now = datetime(2026, 11, 13, 1, 0, tzinfo=UTC)  # 11:00 in Brisbane
+    when = parse_when("14:18:09", BNE, now)
+    assert when == datetime(2026, 11, 13, 14, 18, 9, tzinfo=BNE)
+    assert parse_when("14:18", BNE, now).second == 0
+    assert parse_when("14:18:09.5", BNE, now).microsecond == 500000
+
+
+def test_parse_when_date_without_zone_is_ha_zone_and_iso_keeps_its_own() -> None:
+    assert parse_when("2026-11-13 14:18", BNE) == datetime(2026, 11, 13, 14, 18, tzinfo=BNE)
+    iso = parse_when("2026-11-13T04:18:09+00:00", BNE)
+    assert iso.utcoffset() == timedelta(0)
+
+
+@pytest.mark.parametrize("bad", ["25:00", "14:61", "teatime", "", "14"])
+def test_parse_when_rejects(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        parse_when(bad, BNE)
+
+
+def test_parse_duration() -> None:
+    assert parse_duration("90") == timedelta(seconds=90)
+    assert parse_duration("90s") == timedelta(seconds=90)
+    assert parse_duration("2m") == timedelta(minutes=2)
+    assert parse_duration("1.5h") == timedelta(minutes=90)
+    with pytest.raises(ValidationError):
+        parse_duration("2 fortnights")
+
+
+def test_duration_seconds_reads_serialised_timedelta() -> None:
+    assert duration_seconds({"__type": "<class 'datetime.timedelta'>", "total_seconds": 120.0}) == 120.0
+    assert duration_seconds(5) == 5.0
+    assert duration_seconds(True) is None
+    assert duration_seconds("2m") is None
+
+
+# --- resolving targets -------------------------------------------------------
+
+def test_resolve_entity_id_maps_to_yaml_id() -> None:
+    got = asyncio.run(svc(FakeHA()).resolve("automation.office_ble_away_signal_lock_pc_shorten_timer"))
+    assert got == ("automation", "office_ble_away_signal", "automation.office_ble_away_signal_lock_pc_shorten_timer")
+
+
+def test_resolve_yaml_id_finds_its_entity() -> None:
+    got = asyncio.run(svc(FakeHA()).resolve("automation.office_ble_away_signal"))
+    assert got == ("automation", "office_ble_away_signal", "automation.office_ble_away_signal_lock_pc_shorten_timer")
+
+
+def test_resolve_script() -> None:
+    assert asyncio.run(svc(FakeHA()).resolve("script.office_pc_lock")) == ("script", "office_pc_lock",
+                                                                           "script.office_pc_lock")
+
+
+@pytest.mark.parametrize(("target", "error"), [
+    ("automation.typo", NotFoundError),       # trace/list would answer [] and look like "no runs"
+    ("script.typo", NotFoundError),
+    ("automation.no_id_ui_thing", NotFoundError),
+    ("light.office", ValidationError),
+    ("office_pc_lock", ValidationError),
+    ("automation.", ValidationError),
+])
+def test_resolve_refuses(target: str, error: type[Exception]) -> None:
+    with pytest.raises(error):
+        asyncio.run(svc(FakeHA()).resolve(target))
+
+
+# --- models from real payloads -----------------------------------------------
+
+def test_detail_from_real_automation_trace() -> None:
+    d = TraceDetail.from_dict(FIX["get_ble"])
+    assert d.run.target == "automation.office_ble_away_signal"
+    assert d.alias
+    assert d.alias.startswith("Office: BLE Away")
+    assert d.trigger is not None
+    assert d.trigger.for_seconds == 120.0
+    assert d.trigger.entity_id == "binary_sensor.simon_in_office"
+    assert d.trigger.to_state
+    assert d.trigger.to_state["state"] == "off"
+    assert d.trigger.to_state["attributes"]["phone_room"] == "Master"
+    paths = [s.path for s in d.steps]
+    assert paths[0] == "trigger/0"
+    assert "action/2/then/0" in paths
+    assert [s.at for s in d.steps] == sorted(s.at for s in d.steps)  # type: ignore[type-var]
+    call = next(s for s in d.steps if s.path == "action/0/then/0")
+    assert call.summary() == "call script.turn_on -> script.office_pc_lock"
+    gate = next(s for s in d.steps if s.path == "condition/0/entity_id/0")
+    assert gate.summary() == "true (state='ready', wanted='ready')"
+    assert next(s for s in d.steps if s.path == "action/1").variables == {"shortened_minutes": 2}
+    assert d.context_id
+    assert d.parent_id
+
+
+def test_detail_from_real_script_trace_reads_its_call_fields() -> None:
+    d = TraceDetail.from_dict(FIX["get_lock_skip"])
+    assert d.trigger is None
+    assert d.fields.get("automatic") is True
+    assert d.steps[0].variables == {}           # the call variables moved to .fields, not repeated
+    assert d.run.last_step == "sequence/1/then/1"
+    assert "stop: Dippy Bird keep-awake is on" in d.steps[-1].summary()
+
+
+def test_to_dict_round_trips_through_json() -> None:
+    json.dumps(TraceDetail.from_dict(FIX["get_ble"]).to_dict(), default=str)
+
+
+@pytest.mark.parametrize(("result", "expected"), [
+    ({"stop": "done", "error": False}, "stop: done"),
+    ({"stop": "bad", "error": True}, "stop: bad (error)"),
+    ({"wait": {"completed": False, "remaining": 0}}, "wait completed=False remaining=0"),
+    ({"delay": 5.0, "done": True}, "delay 5.0 done"),
+    ({"choice": "default"}, "choice=default"),
+    (None, ""),
+    ({"surprise": 1}, '{"surprise":1}'),
+])
+def test_summarise_result(result: Any, expected: str) -> None:
+    assert summarise_result(result) == expected
+
+
+# --- list / get ---------------------------------------------------------------
+
+def test_page_filters_window_and_reports_what_is_stored() -> None:
+    lo = parse_when("2026-11-13 14:20", BNE)
+    page = asyncio.run(svc(FakeHA()).page("automation.office_ble_away_signal", since=lo))
+    assert [r.run_id for r in page.runs] == ["85c751e6f01f175ad487d031f880bfd0"]
+    assert page.stored == 2
+    assert page.oldest == datetime.fromisoformat(FIX["list_ble"][0]["timestamp"]["start"])
+
+
+def test_page_for_an_item_with_no_runs_is_empty_not_an_error() -> None:
+    page = asyncio.run(svc(FakeHA(runs=[])).page("script.office_pc_lock"))
+    assert page.runs == []
+    assert page.stored == 0
+    assert page.oldest is None
+
+
+def test_get_latest_nearest_and_by_id() -> None:
+    a, b = FIX["list_ble"]
+    details = {a["run_id"]: _detail(a, "c1"), b["run_id"]: _detail(b, "c2")}
+    fake = FakeHA(details=details)
+    s = svc(fake)
+    latest = asyncio.run(s.get("automation.office_ble_away_signal"))
+    assert latest.run.run_id == max((a, b), key=lambda r: r["timestamp"]["start"])["run_id"]
+    near = asyncio.run(s.get("automation.office_ble_away_signal", at=parse_when("2026-11-13 14:18:09", BNE)))
+    assert near.run.run_id == "3e31a971938a313193e7b25ac641d64b"
+    by_id = asyncio.run(s.get("automation.office_ble_away_signal", run_id=b["run_id"]))
+    assert by_id.run.run_id == b["run_id"]
+
+
+def test_get_unknown_run_is_not_found() -> None:
+    with pytest.raises(NotFoundError):
+        asyncio.run(svc(FakeHA()).get("automation.office_ble_away_signal", run_id="nope"))
+
+
+def test_get_with_nothing_stored_is_not_found() -> None:
+    with pytest.raises(NotFoundError):
+        asyncio.run(svc(FakeHA(runs=[])).get("script.office_pc_lock"))
+
+
+def test_time_zone_falls_back_to_utc() -> None:
+    assert asyncio.run(svc(FakeHA(tz="Not/AZone")).time_zone()) == UTC
+
+
+# --- chains and around ---------------------------------------------------------
+
+def _d(run_id: str, start: str, ctx: str | None, parent: str | None = None, domain: str = "automation",
+       execution: str = "finished") -> TraceDetail:
+    return TraceDetail.from_dict(_detail(_run(domain, run_id, run_id, start, execution), ctx, parent))
+
+
+def test_group_chains_shared_context_and_parent_links() -> None:
+    auto = _d("auto", "2026-11-13T04:18:08.795+00:00", "C1", "state-change")
+    script = _d("lock", "2026-11-13T04:18:08.796+00:00", "C1", "state-change", domain="script")
+    caused = _d("caused", "2026-11-13T04:18:10+00:00", "C2", "C1")      # an action of C1 caused it
+    grandchild = _d("gc", "2026-11-13T04:18:11+00:00", "C3", "C2")
+    other = _d("other", "2026-11-13T04:18:09+00:00", "C9", "unrelated")
+    loose = _d("loose", "2026-11-13T04:18:12+00:00", None)
+    chains = group_chains([loose, grandchild, other, caused, script, auto])
+    ids = [[d.run.run_id for d in c] for c in chains]
+    assert ids == [["auto", "lock", "caused", "gc"], ["other"], ["loose"]]
+
+
+def test_around_window_gets_each_run_and_groups() -> None:
+    inside = [_run("automation", "ble", "r1", "2026-11-13T04:18:08.795+00:00", trigger="state of x"),
+              _run("script", "office_pc_lock", "r2", "2026-11-13T04:18:08.796+00:00")]
+    outside = [_run("automation", "ble", "r0", "2026-11-13T04:10:00+00:00")]
+    details = {"r1": _detail(inside[0], "C1"), "r2": _detail(inside[1], "C1"), "r0": _detail(outside[0], "C0")}
+    fake = FakeHA(runs=inside + outside, details=details)
+    chains, coverage = asyncio.run(svc(fake).around(parse_when("2026-11-13 14:18:09", BNE), timedelta(seconds=30)))
+    assert [[d.run.run_id for d in c] for c in chains] == [["r1", "r2"]]
+    assert coverage["automation"]["stored"] == 2
+    assert coverage["script"]["stored"] == 1
+    assert {k["run_id"] for m, k in fake.calls if m == "trace/get"} == {"r1", "r2"}  # nothing outside fetched
+    assert all("item_id" not in k for m, k in fake.calls if m == "trace/list")       # whole domain listed
+
+
+def test_around_tolerates_a_run_rolling_off_but_not_other_errors() -> None:
+    runs = [_run("automation", "a", "r1", "2026-11-13T04:18:08+00:00"),
+            _run("automation", "a", "r2", "2026-11-13T04:18:09+00:00")]
+    details = {r["run_id"]: _detail(r, r["run_id"]) for r in runs}
+    center = parse_when("2026-11-13 14:18:09", BNE)
+    chains, coverage = asyncio.run(svc(FakeHA(runs=runs, details=details, gone={"r1"})).around(
+        center, timedelta(seconds=30), ("automation",)))
+    assert [[d.run.run_id for d in c] for c in chains] == [["r2"]]
+    assert coverage["rolled_off_during_read"] == 1
+    with pytest.raises(WebSocketError):
+        asyncio.run(svc(FakeHA(runs=runs, details=details, broken={"r1"})).around(
+            center, timedelta(seconds=30), ("automation",)))
+
+
+def test_around_refuses_a_window_that_is_too_busy() -> None:
+    runs = [_run("automation", "a", f"r{i}", "2026-11-13T04:18:09+00:00") for i in range(MAX_AROUND_RUNS + 1)]
+    with pytest.raises(ValidationError):
+        asyncio.run(svc(FakeHA(runs=runs, details={})).around(
+            parse_when("2026-11-13 14:18:09", BNE), timedelta(seconds=30), ("automation",)))
+
+
+# --- CLI ------------------------------------------------------------------------
+
+class _Ctx:
+    def __init__(self, fake: FakeHA) -> None:
+        self.fake = fake
+
+    async def __aenter__(self) -> FakeHA:
+        return self.fake
+
+    async def __aexit__(self, *args: Any) -> None:
+        return None
+
+
+def invoke(fake: FakeHA, args: list[str]) -> Any:
+    with patch("ha_cli.domains.traces.cli.HAClient", lambda *a, **k: _Ctx(fake)), \
+         patch("ha_cli.domains.traces.cli.get_client_config", lambda *a, **k: ("http://ha", "tok")):
+        return runner.invoke(app, args)
+
+
+def test_cli_list_unknown_target_exits_3() -> None:
+    result = invoke(FakeHA(), ["list", "automation.typo"])
+    assert result.exit_code == 3
+    assert "No automation" in result.output
+
+
+def test_cli_show_json_is_the_detail() -> None:
+    result = invoke(FakeHA(), ["show", "automation.office_ble_away_signal", "3e31a971938a313193e7b25ac641d64b",
+                               "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["trigger_detail"]["for_seconds"] == 120.0
+    assert data["context_id"] == FIX["get_ble"]["context"]["id"]
+
+
+def test_cli_show_refuses_run_id_and_at_together() -> None:
+    result = invoke(FakeHA(), ["show", "automation.office_ble_away_signal", "x", "--at", "14:18"])
+    assert result.exit_code == 1
+
+
+def test_cli_around_hides_condition_stops_unless_all() -> None:
+    acted = _run("automation", "a", "r1", "2026-11-13T04:18:08+00:00")
+    stopped = _run("automation", "tick", "r2", "2026-11-13T04:18:09+00:00", execution="failed_conditions")
+    fake = FakeHA(runs=[acted, stopped], details={"r1": _detail(acted, "C1"), "r2": _detail(stopped, "C2")})
+    args = ["around", "2026-11-13 14:18:09", "--window", "30s", "--domain", "automation", "--json"]
+    hidden = json.loads(invoke(fake, args).output)
+    assert [[d["run_id"] for d in c] for c in hidden["chains"]] == [["r1"]]
+    assert hidden["hidden_failed_conditions"] == 1
+    shown = json.loads(invoke(copy.deepcopy(fake), [*args, "--all"]).output)
+    assert len(shown["chains"]) == 2
+    assert shown["hidden_failed_conditions"] == 0
+
+
+def test_cli_around_rejects_other_domains() -> None:
+    assert invoke(FakeHA(), ["around", "14:18", "--domain", "light"]).exit_code == 1
+
+
+def test_trace_run_without_timestamps() -> None:
+    run = TraceRun.from_dict({"run_id": "x", "timestamp": {}})
+    assert run.start is None
+    assert run.duration is None

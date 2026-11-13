@@ -172,6 +172,18 @@ returns before (or long after) the device has restarted. `assist test`/`ask`
 run phrases for real, so a command acts on the house: they confirm first, and
 `--porcelain`/`--json` need `--yes`, as does `updates install --porcelain`.
 
+### Traces (read-only)
+```bash
+poetry run ha-cli traces around 14:18:09 [--window 2m] [--all] [--brief]   # every run near a time; scripts nest under their caller
+poetry run ha-cli traces list automation.<entity or YAML id> [--since HH:MM] [--until HH:MM]
+poetry run ha-cli traces show automation.<id> [run_id | --at HH:MM:SS]     # steps + trigger from/to attributes
+```
+
+`trace/list` answers `[]` for an id that doesn't exist, so `resolve()` checks
+the target first: a typo must not read as "no runs". `trace/list` has no
+context: `around` fetches each run's `trace/get` to group them (a script
+started by an automation shares its `context.id`).
+
 Streaming commands use `HAClient.ws_stream()`; wrap it in
 `contextlib.aclosing` so leaving the loop early unsubscribes immediately.
 

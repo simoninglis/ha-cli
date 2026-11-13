@@ -33,6 +33,7 @@ from .domains.labels import cli as labels_cli
 from .domains.media import cli as media_cli
 from .domains.repairs import cli as repairs_cli
 from .domains.system import cli as system_cli
+from .domains.traces import cli as traces_cli
 from .domains.updates import cli as updates_cli
 from .domains.zones import cli as zones_cli
 
@@ -52,5 +53,6 @@ app.add_typer(labels_cli.app, name="labels")
 app.add_typer(media_cli.app, name="media")
 app.add_typer(repairs_cli.app, name="repairs")
 app.add_typer(system_cli.app, name="system")
+app.add_typer(traces_cli.app, name="traces")
 app.add_typer(updates_cli.app, name="updates")
 app.add_typer(zones_cli.app, name="zones")
