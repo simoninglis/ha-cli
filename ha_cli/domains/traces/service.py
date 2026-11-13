@@ -252,7 +252,7 @@ class TracesService:
             if "not_found" in str(e):
                 raise NotFoundError(f"No run {run_id!r} stored for {domain}.{item_id}") from e
             raise
-        detail = read_detail(data, run_id)
+        detail = read_detail(data, domain, item_id, run_id)
         if detail is None:
             raise ValidationError(f"Unreadable trace/get response for {domain}.{item_id} run {run_id}")
         return detail
@@ -300,7 +300,7 @@ class TracesService:
             elif isinstance(d, BaseException):
                 raise d
             else:
-                detail = read_detail(d, run.run_id)
+                detail = read_detail(d, run.domain, run.item_id, run.run_id)
                 if detail is None:
                     result.unreadable.append(ref)
                 else:
@@ -309,18 +309,21 @@ class TracesService:
         return result
 
 
-def read_detail(data: Any, run_id: str) -> TraceDetail | None:
-    """A trace/get payload as a TraceDetail, or None if it isn't one for ``run_id``.
+def read_detail(data: Any, domain: str, item_id: str, run_id: str) -> TraceDetail | None:
+    """A trace/get payload as a TraceDetail, or None if it isn't the run asked for.
 
-    A payload that parses but lacks the run's identity (``{}`` would show as
-    a run of ".") or names a different run is unusable, not a run.
+    A payload that parses but isn't that run (``{}`` would show as a run of
+    "."; a reply for another item would show the wrong automation) or has no
+    trace or start time is unusable, not a run.
     """
     if not isinstance(data, dict):
         return None
-    if data.get("run_id") != run_id or not data.get("domain") or not data.get("item_id"):
+    if (data.get("domain"), data.get("item_id"), data.get("run_id")) != (domain, item_id, run_id):
         return None
-    if not isinstance(data.get("timestamp"), dict) or not isinstance(data.get("trace", {}), dict):
+    if not isinstance(data.get("trace"), dict):
         return None
+    # A missing or malformed timestamp needs no check of its own: it leaves no
+    # start time (refused below) or fails to parse (caught)
     try:
         detail = TraceDetail.from_dict(data)
     except (AttributeError, TypeError, ValueError):

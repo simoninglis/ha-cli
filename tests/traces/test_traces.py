@@ -354,28 +354,54 @@ def test_around_reports_unreadable_responses_instead_of_dropping_them() -> None:
     assert [r["run_id"] for r in result.unreadable] == ["r1"]
 
 
-@pytest.mark.parametrize("payload", [
-    {},                                                            # would show as a run of "."
-    {"run_id": "r1", "domain": "automation", "item_id": "a"},      # no timestamp
-    {"run_id": "other", "domain": "automation", "item_id": "a", "timestamp": {"start": "2026-11-13T04:18:08+00:00"}},
-    {"run_id": "r1", "domain": "automation", "item_id": "a", "timestamp": {"start": "2026-11-13T04:18:08+00:00"},
-     "trace": ["not", "a", "mapping"]},
-    {"run_id": "r1", "domain": "automation", "item_id": "a", "timestamp": {"start": "2026-11-13T04:18:08+00:00"},
-     "trace": {"action/0": [{"changed_variables": "garbage"}]}},
-])
-def test_around_treats_malformed_details_as_unreadable(payload: dict[str, Any]) -> None:
+def malformed(good: dict[str, Any]) -> dict[str, Any]:
+    """Ways a trace/get reply for ``good``'s run can fail to be that run."""
+    return {
+        "empty": {},                                   # would show as a run of "."
+        "not a dict": [good["run_id"]],
+        "no trace": {k: v for k, v in good.items() if k != "trace"},
+        "trace not a mapping": {**good, "trace": ["x"]},
+        "no timestamp": {k: v for k, v in good.items() if k != "timestamp"},
+        "no start": {**good, "timestamp": {}},
+        "timestamp not a mapping": {**good, "timestamp": ["2026-11-13T04:18:08+00:00"]},
+        "other run": {**good, "run_id": "r9"},
+        "other item": {**good, "item_id": "unrelated"},
+        "other domain": {**good, "domain": "script"},
+        "garbage step": {**good, "trace": {"action/0": [{"changed_variables": "garbage"}]}},
+    }
+
+
+GOOD = {"run_id": "r1", "domain": "automation", "item_id": "a",
+        "timestamp": {"start": "2026-11-13T04:18:08+00:00"}, "trace": {}}
+GOOD_GET = {**FIX["list_ble"][0], "trace": {}}
+CASES = list(malformed(GOOD))
+
+
+def test_good_payloads_are_runs() -> None:
     runs = [_run("automation", "a", "r1", "2026-11-13T04:18:08+00:00")]
-    result = asyncio.run(svc(FakeHA(runs=runs, details={"r1": payload})).around(
+    result = asyncio.run(svc(FakeHA(runs=runs, details={"r1": GOOD})).around(
+        parse_when("2026-11-13 14:18:09", BNE), timedelta(seconds=30), ("automation",)))
+    assert result.shown == 1
+    rid = GOOD_GET["run_id"]
+    got = asyncio.run(svc(FakeHA(details={rid: GOOD_GET})).get("automation.office_ble_away_signal", run_id=rid))
+    assert got.run.run_id == rid
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_around_treats_malformed_details_as_unreadable(case: str) -> None:
+    runs = [_run("automation", "a", "r1", "2026-11-13T04:18:08+00:00")]
+    result = asyncio.run(svc(FakeHA(runs=runs, details={"r1": malformed(GOOD)[case]})).around(
         parse_when("2026-11-13 14:18:09", BNE), timedelta(seconds=30), ("automation",)))
     assert result.chains == []
     assert [r["run_id"] for r in result.unreadable] == ["r1"]
 
 
-def test_get_refuses_a_malformed_detail() -> None:
-    a = FIX["list_ble"][0]
+@pytest.mark.parametrize("case", CASES)
+def test_get_refuses_a_malformed_detail(case: str) -> None:
+    rid = GOOD_GET["run_id"]
     with pytest.raises(ValidationError):
-        asyncio.run(svc(FakeHA(details={a["run_id"]: {}})).get("automation.office_ble_away_signal",
-                                                                run_id=a["run_id"]))
+        asyncio.run(svc(FakeHA(details={rid: malformed(GOOD_GET)[case]})).get(
+            "automation.office_ble_away_signal", run_id=rid))
 
 
 def test_around_dedupes_domains() -> None:
