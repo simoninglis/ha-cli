@@ -8,22 +8,28 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ...common.client import HAClient
 from ...common.exceptions import NotFoundError, ValidationError, WebSocketError
-from .models import DOMAINS, RunsPage, TraceDetail, TraceRun
+from .models import DOMAINS, AroundResult, RunsPage, TraceDetail, TraceRun
 
 # `around` fetches every run in its window; past this it asks for a narrower one
 MAX_AROUND_RUNS = 60
+# HA's default stored_traces. An item holding at least this many runs, all newer
+# than the window's start, may have dropped runs the window would have shown
+DEFAULT_STORED_TRACES = 5
 
 _CLOCK = re.compile(r"^(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?$")
 _DURATION = re.compile(r"^(\d+(?:\.\d+)?)\s*([smh]?)$")
 
 
-def parse_when(text: str, tz: tzinfo, now: datetime | None = None) -> datetime:
-    """A time the way you'd say it: ``14:18``, ``14:18:09``, ``2026-11-13 14:18``, or ISO.
+def parse_when(text: str, tz: tzinfo | None, now: datetime | None = None) -> datetime:
+    """A time the way you'd say it, as an aware UTC datetime.
 
-    A bare clock time is today in HA's time zone; a time without a zone is HA's zone.
+    ``14:18``, ``14:18:09`` (today), ``2026-11-13 14:18``, or ISO. Without an
+    offset the time is in HA's zone ``tz``. A local time that doesn't exist (the
+    clocks went forward) or happens twice (they went back) is refused rather
+    than guessed: give an offset.
 
     Raises:
-        ValidationError: Unparseable
+        ValidationError: Unparseable, nonexistent or ambiguous; or no offset and ``tz`` unknown
     """
     text = text.strip()
     m = _CLOCK.match(text)
@@ -33,13 +39,34 @@ def parse_when(text: str, tz: tzinfo, now: datetime | None = None) -> datetime:
         micro = int((m.group(4) or "0").ljust(6, "0"))
         if hour > 23 or minute > 59 or second > 59:
             raise ValidationError(f"Not a time: {text!r}")
-        today = (now or datetime.now(tz)).astimezone(tz).date()
-        return datetime(today.year, today.month, today.day, hour, minute, second, micro, tzinfo=tz)
+        if tz is None:
+            raise _no_zone(text)
+        today = (now or datetime.now(UTC)).astimezone(tz).date()
+        naive = datetime(today.year, today.month, today.day, hour, minute, second, micro)
+        return _localise(naive, tz, text)
     try:
         when = datetime.fromisoformat(text)
     except ValueError as e:
         raise ValidationError(f"Not a time: {text!r} (use HH:MM[:SS], 'YYYY-MM-DD HH:MM[:SS]' or ISO)") from e
-    return when if when.tzinfo else when.replace(tzinfo=tz)
+    if when.tzinfo is not None:
+        return when.astimezone(UTC)
+    if tz is None:
+        raise _no_zone(text)
+    return _localise(when, tz, text)
+
+
+def _no_zone(text: str) -> ValidationError:
+    return ValidationError(f"HA's time zone couldn't be read, so {text!r} has no fixed meaning: "
+                           "give an offset, e.g. 2026-11-13T14:18:09+10:00")
+
+
+def _localise(naive: datetime, tz: tzinfo, text: str) -> datetime:
+    early = naive.replace(tzinfo=tz, fold=0)
+    if early.astimezone(UTC).astimezone(tz).replace(tzinfo=None) != naive:
+        raise ValidationError(f"{text!r} doesn't exist in {tz} (the clocks went forward): give an offset")
+    if early.utcoffset() != naive.replace(tzinfo=tz, fold=1).utcoffset():
+        raise ValidationError(f"{text!r} happens twice in {tz} (the clocks went back): give an offset")
+    return early.astimezone(UTC)
 
 
 def parse_duration(text: str) -> timedelta:
@@ -60,7 +87,9 @@ def group_chains(details: list[TraceDetail]) -> list[list[TraceDetail]]:
 
     A script started by an automation (``script.turn_on`` or a direct call)
     shares the automation run's ``context.id``. A run whose ``parent_id`` is
-    another run's context id (an action that caused it) joins that chain too.
+    another run's context id (an action that caused it) joins that group too.
+    A group is a shared context, not a call tree: two members can be
+    siblings, both started by the first.
     """
     root: dict[str, str] = {}
 
@@ -106,27 +135,36 @@ class TracesService:
         """
         self.client = client
 
-    async def time_zone(self) -> tzinfo:
-        """HA's configured time zone (UTC if it can't be read)."""
+    async def time_zone(self) -> tzinfo | None:
+        """HA's configured time zone, or None if it can't be read.
+
+        None is not UTC: callers must not read a bare ``14:18`` as UTC
+        (parse_when refuses it), and should say they are showing UTC.
+        """
         try:
             config = await self.client._ws_call("get_config")
-            return ZoneInfo(str((config or {}).get("time_zone") or "UTC"))
+            name = (config or {}).get("time_zone")
+            return ZoneInfo(str(name)) if name else None
         except (WebSocketError, ZoneInfoNotFoundError, ValueError):
-            return UTC
+            return None
 
     async def resolve(self, target: str) -> tuple[str, str, str | None]:
-        """``automation.<entity or YAML id>`` or ``script.<id>`` -> (domain, item_id, entity_id).
+        """A target -> (domain, item_id, entity_id).
 
-        Traces are keyed by the automation's YAML ``id:``, which is not the
-        entity_id (that comes from the alias). Both are accepted. A target that
+        ``automation.<entity_id or YAML id>``, ``automation:<YAML id>`` (the id
+        only), or ``script.<id>`` / ``script:<id>``. Traces are keyed by the
+        automation's YAML ``id:``, which is not its entity_id (that comes from
+        the alias). If ``automation.X`` matches one automation's entity_id and
+        another's id, that is refused rather than guessed. A target that
         doesn't exist is an error: trace/list answers ``[]`` for any id, so a
         typo would otherwise read as "no runs".
 
         Raises:
-            ValidationError: No domain prefix, or a domain without traces
+            ValidationError: Bad form, a domain without traces, or ambiguous
             NotFoundError: No such automation/script
         """
-        domain, sep, name = target.partition(".")
+        by_id_only = ":" in target and "." not in target.split(":", 1)[0]
+        domain, sep, name = target.partition(":" if by_id_only else ".")
         if not sep or not name:
             raise ValidationError(f"Give automation.<id> or script.<id>, not {target!r}")
         if domain not in DOMAINS:
@@ -134,19 +172,33 @@ class TracesService:
         states = await self.client.get_states()
         mine = [s for s in states if str(s.get("entity_id", "")).startswith(f"{domain}.")]
         if domain == "script":
-            if any(s.get("entity_id") == target for s in mine):
-                return domain, name, target
-            raise NotFoundError(f"No script {target!r}")
-        for s in mine:
-            if s.get("entity_id") == target:
-                item_id = (s.get("attributes") or {}).get("id")
-                if not item_id:
-                    raise NotFoundError(f"{target} has no id: attribute, so HA keeps no traces for it")
-                return domain, str(item_id), target
-        for s in mine:
-            if str((s.get("attributes") or {}).get("id")) == name:
-                return domain, name, str(s.get("entity_id"))
-        raise NotFoundError(f"No automation with entity_id or id {name!r}")
+            if any(s.get("entity_id") == f"script.{name}" for s in mine):
+                return domain, name, f"script.{name}"
+            raise NotFoundError(f"No script {name!r}")
+
+        def yaml_id(s: dict[str, Any]) -> str | None:
+            value = (s.get("attributes") or {}).get("id")
+            return str(value) if value not in (None, "") else None
+
+        by_id = [s for s in mine if yaml_id(s) == name]
+        if len(by_id) > 1:
+            raise ValidationError(f"{len(by_id)} automations have id {name!r}: "
+                                  + ", ".join(str(s.get("entity_id")) for s in by_id))
+        by_entity = [] if by_id_only else [s for s in mine if s.get("entity_id") == f"automation.{name}"]
+        if by_entity and by_id and by_entity[0] is not by_id[0]:
+            other = by_entity[0]
+            raise ValidationError(
+                f"automation.{name} is ambiguous: it is the entity_id of one automation (id "
+                f"{yaml_id(other)!r}) and the id of another ({by_id[0].get('entity_id')}). "
+                f"Use automation:{name} for the id, or automation:{yaml_id(other)} for the entity")
+        if by_id:
+            return domain, name, str(by_id[0].get("entity_id"))
+        if by_entity:
+            item_id = yaml_id(by_entity[0])
+            if item_id is None:
+                raise NotFoundError(f"automation.{name} has no id: attribute, so HA keeps no traces for it")
+            return domain, item_id, f"automation.{name}"
+        raise NotFoundError(f"No automation with {'id' if by_id_only else 'entity_id or id'} {name!r}")
 
     async def list_runs(self, domain: str, item_id: str | None = None) -> list[TraceRun]:
         """Stored runs, earliest first: one item's, or (no item_id) the whole domain's."""
@@ -161,7 +213,13 @@ class TracesService:
 
     async def page(self, target: str, since: datetime | None = None,
                    until: datetime | None = None) -> RunsPage:
-        """``traces list``: one item's runs in [since, until], and what HA kept."""
+        """``traces list``: one item's runs in [since, until], and what HA kept.
+
+        Raises:
+            ValidationError: ``since`` after ``until``
+        """
+        if since and until and since > until:
+            raise ValidationError("--since is after --until (for a window across midnight, give dates)")
         domain, item_id, entity_id = await self.resolve(target)
         runs = await self.list_runs(domain, item_id)
         kept = [r for r in runs if _within(r, since, until)]
@@ -192,22 +250,34 @@ class TracesService:
         return TraceDetail.from_dict(data)
 
     async def around(self, center: datetime, window: timedelta,
-                     domains: tuple[str, ...] = DOMAINS) -> tuple[list[list[TraceDetail]], dict[str, Any]]:
-        """Every stored run starting within ``window`` of ``center``, grouped into chains.
+                     domains: tuple[str, ...] = DOMAINS) -> AroundResult:
+        """Every stored run starting within ``window`` of ``center``, grouped.
 
-        Returns (chains, coverage). Coverage gives, per domain, how many runs are
-        stored and the oldest, so an empty window can be told apart from
-        history that has rolled off.
+        Bounds are computed in UTC, so a window across a DST change spans the
+        elapsed time asked for. The result says what it could NOT see:
+        items whose retained history starts after the window opened (runs of
+        theirs may have rolled off), runs that vanished between list and get,
+        and responses that couldn't be read. Completeness is never claimed.
 
         Raises:
             ValidationError: More runs in the window than MAX_AROUND_RUNS
         """
+        domains = tuple(dict.fromkeys(domains))  # a repeated --domain must not fetch twice
+        center = center.astimezone(UTC)
         lo, hi = center - window, center + window
         lists = await asyncio.gather(*(self.list_runs(d) for d in domains))
-        coverage: dict[str, Any] = {}
+        result = AroundResult(lo=lo, hi=hi, domains=list(domains))
         hits: list[TraceRun] = []
         for domain, runs in zip(domains, lists, strict=True):
-            coverage[domain] = {"stored": len(runs), "oldest": runs[0].start.isoformat() if runs and runs[0].start else None}
+            result.stored[domain] = len(runs)
+            per_item: dict[str, list[TraceRun]] = {}
+            for r in runs:
+                per_item.setdefault(r.item_id, []).append(r)
+            for item_id, item_runs in per_item.items():
+                oldest = item_runs[0].start
+                if len(item_runs) >= DEFAULT_STORED_TRACES and oldest is not None and oldest > lo:
+                    result.possibly_missing.append({"target": f"{domain}.{item_id}", "stored": len(item_runs),
+                                                    "oldest": oldest.isoformat()})
             hits += [r for r in runs if _within(r, lo, hi)]
         if len(hits) > MAX_AROUND_RUNS:
             raise ValidationError(f"{len(hits)} runs in that window (limit {MAX_AROUND_RUNS}): narrow --window")
@@ -215,16 +285,18 @@ class TracesService:
             self.client._ws_call("trace/get", domain=r.domain, item_id=r.item_id, run_id=r.run_id) for r in hits),
             return_exceptions=True)
         parsed: list[TraceDetail] = []
-        rolled_off = 0
-        for d in details:
+        for run, d in zip(hits, details, strict=True):
+            ref = {"target": run.target, "run_id": run.run_id, "start": run.start.isoformat() if run.start else None}
             if isinstance(d, WebSocketError) and "not_found" in str(d):
-                rolled_off += 1  # dropped between trace/list and trace/get
+                result.rolled_off.append(ref)  # dropped between trace/list and trace/get
             elif isinstance(d, BaseException):
                 raise d
             elif isinstance(d, dict):
                 parsed.append(TraceDetail.from_dict(d))
-        coverage["rolled_off_during_read"] = rolled_off
-        return group_chains(parsed), coverage
+            else:
+                result.unreadable.append(ref)
+        result.chains = group_chains(parsed)
+        return result
 
 
 def _distance(run: TraceRun, at: datetime) -> float:

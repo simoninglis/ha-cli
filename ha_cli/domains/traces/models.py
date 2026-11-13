@@ -244,3 +244,36 @@ def summarise_result(result: Any) -> str:
 def _compact(value: Any, limit: int = 160) -> str:
     text = json.dumps(value, default=str, separators=(",", ":"))
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+@dataclass
+class AroundResult:
+    """``traces around``: the runs in a window, and what the window could not show."""
+
+    lo: datetime
+    hi: datetime
+    domains: list[str]
+    chains: list[list[TraceDetail]] = field(default_factory=list)
+    stored: dict[str, int] = field(default_factory=dict)
+    # Items holding a full default history, all of it newer than the window's
+    # start: runs of theirs inside the window may already have rolled off
+    possibly_missing: list[dict[str, Any]] = field(default_factory=list)
+    rolled_off: list[dict[str, Any]] = field(default_factory=list)   # gone between trace/list and trace/get
+    unreadable: list[dict[str, Any]] = field(default_factory=list)   # trace/get answered something unusable
+    hidden_failed_conditions: int = 0
+
+    @property
+    def shown(self) -> int:
+        """Runs in the chains."""
+        return sum(len(c) for c in self.chains)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise."""
+        return {
+            "from": _iso(self.lo), "to": _iso(self.hi), "domains": self.domains,
+            "complete": None,  # never claimed: each item keeps only its own last N runs
+            "stored": self.stored, "possibly_missing": self.possibly_missing,
+            "rolled_off_during_read": self.rolled_off, "unreadable": self.unreadable,
+            "hidden_failed_conditions": self.hidden_failed_conditions,
+            "chains": [[d.to_dict() for d in chain] for chain in self.chains],
+        }

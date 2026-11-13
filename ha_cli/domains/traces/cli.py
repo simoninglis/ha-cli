@@ -3,7 +3,7 @@
 import asyncio
 import json
 import sys
-from datetime import datetime, tzinfo
+from datetime import UTC, datetime, tzinfo
 from typing import Any
 
 import typer
@@ -16,7 +16,7 @@ from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import EXIT_HA_ERROR, EXIT_USAGE_ERROR, NotFoundError, ValidationError
 from ...common.porcelain import PorcelainFormatter, create_home_assistant_metadata
-from .models import DOMAINS, TraceDetail, TraceRun
+from .models import DOMAINS, AroundResult, TraceDetail, TraceRun
 from .service import TracesService, parse_duration, parse_when
 
 app = typer.Typer(
@@ -34,6 +34,10 @@ TOKEN_OPT = typer.Option(
 JSON_OPT = typer.Option(False, "--json", help="Output as JSON")
 PORCELAIN_OPT = typer.Option(False, "--porcelain", help="Machine-readable output")
 DEBUG_OPT = typer.Option(False, "--debug", help="Enable debug logging")
+TARGET_ARG = typer.Argument(..., help="automation.<entity_id or YAML id>, automation:<YAML id>, or script.<id>")
+
+# `show --at`: warn when the nearest stored run is this far from the time asked about
+FAR_SECONDS = 300
 
 _EXECUTION_STYLE = {"finished": "green", "aborted": "yellow", "failed_conditions": "yellow",
                     "error": "red", "cancelled": "dim", "running": "cyan"}
@@ -57,11 +61,20 @@ def _code(e: Exception) -> tuple[str, int]:
     return ("NOT_FOUND", EXIT_HA_ERROR) if isinstance(e, NotFoundError) else ("VALIDATION_ERROR", EXIT_USAGE_ERROR)
 
 
-def _clock(when: datetime | None, tz: tzinfo, date: bool = False) -> str:
+def _zone_label(tz: tzinfo | None) -> str:
+    return str(tz) if tz else "UTC: HA's time zone couldn't be read"
+
+
+def _clock(when: datetime | None, tz: tzinfo | None, date: bool = False) -> str:
     if when is None:
         return "-"
-    local = when.astimezone(tz)
+    local = when.astimezone(tz or UTC)
     return local.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] if date else local.strftime("%H:%M:%S.%f")[:-3]
+
+
+def _meta(url: str, tz: tzinfo | None, **extra: Any) -> dict[str, Any]:
+    return {"time_zone": str(tz) if tz else None, **extra,
+            "home_assistant": create_home_assistant_metadata(url, "websocket")}
 
 
 def _execution(run: TraceRun) -> str:
@@ -75,7 +88,7 @@ def _attrs(attributes: dict[str, Any], limit: int = 12) -> str:
     return escape(", ".join(items[:limit]) + more)
 
 
-def _print_detail(d: TraceDetail, tz: tzinfo, indent: str = "") -> None:
+def _print_detail(d: TraceDetail, tz: tzinfo | None, indent: str = "") -> None:
     run = d.run
     took = f"{run.duration:.3f}s" if run.duration is not None else "running"
     console.print(f"{indent}[bold cyan]{escape(run.target)}[/bold cyan]"
@@ -88,7 +101,8 @@ def _print_detail(d: TraceDetail, tz: tzinfo, indent: str = "") -> None:
         console.print(f"{indent}  trigger: {escape(t.description or '?')}{hold}")
         for label, st in (("from", t.from_state), ("to", t.to_state)):
             if st:
-                when = _clock(datetime.fromisoformat(st["last_changed"]), tz) if st.get("last_changed") else "-"
+                changed = st.get("last_changed")
+                when = _clock(datetime.fromisoformat(changed), tz) if isinstance(changed, str) and changed else "-"
                 console.print(f"{indent}    {label:>4} {escape(str(st.get('state')))}  [dim]since {when}[/dim]")
                 if st.get("attributes"):
                     console.print(f"{indent}         [dim]{_attrs(st['attributes'])}[/dim]")
@@ -100,17 +114,23 @@ def _print_detail(d: TraceDetail, tz: tzinfo, indent: str = "") -> None:
                       + (f" user {d.user_id}" if d.user_id else "") + "[/dim]")
     for step in d.steps:
         offset = f"+{(step.at - run.start).total_seconds():7.3f}s" if step.at and run.start else "        -"
-        line = f"{indent}  [dim]{offset}[/dim] {escape(step.path):<34} {escape(step.summary())}"
-        console.print(line)
+        console.print(f"{indent}  [dim]{offset}[/dim] {escape(step.path):<34} {escape(step.summary())}")
         if step.variables:
             console.print(f"{indent}           [dim]vars {escape(json.dumps(step.variables, default=str))[:300]}[/dim]")
         if step.error:
             console.print(f"{indent}           [red]{escape(str(step.error))}[/red]")
 
 
+def _relation(d: TraceDetail, head: TraceDetail) -> str:
+    """How a group member relates to the group's first run."""
+    if d.context_id and d.context_id == head.context_id:
+        return "↳ same context"
+    return "⇢ caused by the group"
+
+
 @app.command("list")
 def list_runs(
-    target: str = typer.Argument(..., help="automation.<entity_id or YAML id>, or script.<id>"),
+    target: str = TARGET_ARG,
     since: str | None = typer.Option(None, "--since", help="From this time (HH:MM[:SS] today, or a date and time)"),
     until: str | None = typer.Option(None, "--until", help="Up to this time"),
     url: str | None = URL_OPT,
@@ -122,9 +142,9 @@ def list_runs(
     """List the stored runs of one automation or script.
 
     HA keeps only the last few runs (5 unless the automation sets
-    stored_traces), so the header says how many are stored and how far back
-    they go: "nothing at 14:18" and "14:18 has rolled off" read differently.
-    Times are in HA's time zone.
+    stored_traces), so the footer says how many are stored and how far back
+    they go: if the oldest is after the time you care about, runs from then
+    may have rolled off. Times are in HA's time zone.
 
     Examples:
         ha-cli traces list automation.office_ble_away_signal
@@ -150,15 +170,14 @@ def list_runs(
                 _fail(formatter, str(e), code, exit_code)
                 return
             if formatter:
-                write_output(formatter.success(page.to_dict(), metadata={
-                    "total_count": len(page.runs), "time_zone": str(tz),
-                    "home_assistant": create_home_assistant_metadata(url_final, "websocket")}))
+                write_output(formatter.success(page.to_dict(), metadata=_meta(
+                    url_final, tz, total_count=len(page.runs))))
                 return
             if json_output:
                 write_output(json.dumps(page.to_dict(), indent=2))
                 return
             title = page.target + (f" ({page.entity_id})" if page.entity_id and page.entity_id != page.target else "")
-            days = {r.start.astimezone(tz).date() for r in page.runs if r.start}
+            days = {r.start.astimezone(tz or UTC).date() for r in page.runs if r.start}
             one_day = len(days) == 1
             if one_day:
                 title += f"  {next(iter(days)).isoformat()}"
@@ -170,18 +189,20 @@ def list_runs(
             table.add_column("Trigger", overflow="fold")
             table.add_column("Run id", style="dim", no_wrap=True)
             for r in page.runs:
-                table.add_row(_clock(r.start, tz, date=not one_day), f"{r.duration:.3f}s" if r.duration is not None else "-",
+                table.add_row(_clock(r.start, tz, date=not one_day),
+                              f"{r.duration:.3f}s" if r.duration is not None else "-",
                               _execution(r), escape(r.last_step or "-"), escape(r.trigger or "-"), r.run_id)
             console.print(table)
             oldest = _clock(page.oldest, tz, date=True) if page.oldest else "none"
-            console.print(f"[dim]{len(page.runs)} shown; {page.stored} stored by HA, oldest {oldest} ({tz})[/dim]")
+            console.print(f"[dim]{len(page.runs)} shown; {page.stored} stored by HA, oldest {oldest} "
+                          f"({escape(_zone_label(tz))})[/dim]")
 
     asyncio.run(run_async_command(_list(), command="traces list"))
 
 
 @app.command("show")
 def show(
-    target: str = typer.Argument(..., help="automation.<entity_id or YAML id>, or script.<id>"),
+    target: str = TARGET_ARG,
     run_id: str | None = typer.Argument(None, help="Run id from 'traces list' (default: the latest run)"),
     at: str | None = typer.Option(None, "--at", help="The run nearest this time instead"),
     url: str | None = URL_OPT,
@@ -193,7 +214,8 @@ def show(
     """Show one run step by step: what triggered it and what each step decided.
 
     The trigger's from/to states include their attributes and when they last
-    changed, which is usually where the "why" is.
+    changed, which is usually where the "why" is. With --at, the nearest
+    stored run is shown with its distance from the time asked about.
 
     Examples:
         ha-cli traces show automation.office_ble_away_signal
@@ -214,20 +236,77 @@ def show(
             service = TracesService(client)
             tz = await service.time_zone()
             try:
-                detail = await service.get(target, run_id, parse_when(at, tz) if at else None)
+                when = parse_when(at, tz) if at else None
+                detail = await service.get(target, run_id, when)
             except (ValidationError, NotFoundError) as e:
                 code, exit_code = _code(e)
                 _fail(formatter, str(e), code, exit_code)
                 return
+            data = detail.to_dict()
+            distance = (detail.run.start - when).total_seconds() if when and detail.run.start else None
+            if when:
+                data["requested_at"] = when.isoformat()
+                data["distance_seconds"] = distance
             if formatter:
-                write_output(formatter.success(detail.to_dict(), metadata={
-                    "time_zone": str(tz), "home_assistant": create_home_assistant_metadata(url_final, "websocket")}))
+                write_output(formatter.success(data, metadata=_meta(url_final, tz)))
             elif json_output:
-                write_output(json.dumps(detail.to_dict(), indent=2, default=str))
+                write_output(json.dumps(data, indent=2, default=str))
             else:
+                if when is not None and distance is not None:
+                    far = abs(distance) > FAR_SECONDS
+                    note = f"nearest stored run to {_clock(when, tz, date=True)}: {distance:+.1f}s"
+                    console.print(f"[yellow]{escape(note)} - not that time; it may have rolled off "
+                                  "(see 'traces list')[/yellow]" if far else f"[dim]{escape(note)}[/dim]")
                 _print_detail(detail, tz)
 
     asyncio.run(run_async_command(_show(), command="traces show"))
+
+
+def _print_around(result: AroundResult, tz: tzinfo | None, brief: bool, center: datetime) -> None:
+    zone = tz or UTC
+    dated = result.lo.astimezone(zone).date() != result.hi.astimezone(zone).date() \
+        or center.astimezone(zone).date() != datetime.now(zone).date()
+    console.print(f"[bold]Runs from {_clock(result.lo, tz, dated)} to {_clock(result.hi, tz, dated)}[/bold] "
+                  f"[dim]({escape(_zone_label(tz))})[/dim]")
+    for chain in result.chains:
+        console.print()
+        head = chain[0]
+        if len(chain) > 1:
+            console.print(f"[dim]context group of {len(chain)} runs[/dim]")
+        for d in chain:
+            rel = "" if d is head else f"{_relation(d, head)} "
+            if brief:
+                console.print(f"{'    ' if rel else ''}{rel}{_clock(d.run.start, tz, dated)}  {_execution(d.run)}  "
+                              f"[cyan]{escape(d.run.target)}[/cyan]  last_step={escape(d.run.last_step or '-')}"
+                              + (f"  [dim]{escape(d.trigger.description or '')}[/dim]" if d.trigger else ""))
+            else:
+                if rel:
+                    console.print(f"    [dim]{rel}[/dim]")
+                _print_detail(d, tz, indent="    " if rel else "")
+    console.print()
+    if not result.chains:
+        if result.hidden_failed_conditions:
+            console.print(f"[yellow]Only runs that stopped at their conditions are in this window "
+                          f"({result.hidden_failed_conditions}): --all shows them[/yellow]")
+        elif result.rolled_off or result.unreadable:
+            console.print("[yellow]Runs were in this window, but none could be read (see below)[/yellow]")
+        else:
+            console.print("[yellow]No stored runs start in this window[/yellow]")
+    elif result.hidden_failed_conditions:
+        console.print(f"[dim]{result.hidden_failed_conditions} run(s) that stopped at their conditions hidden "
+                      "(--all to show)[/dim]")
+    for label, refs in (("rolled off while reading", result.rolled_off), ("unreadable", result.unreadable)):
+        if refs:
+            console.print(f"[yellow]{len(refs)} run(s) {label}: "
+                          + escape(", ".join(f"{r['target']} {r['run_id']}" for r in refs)) + "[/yellow]")
+    if result.possibly_missing:
+        names = ", ".join(m["target"] for m in result.possibly_missing[:8])
+        more = f" (+{len(result.possibly_missing) - 8})" if len(result.possibly_missing) > 8 else ""
+        console.print(f"[yellow]History starts after this window opened for {len(result.possibly_missing)} "
+                      f"item(s), so runs of theirs may be missing: {escape(names + more)}[/yellow]")
+    stored = ", ".join(f"{d} {n}" for d, n in result.stored.items())
+    console.print(f"[dim]Stored runs: {stored}. Each automation and script keeps only its own last N, "
+                  "so this can't prove nothing else ran.[/dim]")
 
 
 @app.command("around")
@@ -246,12 +325,13 @@ def around(
 ) -> None:
     """Every automation and script run near a time, as one timeline.
 
-    Runs that belong together are grouped: a script started by an automation
-    shares its context, so the lock script appears under the automation that
-    called it. Runs that stopped at their conditions (time-pattern
-    automations, mostly) are counted but hidden unless --all: use --all when
-    the question is why something did NOT run. Only stored runs are visible;
-    the footer says how far back each domain's history reaches.
+    Runs that share a context are grouped: a script started by an automation
+    shares its context, so the lock script appears with the automation that
+    called it. A group is a shared context, not a call tree. Runs that stopped
+    at their conditions (time-pattern automations, mostly) are counted but
+    hidden unless --all: use --all when the question is why something did NOT
+    run. Only stored runs are visible, and the footer names items whose
+    history may not reach back to the window.
 
     Examples:
         ha-cli traces around 14:18:09
@@ -261,7 +341,7 @@ def around(
     setup_logging(debug)
     set_porcelain_mode(porcelain)
     _check_flags(json_output, porcelain)
-    domains = tuple(domain or DOMAINS)
+    domains = tuple(dict.fromkeys(domain or DOMAINS))
     bad = [d for d in domains if d not in DOMAINS]
     if bad:
         console.print(f"[red]Error:[/red] --domain must be automation or script, not {escape(', '.join(bad))}")
@@ -275,53 +355,21 @@ def around(
             tz = await service.time_zone()
             try:
                 center = parse_when(when, tz)
-                span = parse_duration(window)
-                chains, coverage = await service.around(center, span, domains)
+                result = await service.around(center, parse_duration(window), domains)
             except (ValidationError, NotFoundError) as e:
                 code, exit_code = _code(e)
                 _fail(formatter, str(e), code, exit_code)
                 return
-            hidden = 0
             if not show_all:
-                kept = [c for c in chains if not all(d.run.execution == "failed_conditions" for d in c)]
-                hidden = sum(len(c) for c in chains) - sum(len(c) for c in kept)
-                chains = kept
-            data = {"center": center.isoformat(), "window_seconds": span.total_seconds(), "coverage": coverage,
-                    "hidden_failed_conditions": hidden,
-                    "chains": [[d.to_dict() for d in chain] for chain in chains]}
+                kept = [c for c in result.chains if not all(d.run.execution == "failed_conditions" for d in c)]
+                result.hidden_failed_conditions = result.shown - sum(len(c) for c in kept)
+                result.chains = kept
+            data = {"center": center.isoformat(), **result.to_dict()}
             if formatter:
-                write_output(formatter.success(data, metadata={
-                    "total_count": sum(len(c) for c in chains), "time_zone": str(tz),
-                    "home_assistant": create_home_assistant_metadata(url_final, "websocket")}))
-                return
-            if json_output:
+                write_output(formatter.success(data, metadata=_meta(url_final, tz, total_count=result.shown)))
+            elif json_output:
                 write_output(json.dumps(data, indent=2, default=str))
-                return
-            console.print(f"[bold]Runs from {_clock(center - span, tz)} to {_clock(center + span, tz)}[/bold] "
-                          f"[dim]({tz})[/dim]")
-            if not chains:
-                console.print("  [yellow]No stored runs in this window[/yellow]")
-            for chain in chains:
-                console.print()
-                for i, d in enumerate(chain):
-                    indent = "" if i == 0 else "    ↳ "
-                    if brief:
-                        console.print(f"{indent}{_clock(d.run.start, tz)}  {_execution(d.run)}  "
-                                      f"[cyan]{escape(d.run.target)}[/cyan]  last_step={escape(d.run.last_step or '-')}"
-                                      + (f"  [dim]{escape(d.trigger.description or '')}[/dim]" if d.trigger else ""))
-                    else:
-                        _print_detail(d, tz, indent="" if i == 0 else "    ")
-            console.print()
-            if hidden:
-                console.print(f"[dim]{hidden} run(s) that stopped at their conditions hidden (--all to show)[/dim]")
-            for dom, cov in coverage.items():
-                if dom == "rolled_off_during_read":
-                    continue
-                oldest = _clock(datetime.fromisoformat(cov["oldest"]), tz, date=True) if cov["oldest"] else "none"
-                console.print(f"[dim]{dom}: {cov['stored']} runs stored, oldest {oldest}[/dim]")
-            if coverage.get("rolled_off_during_read"):
-                console.print(f"[yellow]{coverage['rolled_off_during_read']} run(s) rolled off while reading[/yellow]")
-            console.print("[dim]Oldest is across the whole domain: each automation keeps only its own last "
-                          "N runs, so a busy one may have dropped runs this window had.[/dim]")
+            else:
+                _print_around(result, tz, brief, center)
 
     asyncio.run(run_async_command(_around(), command="traces around"))

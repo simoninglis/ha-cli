@@ -132,7 +132,9 @@ automation sets `stored_traces`). These read them without the trace UI:
   Runs that stopped at their conditions are hidden unless you pass `--all`.
 
 Automations are named by entity_id or by their YAML `id:` (traces are keyed by
-the id, which is not the entity_id). Times are in HA's time zone.
+the id, which is not the entity_id); `automation:<id>` means the id only, for
+when one automation's id is another's entity name. Times are in HA's time zone;
+a local time that DST makes ambiguous or nonexistent is refused, not guessed.
 
 ```bash
 ha-cli traces around 14:18:09 --window 1m

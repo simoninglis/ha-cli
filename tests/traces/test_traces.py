@@ -25,6 +25,10 @@ STATES = [
     {"entity_id": "automation.office_ble_away_signal_lock_pc_shorten_timer",
      "attributes": {"id": "office_ble_away_signal"}},
     {"entity_id": "automation.no_id_ui_thing", "attributes": {}},
+    {"entity_id": "automation.none_id", "attributes": {"id": None}},
+    # A's id is "clash"; B's entity_id is automation.clash
+    {"entity_id": "automation.alpha", "attributes": {"id": "clash"}},
+    {"entity_id": "automation.clash", "attributes": {"id": "beta_id"}},
     {"entity_id": "script.office_pc_lock", "attributes": {}},
     {"entity_id": "light.office", "attributes": {}},
 ]
@@ -47,12 +51,14 @@ class FakeHA:
 
     def __init__(self, runs: list[dict[str, Any]] | None = None,
                  details: dict[str, dict[str, Any]] | None = None, tz: str = "Australia/Brisbane",
-                 gone: set[str] | None = None, broken: set[str] | None = None) -> None:
+                 gone: set[str] | None = None, broken: set[str] | None = None,
+                 junk: set[str] | None = None) -> None:
         self.runs = runs if runs is not None else list(FIX["list_ble"])
         self.details = details if details is not None else {FIX["get_ble"]["run_id"]: FIX["get_ble"]}
         self.tz = tz
         self.gone = gone or set()
         self.broken = broken or set()
+        self.junk = junk or set()
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     async def get_states(self) -> list[dict[str, Any]]:
@@ -69,6 +75,8 @@ class FakeHA:
             rid = kwargs["run_id"]
             if rid in self.broken:
                 raise WebSocketError("unknown_error: boom")
+            if rid in self.junk:
+                return None
             if rid in self.gone or rid not in self.details:
                 raise WebSocketError("not_found: The trace could not be found")
             return self.details[rid]
@@ -129,6 +137,12 @@ def test_resolve_yaml_id_finds_its_entity() -> None:
     assert got == ("automation", "office_ble_away_signal", "automation.office_ble_away_signal_lock_pc_shorten_timer")
 
 
+def test_resolve_explicit_id_form_settles_the_clash() -> None:
+    assert asyncio.run(svc(FakeHA()).resolve("automation:clash")) == ("automation", "clash", "automation.alpha")
+    assert asyncio.run(svc(FakeHA()).resolve("automation:beta_id")) == ("automation", "beta_id", "automation.clash")
+    assert asyncio.run(svc(FakeHA()).resolve("script:office_pc_lock"))[1] == "office_pc_lock"
+
+
 def test_resolve_script() -> None:
     assert asyncio.run(svc(FakeHA()).resolve("script.office_pc_lock")) == ("script", "office_pc_lock",
                                                                            "script.office_pc_lock")
@@ -138,6 +152,9 @@ def test_resolve_script() -> None:
     ("automation.typo", NotFoundError),       # trace/list would answer [] and look like "no runs"
     ("script.typo", NotFoundError),
     ("automation.no_id_ui_thing", NotFoundError),
+    ("automation.None", NotFoundError),       # a missing id must not become the string "None"
+    ("automation.clash", ValidationError),    # A's id and B's entity_id: refuse, don't guess
+    ("automation:office_ble_away_signal_lock_pc_shorten_timer", NotFoundError),  # ':' means id only
     ("light.office", ValidationError),
     ("office_pc_lock", ValidationError),
     ("automation.", ValidationError),
@@ -209,6 +226,13 @@ def test_page_filters_window_and_reports_what_is_stored() -> None:
     assert page.oldest == datetime.fromisoformat(FIX["list_ble"][0]["timestamp"]["start"])
 
 
+def test_page_refuses_reversed_bounds() -> None:
+    with pytest.raises(ValidationError):
+        asyncio.run(svc(FakeHA()).page("automation.office_ble_away_signal",
+                                       since=parse_when("2026-11-13 14:30", BNE),
+                                       until=parse_when("2026-11-13 14:00", BNE)))
+
+
 def test_page_for_an_item_with_no_runs_is_empty_not_an_error() -> None:
     page = asyncio.run(svc(FakeHA(runs=[])).page("script.office_pc_lock"))
     assert page.runs == []
@@ -239,8 +263,37 @@ def test_get_with_nothing_stored_is_not_found() -> None:
         asyncio.run(svc(FakeHA(runs=[])).get("script.office_pc_lock"))
 
 
-def test_time_zone_falls_back_to_utc() -> None:
-    assert asyncio.run(svc(FakeHA(tz="Not/AZone")).time_zone()) == UTC
+def test_time_zone_unknown_is_none_not_utc() -> None:
+    assert asyncio.run(svc(FakeHA(tz="Not/AZone")).time_zone()) is None
+
+
+def test_no_zone_refuses_local_times_but_takes_offsets() -> None:
+    for text in ("14:18", "2026-11-13 14:18"):
+        with pytest.raises(ValidationError):
+            parse_when(text, None)
+    assert parse_when("2026-11-13T14:18:00+10:00", None) == datetime(2026, 11, 13, 4, 18, tzinfo=UTC)
+
+
+SYD = ZoneInfo("Australia/Sydney")
+
+
+def test_dst_gap_and_repeat_are_refused() -> None:
+    with pytest.raises(ValidationError, match="doesn't exist"):
+        parse_when("2026-10-04 02:30", SYD)        # clocks go 02:00 -> 03:00
+    with pytest.raises(ValidationError, match="happens twice"):
+        parse_when("2026-04-05 02:30", SYD)        # clocks go 03:00 -> 02:00
+    assert parse_when("2026-04-05T02:30:00+11:00", SYD).utcoffset() == timedelta(0)
+
+
+def test_parse_when_returns_utc() -> None:
+    assert parse_when("2026-11-13 14:18", BNE).tzinfo is UTC
+
+
+def test_around_window_is_elapsed_time_across_dst() -> None:
+    center = parse_when("2026-04-05T02:59:30+11:00", SYD)    # just before the clocks go back
+    result = asyncio.run(svc(FakeHA(runs=[], details={})).around(center, timedelta(minutes=2)))
+    # Same-zone subtraction is wall-clock, so measure the elapsed span in UTC
+    assert result.hi.astimezone(UTC) - result.lo.astimezone(UTC) == timedelta(minutes=4)
 
 
 # --- chains and around ---------------------------------------------------------
@@ -268,10 +321,9 @@ def test_around_window_gets_each_run_and_groups() -> None:
     outside = [_run("automation", "ble", "r0", "2026-11-13T04:10:00+00:00")]
     details = {"r1": _detail(inside[0], "C1"), "r2": _detail(inside[1], "C1"), "r0": _detail(outside[0], "C0")}
     fake = FakeHA(runs=inside + outside, details=details)
-    chains, coverage = asyncio.run(svc(fake).around(parse_when("2026-11-13 14:18:09", BNE), timedelta(seconds=30)))
-    assert [[d.run.run_id for d in c] for c in chains] == [["r1", "r2"]]
-    assert coverage["automation"]["stored"] == 2
-    assert coverage["script"]["stored"] == 1
+    result = asyncio.run(svc(fake).around(parse_when("2026-11-13 14:18:09", BNE), timedelta(seconds=30)))
+    assert [[d.run.run_id for d in c] for c in result.chains] == [["r1", "r2"]]
+    assert result.stored == {"automation": 2, "script": 1}
     assert {k["run_id"] for m, k in fake.calls if m == "trace/get"} == {"r1", "r2"}  # nothing outside fetched
     assert all("item_id" not in k for m, k in fake.calls if m == "trace/list")       # whole domain listed
 
@@ -281,13 +333,39 @@ def test_around_tolerates_a_run_rolling_off_but_not_other_errors() -> None:
             _run("automation", "a", "r2", "2026-11-13T04:18:09+00:00")]
     details = {r["run_id"]: _detail(r, r["run_id"]) for r in runs}
     center = parse_when("2026-11-13 14:18:09", BNE)
-    chains, coverage = asyncio.run(svc(FakeHA(runs=runs, details=details, gone={"r1"})).around(
+    result = asyncio.run(svc(FakeHA(runs=runs, details=details, gone={"r1"})).around(
         center, timedelta(seconds=30), ("automation",)))
-    assert [[d.run.run_id for d in c] for c in chains] == [["r2"]]
-    assert coverage["rolled_off_during_read"] == 1
+    assert [[d.run.run_id for d in c] for c in result.chains] == [["r2"]]
+    assert [r["run_id"] for r in result.rolled_off] == ["r1"]
     with pytest.raises(WebSocketError):
         asyncio.run(svc(FakeHA(runs=runs, details=details, broken={"r1"})).around(
             center, timedelta(seconds=30), ("automation",)))
+
+
+def test_around_reports_unreadable_responses_instead_of_dropping_them() -> None:
+    runs = [_run("automation", "a", "r1", "2026-11-13T04:18:08+00:00")]
+    result = asyncio.run(svc(FakeHA(runs=runs, details={}, junk={"r1"})).around(
+        parse_when("2026-11-13 14:18:09", BNE), timedelta(seconds=30), ("automation",)))
+    assert result.chains == []
+    assert [r["run_id"] for r in result.unreadable] == ["r1"]
+
+
+def test_around_dedupes_domains() -> None:
+    runs = [_run("automation", "a", "r1", "2026-11-13T04:18:08+00:00")]
+    fake = FakeHA(runs=runs, details={"r1": _detail(runs[0], "C1")})
+    result = asyncio.run(svc(fake).around(parse_when("2026-11-13 14:18:09", BNE), timedelta(seconds=30),
+                                          ("automation", "automation")))
+    assert result.shown == 1
+    assert sum(m == "trace/get" for m, _ in fake.calls) == 1
+
+
+def test_around_flags_items_whose_history_starts_after_the_window() -> None:
+    busy = [_run("automation", "busy", f"b{i}", f"2026-11-13T04:2{i}:00+00:00") for i in range(5)]
+    idle = [_run("automation", "idle", "i0", "2026-11-12T00:00:00+00:00")]
+    few = [_run("automation", "few", f"f{i}", f"2026-11-13T04:2{i}:00+00:00") for i in range(2)]
+    result = asyncio.run(svc(FakeHA(runs=busy + idle + few, details={})).around(
+        parse_when("2026-11-13 14:18:09", BNE), timedelta(seconds=30), ("automation",)))
+    assert [m["target"] for m in result.possibly_missing] == ["automation.busy"]
 
 
 def test_around_refuses_a_window_that_is_too_busy() -> None:
@@ -308,6 +386,11 @@ class _Ctx:
 
     async def __aexit__(self, *args: Any) -> None:
         return None
+
+
+def flat(text: str) -> str:
+    """Output with Rich's line wrapping undone."""
+    return " ".join(text.split())
 
 
 def invoke(fake: FakeHA, args: list[str]) -> Any:
@@ -344,9 +427,41 @@ def test_cli_around_hides_condition_stops_unless_all() -> None:
     hidden = json.loads(invoke(fake, args).output)
     assert [[d["run_id"] for d in c] for c in hidden["chains"]] == [["r1"]]
     assert hidden["hidden_failed_conditions"] == 1
+    assert hidden["complete"] is None
     shown = json.loads(invoke(copy.deepcopy(fake), [*args, "--all"]).output)
     assert len(shown["chains"]) == 2
     assert shown["hidden_failed_conditions"] == 0
+
+
+def test_cli_around_says_why_the_window_is_empty() -> None:
+    stopped = _run("automation", "tick", "r2", "2026-11-13T04:18:09+00:00", execution="failed_conditions")
+    gone = _run("automation", "a", "r3", "2026-11-13T04:18:10+00:00")
+    args = ["around", "2026-11-13 14:18:09", "--window", "30s", "--domain", "automation"]
+    only_hidden = flat(invoke(FakeHA(runs=[stopped], details={"r2": _detail(stopped, "C2")}), args).output)
+    assert "Only runs that stopped at their conditions" in only_hidden
+    unread = flat(invoke(FakeHA(runs=[gone], details={}), args).output)
+    assert "none could be read" in unread
+    assert "rolled off while reading" in unread
+    nothing = flat(invoke(FakeHA(runs=[], details={}), args).output)
+    assert "No stored runs start in this window" in nothing
+
+
+def test_cli_show_at_reports_distance() -> None:
+    a, b = FIX["list_ble"]
+    fake = FakeHA(details={a["run_id"]: _detail(a, "c1"), b["run_id"]: _detail(b, "c2")})
+    out = json.loads(invoke(fake, ["show", "automation.office_ble_away_signal", "--at", "2026-11-13 09:00",
+                                   "--json"]).output)
+    assert out["run_id"] == "3e31a971938a313193e7b25ac641d64b"
+    assert out["distance_seconds"] > 5 * 3600
+    far = invoke(fake, ["show", "automation.office_ble_away_signal", "--at", "2026-11-13 09:00"]).output
+    assert "may have rolled off" in flat(far)
+
+
+def test_cli_list_without_ha_zone_says_utc() -> None:
+    out = invoke(FakeHA(tz="Not/AZone"), ["list", "automation.office_ble_away_signal"]).output
+    assert "HA's time zone couldn't be read" in flat(out)
+    refused = invoke(FakeHA(tz="Not/AZone"), ["list", "automation.office_ble_away_signal", "--since", "14:00"])
+    assert refused.exit_code == 1
 
 
 def test_cli_around_rejects_other_domains() -> None:
