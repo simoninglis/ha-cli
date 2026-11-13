@@ -121,6 +121,19 @@ def test_naive_trace_timestamps_are_not_trusted() -> None:
     assert result.shown == 0                                          # and no TypeError
 
 
+def test_calendar_edge_times_are_validation_errors() -> None:
+    with pytest.raises(ValidationError):
+        parse_when("0001-01-01T00:00:00+10:00", BNE)
+    with pytest.raises(ValidationError):
+        parse_when("0001-01-01 00:00", ZoneInfo("Asia/Tokyo"))   # LMT +09:18 runs before year 1
+
+
+def test_malformed_list_entries_do_not_abort() -> None:
+    bad = {**_run("automation", "a", "r1", "2026-11-13T04:18:08+00:00"), "timestamp": ["bad"]}
+    runs = asyncio.run(svc(FakeHA(runs=[bad], details={})).list_runs("automation"))
+    assert runs[0].start is None
+
+
 def test_oversized_windows_are_validation_errors() -> None:
     with pytest.raises(ValidationError):
         parse_duration("1" + "0" * 30 + "h")
@@ -539,6 +552,20 @@ def test_cli_around_labels_group_members_and_dates_another_day() -> None:
     assert "context group of 3 runs" in out
     assert "↳ same context 2026-11-12 14:18:09.000" in out
     assert "⇢ caused by the group 2026-11-12 14:18:10.000" in out
+
+
+def test_cli_show_survives_bad_trigger_last_changed() -> None:
+    detail = copy.deepcopy(FIX["get_ble"])
+    for steps in detail["trace"].values():
+        for st in steps:
+            trig = (st.get("changed_variables") or {}).get("trigger")
+            if trig:
+                trig["to_state"]["last_changed"] = "yesterday-ish"
+                trig["from_state"]["last_changed"] = "2026-11-13T01:28:44"   # no offset
+    result = invoke(FakeHA(details={detail["run_id"]: detail}),
+                    ["show", "automation.office_ble_away_signal", detail["run_id"]])
+    assert result.exit_code == 0, result.output
+    assert "since -" in flat(result.output)
 
 
 def test_cli_show_labels_utc_when_zone_unknown() -> None:

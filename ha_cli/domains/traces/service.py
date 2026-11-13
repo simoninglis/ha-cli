@@ -49,7 +49,10 @@ def parse_when(text: str, tz: tzinfo | None, now: datetime | None = None) -> dat
     except ValueError as e:
         raise ValidationError(f"Not a time: {text!r} (use HH:MM[:SS], 'YYYY-MM-DD HH:MM[:SS]' or ISO)") from e
     if when.tzinfo is not None:
-        return when.astimezone(UTC)
+        try:
+            return when.astimezone(UTC)
+        except OverflowError as e:
+            raise ValidationError(f"{text!r} is too close to the edge of the calendar") from e
     if tz is None:
         raise _no_zone(text)
     return _localise(when, tz, text)
@@ -61,6 +64,13 @@ def _no_zone(text: str) -> ValidationError:
 
 
 def _localise(naive: datetime, tz: tzinfo, text: str) -> datetime:
+    try:
+        return _localise_checked(naive, tz, text)
+    except OverflowError as e:
+        raise ValidationError(f"{text!r} is too close to the edge of the calendar") from e
+
+
+def _localise_checked(naive: datetime, tz: tzinfo, text: str) -> datetime:
     early = naive.replace(tzinfo=tz, fold=0)
     if early.astimezone(UTC).astimezone(tz).replace(tzinfo=None) != naive:
         raise ValidationError(f"{text!r} doesn't exist in {tz} (the clocks went forward): give an offset")

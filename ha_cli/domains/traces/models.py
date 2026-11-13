@@ -47,7 +47,8 @@ class TraceRun:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TraceRun":
         """From a trace/list item (or the summary fields of trace/get)."""
-        ts = data.get("timestamp") or {}
+        ts = data.get("timestamp")
+        ts = ts if isinstance(ts, dict) else {}
         return cls(
             domain=str(data.get("domain") or ""),
             item_id=str(data.get("item_id") or ""),

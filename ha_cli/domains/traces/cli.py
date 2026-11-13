@@ -16,7 +16,7 @@ from ...common.client import HAClient
 from ...common.config import get_client_config
 from ...common.exceptions import EXIT_HA_ERROR, EXIT_USAGE_ERROR, NotFoundError, ValidationError
 from ...common.porcelain import PorcelainFormatter, create_home_assistant_metadata
-from .models import DOMAINS, AroundResult, TraceDetail, TraceRun
+from .models import DOMAINS, AroundResult, TraceDetail, TraceRun, parse_ts
 from .service import TracesService, parse_duration, parse_when
 
 app = typer.Typer(
@@ -101,8 +101,7 @@ def _print_detail(d: TraceDetail, tz: tzinfo | None, indent: str = "") -> None:
         console.print(f"{indent}  trigger: {escape(t.description or '?')}{hold}")
         for label, st in (("from", t.from_state), ("to", t.to_state)):
             if st:
-                changed = st.get("last_changed")
-                when = _clock(datetime.fromisoformat(changed), tz) if isinstance(changed, str) and changed else "-"
+                when = _clock(parse_ts(st.get("last_changed")), tz)
                 console.print(f"{indent}    {label:>4} {escape(str(st.get('state')))}  [dim]since {when}[/dim]")
                 if st.get("attributes"):
                     console.print(f"{indent}         [dim]{_attrs(st['attributes'])}[/dim]")
