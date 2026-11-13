@@ -325,10 +325,25 @@ class TestInstall:
         assert not r.verified
         assert "couldn't read the device" in (r.problem or "")
 
+    @staticmethod
+    def _verify_seconds(r: Any) -> float:
+        t = {e["event"]: e["t"] for e in r.timeline}
+        return t["done"] - t["verifying"]
+
     def test_verification_deadline_bounds_slow_reads(self) -> None:
+        # verify_wait below the 1 s minimum: the whole phase must end within ~1 s
         r = install(FakeHA(ustate("on"), VOICE_SCRIPT, after_check=DONE, device_delay=10), verify_wait=0.2)
         assert not r.verified
-        assert r.duration_seconds < 5
+        assert self._verify_seconds(r) < 1.3
+
+    def test_lagging_device_after_entity_matched_respects_deadline(self) -> None:
+        # The entity-matched branch pauses between reads: that pause is bounded too,
+        # and a match arriving after the deadline must not count
+        fake = FakeHA(ustate("on"), VOICE_SCRIPT, after_check=DONE, device_lag=1000)
+        r = asyncio.run(UpdatesService(fake, poll_seconds=0.5).install(  # type: ignore[arg-type]
+            EID, timeout=5, verify_wait=0.05))
+        assert not r.verified
+        assert self._verify_seconds(r) < 1.3
 
     def test_refuses_without_update(self) -> None:
         with pytest.raises(ValidationError):

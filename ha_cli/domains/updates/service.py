@@ -20,6 +20,7 @@ STUCK_GRACE_SECONDS = 30.0
 # The client gives up on any reply after 30 s, so a pending install call always
 # resolves (result, rejection or reply timeout) within this
 CALL_OUTCOME_SECONDS = 35.0
+MIN_VERIFY_SECONDS = 1.0  # verification always gets at least one real attempt
 SPECIFIC_VERSION = 2  # UpdateEntityFeature.SPECIFIC_VERSION
 
 
@@ -320,40 +321,48 @@ class UpdatesService:
         """Poll the entity and the device until both report ``target`` (or time runs out).
 
         The entity is re-read on every pass (a device catching up doesn't freeze an
-        earlier entity reading), and every awaited step is bounded by what's left
-        of ``verify_wait``. At least one full attempt is always made.
+        earlier entity reading). Everything, pauses included, runs against one
+        deadline of ``max(verify_wait, MIN_VERIFY_SECONDS)``: there is always one
+        real attempt, and nothing seen after the deadline counts.
         """
         note("verifying")
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + verify_wait
+        deadline = loop.time() + max(verify_wait, MIN_VERIFY_SECONDS)
+
+        def left() -> float:
+            return deadline - loop.time()
+
         problem = "not verified"
         entity_ok = False
         refresh_error: str | None = None
-        attempted = False
         while True:
             rejected = rejection()
             if rejected:
                 return rejected, False
-            remaining = deadline - loop.time()
-            if attempted and remaining <= 0:
+            if left() <= 0:
                 return problem, False
-            attempted = True
-            budget = max(remaining, 1.0)
             try:
                 if entity_ok:
-                    # Already matched once: re-read (no fresh check needed) after a pause
-                    await asyncio.sleep(self.poll_seconds)
-                    after = await asyncio.wait_for(self.get(entity_id), timeout=budget)
+                    # Already matched once: pause, then re-read it (no fresh check needed)
+                    await asyncio.sleep(min(self.poll_seconds, max(0.0, left())))
+                    if left() <= 0:
+                        return problem, False
+                    after = await asyncio.wait_for(self.get(entity_id), timeout=left())
                 else:
+                    # The check's own wait ends a little before the outer bound, so it
+                    # normally returns its reading (and the specific problem) itself
+                    margin = min(0.2, left() / 4)
                     checked = await asyncio.wait_for(
-                        self.check(entity_id, wait=min(budget, RECHECK_SECONDS), done=lambda u: u.installed_version == target),
-                        timeout=budget + 1.0)
+                        self.check(entity_id, wait=min(left() - margin, RECHECK_SECONDS),
+                                   done=lambda u: u.installed_version == target),
+                        timeout=left())
                     after = checked.info
                     refresh_error = checked.refresh_error
-                device = await asyncio.wait_for(self.device_version(entity_id), timeout=max(deadline - loop.time(), 1.0))
+                if left() <= 0:
+                    return problem, False
+                device = await asyncio.wait_for(self.device_version(entity_id), timeout=left())
             except asyncio.TimeoutError:
-                problem = "verification ran out of time" if problem == "not verified" else problem
-                continue
+                return ("verification ran out of time" if problem == "not verified" else problem), False
             result.installed_version = after.installed_version
             entity_ok = (after.installed_version == target and not after.in_progress
                          and after.state not in ("unavailable", "unknown"))
