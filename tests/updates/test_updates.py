@@ -48,7 +48,8 @@ class FakeHA:
                  install_error: Exception | None = None, install_delay: float = 0.0,
                  refresh_error: Exception | None = None, stream_error: Exception | None = None,
                  snapshot: dict[str, Any] | None = None, device_lag: int = 0,
-                 device_before: str = "25.11.0 (ESPHome 2025.11.0)") -> None:
+                 device_before: str = "25.11.0 (ESPHome 2025.11.0)", device_delay: float = 0.0,
+                 revert_to: dict[str, Any] | None = None, entity_entry: Any = "DEFAULT") -> None:
         self.current = initial
         self.snapshot = snapshot
         self.script = script or []
@@ -60,6 +61,9 @@ class FakeHA:
         self.stream_error = stream_error
         self.device_lag = device_lag
         self.device_before = device_before
+        self.device_delay = device_delay
+        self.revert_to = revert_to      # entity state to switch to while the device lags
+        self.entity_entry = entity_entry
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
         self.installed = asyncio.Event()
         self.unsubscribed = False
@@ -70,10 +74,16 @@ class FakeHA:
         if msg_type == "config/entity_registry/get":
             if isinstance(self.device, Exception):
                 raise self.device
+            if self.entity_entry != "DEFAULT":
+                return self.entity_entry
             return {"entity_id": kwargs["entity_id"], "device_id": None if self.device == "NO_DEVICE" else "dev1"}
         if msg_type == "config/device_registry/list":
+            if self.device_delay:
+                await asyncio.sleep(self.device_delay)
             if self.device_lag > 0:
                 self.device_lag -= 1
+                if self.revert_to:
+                    self.current = self.revert_to
                 return [{"id": "dev1", "sw_version": self.device_before}]
             return [{"id": "dev1", "sw_version": self.device}]
         raise AssertionError(msg_type)
@@ -177,6 +187,12 @@ class TestListAndCheck:
         r = asyncio.run(UpdatesService(fake, poll_seconds=0.01).check(EID, wait=1))  # type: ignore[arg-type]
         assert not r.conclusive
         assert "unauthorized" in (r.refresh_error or "")
+
+    def test_unavailable_with_old_versions_is_inconclusive(self) -> None:
+        fake = FakeHA(ustate("unavailable", "25.11.0", "26.9.0"))
+        r = asyncio.run(UpdatesService(fake, poll_seconds=0.01).check(EID, wait=0.05))  # type: ignore[arg-type]
+        assert not r.conclusive
+        assert not any(c[:2] == ("homeassistant", "update_entity") for c in fake.calls)
 
     def test_check_still_blank_is_inconclusive(self) -> None:
         r = asyncio.run(UpdatesService(FakeHA(ustate("off", "", "")), poll_seconds=0.01).check(EID, wait=0.05))  # type: ignore[arg-type]
@@ -282,6 +298,37 @@ class TestInstall:
         assert "boom" in (r.problem or "")
         assert r.duration_seconds < 5  # not a 30 s queue timeout
         assert not any(c[:2] == ("update", "install") for c in fake.calls)
+
+    def test_rejection_after_versions_match_is_not_cancelled_away(self) -> None:
+        # Round 2: progress, restart and matching versions, then the call fails 300 ms later
+        fake = FakeHA(ustate("on"), VOICE_SCRIPT, after_check=DONE, install_delay=0.3,
+                      install_error=WebSocketError("home_assistant_error: late failure"))
+        r = install(fake)
+        assert not r.verified
+        assert "late failure" in (r.problem or "")
+
+    def test_rejection_during_slow_device_read_is_reported(self) -> None:
+        fake = FakeHA(ustate("on"), VOICE_SCRIPT, after_check=DONE, install_delay=0.1, device_delay=0.3,
+                      install_error=WebSocketError("home_assistant_error: mid-verify failure"))
+        r = install(fake)
+        assert not r.verified
+        assert "mid-verify failure" in (r.problem or "")
+
+    def test_entity_reverting_while_device_lags_is_not_verified(self) -> None:
+        fake = FakeHA(ustate("on"), VOICE_SCRIPT, after_check=DONE, device_lag=1000,
+                      revert_to=ustate("unavailable", installed="25.11.0"))
+        r = install(fake, verify_wait=0.3)
+        assert not r.verified
+
+    def test_malformed_entity_registry_is_unreadable_not_no_device(self) -> None:
+        r = install(FakeHA(ustate("on"), VOICE_SCRIPT, after_check=DONE, entity_entry=None), verify_wait=0.2)
+        assert not r.verified
+        assert "couldn't read the device" in (r.problem or "")
+
+    def test_verification_deadline_bounds_slow_reads(self) -> None:
+        r = install(FakeHA(ustate("on"), VOICE_SCRIPT, after_check=DONE, device_delay=10), verify_wait=0.2)
+        assert not r.verified
+        assert r.duration_seconds < 5
 
     def test_refuses_without_update(self) -> None:
         with pytest.raises(ValidationError):

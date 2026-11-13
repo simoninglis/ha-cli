@@ -20,6 +20,8 @@ class Probe:
                 yield ev
             if then == "fail":
                 raise WebSocketError("Connection closed: boom")
+            if then == "raw":
+                raise ValueError("unexpected")
             if then == "block":
                 await asyncio.sleep(3600)
         finally:
@@ -76,3 +78,12 @@ def test_drain_and_exit_closes_blocked_stream() -> None:
             assert w.drain() == []
         return p
     assert asyncio.run(go()).closed
+
+
+def test_unexpected_error_is_normalised_and_cleanup_does_not_reraise_it() -> None:
+    async def go() -> None:
+        async with StreamWatcher(Probe().stream([], then="raw")) as w:
+            with pytest.raises(WebSocketError, match="unexpected"):
+                await w.next(1)
+        # leaving the context must not raise the raw ValueError
+    asyncio.run(go())

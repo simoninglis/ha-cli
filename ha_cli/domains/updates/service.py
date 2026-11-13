@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 POLL_SECONDS = 2.0
 RECHECK_SECONDS = 10.0
 STUCK_GRACE_SECONDS = 30.0
+# The client gives up on any reply after 30 s, so a pending install call always
+# resolves (result, rejection or reply timeout) within this
+CALL_OUTCOME_SECONDS = 35.0
 SPECIFIC_VERSION = 2  # UpdateEntityFeature.SPECIFIC_VERSION
 
 
@@ -99,7 +102,9 @@ class UpdatesService:
             entry = await self.client._ws_call("config/entity_registry/get", entity_id=entity_id)
         except WebSocketError as e:
             return DeviceVersion("unreadable", error=f"entity registry: {e}")
-        device_id = entry.get("device_id") if isinstance(entry, dict) else None
+        if not isinstance(entry, dict) or "device_id" not in entry:
+            return DeviceVersion("unreadable", error="entity registry: unexpected response")
+        device_id = entry.get("device_id")
         if not device_id:
             return DeviceVersion("no_device")
         try:
@@ -133,7 +138,8 @@ class UpdatesService:
         out, re-requesting every 10 s. A refused request ends it at once with
         ``refresh_error`` set: old attributes satisfying ``done`` prove nothing then.
         """
-        done = done or (lambda u: bool(u.installed_version and u.latest_version))
+        done = done or (lambda u: bool(u.installed_version and u.latest_version)
+                        and u.state not in ("unavailable", "unknown", ""))
         loop = asyncio.get_running_loop()
         deadline = loop.time() + wait
         next_request = loop.time()
@@ -171,6 +177,12 @@ class UpdatesService:
         returning: it is the entity, and the device where it reports a version,
         showing the target afterwards. A device that restarts comes back with a
         blank installed_version until its next check, so verification re-checks.
+
+        Entities supporting SPECIFIC_VERSION are asked for exactly the confirmed
+        version. Others install whatever they offer when the call lands; the live
+        snapshot is re-checked just before, which narrows (but cannot close) the
+        window for a new release to arrive in between, and verification would then
+        report the mismatch.
 
         Raises:
             ValidationError: No update to install, or the offered version changed
@@ -277,6 +289,15 @@ class UpdatesService:
             if result.problem is None:
                 result.problem, result.verified = await self._verify(entity_id, target, verify_wait, result, note,
                                                                      rejection)
+            if result.verified and install_task and not install_task.done():
+                # Never cancel an install call whose outcome is unknown: wait for it
+                note("waiting for the install call's reply")
+                await asyncio.wait({install_task}, timeout=CALL_OUTCOME_SECONDS)
+                if not install_task.done():
+                    result.problem, result.verified = "the install call never replied", False
+            late = rejection()
+            if late:
+                result.problem, result.verified = late, False
         finally:
             if install_task:
                 if not install_task.done():
@@ -296,29 +317,46 @@ class UpdatesService:
         note: Callable[..., None],
         rejection: Callable[[], str | None],
     ) -> tuple[str | None, bool]:
-        """Poll the entity and the device until both report ``target`` (or time runs out)."""
+        """Poll the entity and the device until both report ``target`` (or time runs out).
+
+        The entity is re-read on every pass (a device catching up doesn't freeze an
+        earlier entity reading), and every awaited step is bounded by what's left
+        of ``verify_wait``. At least one full attempt is always made.
+        """
         note("verifying")
         loop = asyncio.get_running_loop()
         deadline = loop.time() + verify_wait
         problem = "not verified"
         entity_ok = False
         refresh_error: str | None = None
+        attempted = False
         while True:
             rejected = rejection()
             if rejected:
                 return rejected, False
-            remaining = max(0.0, deadline - loop.time())
-            if not entity_ok:
-                checked = await self.check(entity_id, wait=min(remaining, RECHECK_SECONDS),
-                                           done=lambda u: u.installed_version == target)
-                after = checked.info
-                refresh_error = checked.refresh_error
-                result.installed_version = after.installed_version
-                entity_ok = (after.installed_version == target and not after.in_progress
-                             and after.state not in ("unavailable", "unknown"))
-            else:
-                await asyncio.sleep(self.poll_seconds)  # entity confirmed; only the device is lagging
-            device = await self.device_version(entity_id)
+            remaining = deadline - loop.time()
+            if attempted and remaining <= 0:
+                return problem, False
+            attempted = True
+            budget = max(remaining, 1.0)
+            try:
+                if entity_ok:
+                    # Already matched once: re-read (no fresh check needed) after a pause
+                    await asyncio.sleep(self.poll_seconds)
+                    after = await asyncio.wait_for(self.get(entity_id), timeout=budget)
+                else:
+                    checked = await asyncio.wait_for(
+                        self.check(entity_id, wait=min(budget, RECHECK_SECONDS), done=lambda u: u.installed_version == target),
+                        timeout=budget + 1.0)
+                    after = checked.info
+                    refresh_error = checked.refresh_error
+                device = await asyncio.wait_for(self.device_version(entity_id), timeout=max(deadline - loop.time(), 1.0))
+            except asyncio.TimeoutError:
+                problem = "verification ran out of time" if problem == "not verified" else problem
+                continue
+            result.installed_version = after.installed_version
+            entity_ok = (after.installed_version == target and not after.in_progress
+                         and after.state not in ("unavailable", "unknown"))
             result.device_sw_version = device.version
             if device.status == "ok":
                 device_ok = version_matches(device.version or "", target)
@@ -339,5 +377,3 @@ class UpdatesService:
                 problem = f"couldn't read the device's version: {device.error}"
             else:
                 problem = f"device reports sw_version {device.version!r}, not {target}"
-            if loop.time() >= deadline:
-                return problem, False

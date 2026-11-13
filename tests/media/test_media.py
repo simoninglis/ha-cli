@@ -38,7 +38,7 @@ class FakeHA:
     def __init__(self, initial: str = "idle", after_speak: list[str] | None = None,
                  speak_error: Exception | None = None, exists: bool = True,
                  snapshot: str | None = None, before_speak: list[str] | None = None,
-                 speak_delay: float = 0.0, stream_error: Exception | None = None) -> None:
+                 speak_delay: float = 0.0, stream_error: Exception | None = None, gap: float = 0.0) -> None:
         self.initial = initial
         self.snapshot = snapshot or initial          # what the subscription says (may differ from get_states)
         self.before_speak = before_speak or []       # transitions that happen before tts.speak is sent
@@ -46,6 +46,7 @@ class FakeHA:
         self.speak_error = speak_error
         self.speak_delay = speak_delay
         self.stream_error = stream_error
+        self.gap = gap  # pause between post-speak transitions
         self.exists = exists
         self.spoke = asyncio.Event()
         self.speak_calls: list[dict[str, Any]] = []
@@ -76,7 +77,7 @@ class FakeHA:
             yield {"c": {P: {"+": {"s": s}}}}
         await self.spoke.wait()
         for s in self.after_speak:
-            await asyncio.sleep(0)
+            await asyncio.sleep(self.gap)
             yield {"c": {P: {"+": {"s": s}}}}
         while True:
             await asyncio.sleep(3600)
@@ -146,6 +147,14 @@ def test_reply_timeout_after_playback_still_counts_as_played() -> None:
 def test_refusal_after_playback_started_still_counts_as_played() -> None:
     fake = FakeHA(speak_delay=0.05, speak_error=WebSocketError("home_assistant_error: late"))
     assert _run(fake).outcome == PLAYED
+
+
+def test_refusal_arriving_mid_playback_still_played() -> None:
+    # The reply lands while the player is still playing (before idle)
+    fake = FakeHA(speak_delay=0.15, gap=0.1, speak_error=WebSocketError("home_assistant_error: late"))
+    r = _run(fake)
+    assert r.outcome == PLAYED
+    assert r.finished_after_s is not None
 
 
 def test_stream_failure_is_watch_failed_not_not_played() -> None:

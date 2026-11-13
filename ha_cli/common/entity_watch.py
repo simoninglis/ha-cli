@@ -91,7 +91,9 @@ class StreamWatcher:
         """Stop reading and close the stream."""
         if self._task:
             self._task.cancel()
-            with suppress(asyncio.CancelledError, WebSocketError):
+            # The stream's error (if any) is surfaced by next(), normalised to
+            # WebSocketError; cleanup must not replace it with the raw exception
+            with suppress(asyncio.CancelledError, Exception):
                 await self._task
 
     def _raise_if_stopped(self) -> None:
