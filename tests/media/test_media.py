@@ -11,7 +11,16 @@ from typer.testing import CliRunner
 
 from ha_cli.common.exceptions import NotFoundError, ValidationError, WebSocketError
 from ha_cli.domains.media.cli import app
-from ha_cli.domains.media.models import BUSY, DISCONNECTED, NOT_PLAYED, PLAYED, REJECTED, UNAVAILABLE, TtsEngine
+from ha_cli.domains.media.models import (
+    BUSY,
+    DISCONNECTED,
+    NOT_PLAYED,
+    PLAYED,
+    REJECTED,
+    UNAVAILABLE,
+    WATCH_FAILED,
+    TtsEngine,
+)
 from ha_cli.domains.media.service import MediaService
 
 runner = CliRunner()
@@ -27,10 +36,16 @@ class FakeHA:
     """A player that runs through ``after_speak`` states once tts.speak is called."""
 
     def __init__(self, initial: str = "idle", after_speak: list[str] | None = None,
-                 speak_error: Exception | None = None, exists: bool = True) -> None:
+                 speak_error: Exception | None = None, exists: bool = True,
+                 snapshot: str | None = None, before_speak: list[str] | None = None,
+                 speak_delay: float = 0.0, stream_error: Exception | None = None) -> None:
         self.initial = initial
+        self.snapshot = snapshot or initial          # what the subscription says (may differ from get_states)
+        self.before_speak = before_speak or []       # transitions that happen before tts.speak is sent
         self.after_speak = after_speak if after_speak is not None else ["playing", "idle"]
         self.speak_error = speak_error
+        self.speak_delay = speak_delay
+        self.stream_error = stream_error
         self.exists = exists
         self.spoke = asyncio.Event()
         self.speak_calls: list[dict[str, Any]] = []
@@ -45,12 +60,20 @@ class FakeHA:
     async def call_service_ws(self, domain: str, service: str, **kwargs: Any) -> Any:
         assert (domain, service) == ("tts", "speak")
         self.speak_calls.append(kwargs)
+        if self.speak_error and not self.speak_delay:
+            raise self.speak_error  # refused outright: nothing plays
+        self.spoke.set()
+        if self.speak_delay:
+            await asyncio.sleep(self.speak_delay)
         if self.speak_error:
             raise self.speak_error
-        self.spoke.set()
 
     async def ws_stream(self, msg_type: str, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
-        yield {"a": {P: {"s": self.initial, "a": {}}}}
+        if self.stream_error:
+            raise self.stream_error
+        yield {"a": {P: {"s": self.snapshot, "a": {}}}}
+        for s in self.before_speak:
+            yield {"c": {P: {"+": {"s": s}}}}
         await self.spoke.wait()
         for s in self.after_speak:
             await asyncio.sleep(0)
@@ -100,6 +123,35 @@ def test_busy_unless_forced() -> None:
     fake = FakeHA(initial="playing")
     assert _run(fake).outcome == BUSY
     assert fake.speak_calls == []
+
+
+def test_playback_that_started_before_the_call_is_not_credited() -> None:
+    # Another source starts playing just before we speak; then nothing of ours plays
+    fake = FakeHA(before_speak=["playing", "idle"], after_speak=[])
+    r = _run(fake)
+    assert r.outcome == NOT_PLAYED
+
+
+def test_subscription_snapshot_overrides_stale_get_states() -> None:
+    fake = FakeHA(initial="idle", snapshot="playing")
+    assert _run(fake).outcome == BUSY
+    assert fake.speak_calls == []
+
+
+def test_reply_timeout_after_playback_still_counts_as_played() -> None:
+    fake = FakeHA(speak_delay=0.05, speak_error=WebSocketError("WebSocket call timed out after 30s"))
+    assert _run(fake).outcome == PLAYED
+
+
+def test_refusal_after_playback_started_still_counts_as_played() -> None:
+    fake = FakeHA(speak_delay=0.05, speak_error=WebSocketError("home_assistant_error: late"))
+    assert _run(fake).outcome == PLAYED
+
+
+def test_stream_failure_is_watch_failed_not_not_played() -> None:
+    r = _run(FakeHA(stream_error=WebSocketError("Connection closed: boom")))
+    assert r.outcome == WATCH_FAILED
+    assert "boom" in (r.problem or "")
 
 
 def test_rejected_call() -> None:

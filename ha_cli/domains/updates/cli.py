@@ -136,6 +136,8 @@ def check(
 ) -> None:
     """Ask an update entity to check now, and show what it reports.
 
+    Exits 3 if HA refuses the check or no version is reported within --wait.
+
     Examples:
         ha-cli updates check update.home_assistant_voice_09ebde
     """
@@ -149,15 +151,24 @@ def check(
         async with HAClient(url_final, token_final) as client:
             service = UpdatesService(client)
             try:
-                info = await service.check(entity_id, wait=wait)
+                checked = await service.check(entity_id, wait=wait)
             except (ValidationError, NotFoundError) as e:
                 _fail(formatter, str(e), "NOT_FOUND" if isinstance(e, NotFoundError) else "VALIDATION_ERROR")
                 return
+            info = checked.info
             sw = await service.device_sw_version(entity_id)
-            data = {**info.to_dict(), "device_sw_version": sw}
+            data = {**info.to_dict(), "device_sw_version": sw, "conclusive": checked.conclusive,
+                    "refresh_error": checked.refresh_error}
+            if checked.refresh_error:
+                _fail(formatter, f"HA refused the check: {checked.refresh_error}", "HA_ERROR", EXIT_HA_ERROR)
+                return
             if formatter:
-                write_output(formatter.success(data, metadata={
-                    "home_assistant": create_home_assistant_metadata(url_final, "websocket")}))
+                if checked.conclusive:
+                    write_output(formatter.success(data, metadata={
+                        "home_assistant": create_home_assistant_metadata(url_final, "websocket")}))
+                else:
+                    write_output(formatter.error(f"No version reported within {wait:g}s", error_code="INCONCLUSIVE",
+                                                 details=data))
             elif json_output:
                 write_output(json.dumps(data, indent=2))
             else:
@@ -169,6 +180,8 @@ def check(
                 if info.status == CHECK_FAILING:
                     console.print("[yellow]  Still no version after the check. If the device checks for itself, "
                                   "look at its own logs (DNS / internet access from its network).[/yellow]")
+            if not checked.conclusive:
+                sys.exit(EXIT_HA_ERROR)
 
     asyncio.run(run_async_command(_check(), command="updates check"))
 
@@ -194,12 +207,14 @@ def install(
     Examples:
         ha-cli updates install update.home_assistant_voice_09ebde
         ha-cli updates install update.home_assistant_voice_09ebde --yes --porcelain
+
+    If HA offers a different version by the time it runs, nothing is installed.
     """
     setup_logging(debug)
     set_porcelain_mode(porcelain)
     _check_flags(json_output, porcelain)
-    if porcelain and not yes:
-        console.print("[red]Error:[/red] --porcelain needs --yes: an install can restart the device, "
+    if (porcelain or json_output) and not yes:
+        console.print("[red]Error:[/red] --porcelain/--json need --yes: an install can restart the device, "
                       "so it never runs unconfirmed")
         sys.exit(EXIT_USAGE_ERROR)
 
@@ -242,8 +257,8 @@ def install(
                 console.print(f"  [{entry['t']:5.1f}s] {escape(entry['event'])}{escape(tail)}")
 
             try:
-                result = await service.install(entity_id, timeout=timeout, verify_wait=verify_wait,
-                                               on_change=progress)
+                result = await service.install(entity_id, expected_version=info.latest_version, timeout=timeout,
+                                               verify_wait=verify_wait, on_change=progress)
             except ValidationError as e:
                 _fail(formatter, str(e), "VALIDATION_ERROR")
                 return
@@ -265,7 +280,8 @@ def install(
                 if result.verified:
                     sw = f" (device: {result.device_sw_version})" if result.device_sw_version else ""
                     console.print(f"[green]Installed and confirmed:[/green] {escape(result.target_version)}"
-                                  f"{escape(sw)} in {result.duration_seconds:.0f}s")
+                                  f"{escape(sw)} in {result.duration_seconds:.0f}s"
+                                  f"  [dim]checked: {escape(result.verification or '?')}[/dim]")
                 else:
                     console.print(f"[red]Not confirmed:[/red] {escape(result.problem or 'unknown')}")
                     sys.exit(EXIT_HA_ERROR)

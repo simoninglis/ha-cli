@@ -9,6 +9,7 @@ DISCONNECTED = "disconnected"  # the player dropped off mid-test (e.g. an ESPHom
 UNAVAILABLE = "unavailable"  # unavailable before we started
 BUSY = "busy"                # already playing: a result would be meaningless
 REJECTED = "rejected"        # HA refused the tts.speak call
+WATCH_FAILED = "watch_failed"  # lost HA's state stream: no evidence either way
 
 OUTCOME_LABELS = {
     PLAYED: "PLAYED",
@@ -17,6 +18,7 @@ OUTCOME_LABELS = {
     UNAVAILABLE: "UNAVAILABLE",
     BUSY: "BUSY (already playing; use --force to interrupt)",
     REJECTED: "REJECTED",
+    WATCH_FAILED: "UNKNOWN (lost the connection to HA while watching)",
 }
 
 

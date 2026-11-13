@@ -2,13 +2,23 @@
 
 import asyncio
 import logging
-from contextlib import aclosing, suppress
+from contextlib import suppress
 from typing import Any
 
 from ...common.client import HAClient
-from ...common.entity_watch import EntityTracker
+from ...common.entity_watch import EntityTracker, StreamWatcher
 from ...common.exceptions import NotFoundError, ValidationError, WebSocketError
-from .models import BUSY, DISCONNECTED, NOT_PLAYED, PLAYED, REJECTED, UNAVAILABLE, TtsEngine, TtsTestResult
+from .models import (
+    BUSY,
+    DISCONNECTED,
+    NOT_PLAYED,
+    PLAYED,
+    REJECTED,
+    UNAVAILABLE,
+    WATCH_FAILED,
+    TtsEngine,
+    TtsTestResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,12 +84,17 @@ class MediaService:
         Voice PE pulls it from HA's internal URL, which an IoT firewall can block),
         so the only evidence is the player's own state.
 
+        Attribution: the subscription is open before the call, busy/offline are
+        judged from its snapshot immediately before speaking, and only a
+        transition seen *after* the call is issued counts. State alone can't tell
+        our clip from another source starting at the same moment.
+
         Raises:
             ValidationError / NotFoundError: For a bad player id
         """
         if not player.startswith("media_player."):
             raise ValidationError(f"{player} is not a media player (media_player.*)")
-        initial = await self._player_state(player)
+        await self._player_state(player)  # existence, with near-miss suggestions
         result = TtsTestResult(player=player, outcome=NOT_PLAYED, engine=engine.engine)
         loop = asyncio.get_running_loop()
         start = loop.time()
@@ -87,68 +102,78 @@ class MediaService:
         def note(what: str, **extra: Any) -> None:
             result.timeline.append({"t": round(loop.time() - start, 2), "event": what, **extra})
 
-        state0 = str(initial.get("state"))
-        note("initial", state=state0)
-        if state0 in OFFLINE:
-            result.outcome = UNAVAILABLE
-            return result
-        if state0 in STARTED and not force:
-            result.outcome = BUSY
-            return result
-
         tracker = EntityTracker()
-        events: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        stream = self.client.ws_stream("subscribe_entities", entity_ids=[player])
-
-        async def pump() -> None:
-            # aclosing: cancelling the pump must close the stream (unsubscribe) even
-            # when the cancel lands outside the generator
-            async with aclosing(stream):
-                async for ev in stream:
-                    await events.put(ev)
-
-        pump_task = asyncio.create_task(pump())
+        speak: asyncio.Task[Any] | None = None
         try:
-            tracker.apply(await asyncio.wait_for(events.get(), timeout=30))
-            data: dict[str, Any] = {"media_player_entity_id": player, "message": message}
-            if engine.language:
-                data["language"] = engine.language
-            if engine.voice:
-                data["options"] = {"voice": engine.voice}
-            try:
-                await self.client.call_service_ws("tts", "speak", target={"entity_id": engine.engine}, service_data=data)
-            except WebSocketError as e:
-                result.outcome = REJECTED
-                result.problem = str(e)
-                return result
-            note("tts.speak accepted")
+            async with StreamWatcher(self.client.ws_stream("subscribe_entities", entity_ids=[player])) as watch:
+                first = await watch.next(timeout=30)
+                if first is None:
+                    raise WebSocketError("No initial state from subscribe_entities within 30s")
+                tracker.apply(first)
+                # Observation boundary: everything received so far is "before"
+                for ev in watch.drain():
+                    tracker.apply(ev)
+                state0 = tracker.get(player).state
+                note("before", state=state0)
+                if state0 in OFFLINE or state0 is None:
+                    result.outcome = UNAVAILABLE
+                    return result
+                if state0 in STARTED and not force:
+                    result.outcome = BUSY
+                    return result
 
-            last = tracker.get(player).state
-            deadline = loop.time() + timeout
-            while loop.time() < deadline:
-                try:
-                    tracker.apply(await asyncio.wait_for(events.get(), timeout=self.poll_seconds))
-                except asyncio.TimeoutError:
-                    continue
-                state = tracker.get(player).state
-                if state == last:
-                    continue
-                last = state
-                note("state", state=state)
-                if state in OFFLINE:
-                    result.outcome = DISCONNECTED
-                    result.problem = "player went unavailable before it finished"
-                    return result
-                if state in STARTED and result.started_after_s is None:
-                    result.started_after_s = round(loop.time() - start, 2)
-                    result.outcome = PLAYED
-                elif state in FINISHED and result.started_after_s is not None:
-                    result.finished_after_s = round(loop.time() - start, 2)
-                    return result
-            if result.outcome == NOT_PLAYED:
-                result.problem = f"never reached playing within {timeout:g}s"
+                data: dict[str, Any] = {"media_player_entity_id": player, "message": message}
+                if engine.language:
+                    data["language"] = engine.language
+                if engine.voice:
+                    data["options"] = {"voice": engine.voice}
+                speak = asyncio.create_task(self.client.call_service_ws(
+                    "tts", "speak", target={"entity_id": engine.engine}, service_data=data))
+                note("tts.speak sent")
+
+                last: str | None = state0
+                deadline = loop.time() + timeout
+                while True:
+                    if speak.done() and not speak.cancelled():
+                        exc = speak.exception()
+                        # A transport timeout says nothing about playback; a refusal does,
+                        # unless the player has already demonstrably started
+                        if exc and "timed out" not in str(exc) and result.started_after_s is None:
+                            result.outcome = REJECTED
+                            result.problem = str(exc)
+                            return result
+                    if loop.time() >= deadline:
+                        break
+                    event = await watch.next(timeout=min(self.poll_seconds, max(0.0, deadline - loop.time())))
+                    if event is None:
+                        continue
+                    tracker.apply(event)
+                    state = tracker.get(player).state
+                    if state == last:
+                        continue
+                    last = state
+                    note("state", state=state)
+                    if state in OFFLINE:
+                        result.outcome = DISCONNECTED
+                        result.problem = "player went unavailable before it finished"
+                        return result
+                    if state in STARTED and result.started_after_s is None:
+                        result.started_after_s = round(loop.time() - start, 2)
+                        result.outcome = PLAYED
+                    elif state in FINISHED and result.started_after_s is not None:
+                        result.finished_after_s = round(loop.time() - start, 2)
+                        return result
+                if result.outcome == NOT_PLAYED:
+                    result.problem = f"never reached playing within {timeout:g}s of the call"
+                return result
+        except WebSocketError as e:
+            if result.outcome != PLAYED:
+                result.outcome = WATCH_FAILED
+            result.problem = f"lost the player's state stream: {e}"
             return result
         finally:
-            pump_task.cancel()
-            with suppress(asyncio.CancelledError, WebSocketError):
-                await pump_task
+            if speak and not speak.done():
+                speak.cancel()
+            if speak:
+                with suppress(asyncio.CancelledError, WebSocketError):
+                    await speak

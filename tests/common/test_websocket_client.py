@@ -13,6 +13,17 @@ from ha_cli.common.client import HAClient
 from ha_cli.common.exceptions import AuthenticationError, TimeoutError, WebSocketError
 
 
+def _script_then_block(messages):
+    """recv() side effect: the scripted messages, then wait (as a live socket would)."""
+    queue = list(messages)
+
+    async def recv():
+        if queue:
+            return queue.pop(0)
+        await asyncio.sleep(3600)
+    return recv
+
+
 class TestWebSocketClient:
     """Test WebSocket client functionality."""
     
@@ -281,13 +292,13 @@ class TestWebSocketClient:
     @pytest.mark.parametrize("unsubscribe", [True, False])
     async def test_ws_stream_yields_events_and_unsubscribes_only_when_asked(self, client, mock_websocket, unsubscribe):
         """ws_stream sends the command with its fields, yields events, and cleans up."""
-        mock_websocket.recv.side_effect = [
+        mock_websocket.recv.side_effect = _script_then_block([
             json.dumps({"type": "auth_required"}),
             json.dumps({"type": "auth_ok"}),
             json.dumps({"id": 1, "type": "result", "success": True, "result": None}),
             json.dumps({"id": 1, "type": "event", "event": {"type": "run-start"}}),
             json.dumps({"id": 1, "type": "event", "event": {"type": "run-end"}}),
-        ]
+        ])
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             seen = []
             stream = client.ws_stream("assist_pipeline/run", unsubscribe=unsubscribe, input={"text": "hi"})
@@ -307,12 +318,12 @@ class TestWebSocketClient:
     @pytest.mark.asyncio
     async def test_ws_stream_rejected_command_raises(self, client, mock_websocket):
         """A failed result is an error, never an empty stream."""
-        mock_websocket.recv.side_effect = [
+        mock_websocket.recv.side_effect = _script_then_block([
             json.dumps({"type": "auth_required"}),
             json.dumps({"type": "auth_ok"}),
             json.dumps({"id": 1, "type": "result", "success": False,
                         "error": {"code": "unknown_command", "message": "Unknown command."}}),
-        ]
+        ])
         with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_websocket):
             with pytest.raises(WebSocketError, match="unknown_command"):
                 async for _ in client.ws_stream("nope/nope"):

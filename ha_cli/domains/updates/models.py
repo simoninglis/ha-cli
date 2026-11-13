@@ -96,6 +96,7 @@ class InstallResult:
     installed_version: str = ""
     device_sw_version: str | None = None
     verified: bool = False
+    verification: str | None = None  # what was checked: "entity and device", "entity only (...)"
     rebooted: bool = False
     offline_seconds: float | None = None
     duration_seconds: float = 0.0
