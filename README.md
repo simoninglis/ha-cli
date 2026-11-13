@@ -102,7 +102,9 @@ ha-cli integrations setup <domain> --data-file form.json   # secrets: argv is vi
   an LLM), the reply and timings. **`assist ask`** sends phrases to one agent.
   Both run for real and confirm first.
 - **`updates install`** watches an install through the device restart and only
-  reports success once the entity and the device both report the new version.
+  reports success once the entity and the device both report the new version
+  (entity only when it has no device, or its device reports no version: the
+  result says which was checked).
   `updates list` flags entities that report no version at all: their own update
   check is failing.
 - **`media tts-test`** speaks a short clip and passes only if the player reached
