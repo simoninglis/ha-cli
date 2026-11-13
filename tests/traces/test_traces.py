@@ -29,6 +29,8 @@ STATES = [
     # A's id is "clash"; B's entity_id is automation.clash
     {"entity_id": "automation.alpha", "attributes": {"id": "clash"}},
     {"entity_id": "automation.clash", "attributes": {"id": "beta_id"}},
+    {"entity_id": "automation.dup_a", "attributes": {"id": "dup"}},
+    {"entity_id": "automation.dup_b", "attributes": {"id": "dup"}},
     {"entity_id": "script.office_pc_lock", "attributes": {}},
     {"entity_id": "light.office", "attributes": {}},
 ]
@@ -154,6 +156,8 @@ def test_resolve_script() -> None:
     ("automation.no_id_ui_thing", NotFoundError),
     ("automation.None", NotFoundError),       # a missing id must not become the string "None"
     ("automation.clash", ValidationError),    # A's id and B's entity_id: refuse, don't guess
+    ("automation.dup", ValidationError),      # two automations share the id
+    ("automation.dup_a", ValidationError),    # ...also when found through an entity_id
     ("automation:office_ble_away_signal_lock_pc_shorten_timer", NotFoundError),  # ':' means id only
     ("light.office", ValidationError),
     ("office_pc_lock", ValidationError),
@@ -350,6 +354,30 @@ def test_around_reports_unreadable_responses_instead_of_dropping_them() -> None:
     assert [r["run_id"] for r in result.unreadable] == ["r1"]
 
 
+@pytest.mark.parametrize("payload", [
+    {},                                                            # would show as a run of "."
+    {"run_id": "r1", "domain": "automation", "item_id": "a"},      # no timestamp
+    {"run_id": "other", "domain": "automation", "item_id": "a", "timestamp": {"start": "2026-11-13T04:18:08+00:00"}},
+    {"run_id": "r1", "domain": "automation", "item_id": "a", "timestamp": {"start": "2026-11-13T04:18:08+00:00"},
+     "trace": ["not", "a", "mapping"]},
+    {"run_id": "r1", "domain": "automation", "item_id": "a", "timestamp": {"start": "2026-11-13T04:18:08+00:00"},
+     "trace": {"action/0": [{"changed_variables": "garbage"}]}},
+])
+def test_around_treats_malformed_details_as_unreadable(payload: dict[str, Any]) -> None:
+    runs = [_run("automation", "a", "r1", "2026-11-13T04:18:08+00:00")]
+    result = asyncio.run(svc(FakeHA(runs=runs, details={"r1": payload})).around(
+        parse_when("2026-11-13 14:18:09", BNE), timedelta(seconds=30), ("automation",)))
+    assert result.chains == []
+    assert [r["run_id"] for r in result.unreadable] == ["r1"]
+
+
+def test_get_refuses_a_malformed_detail() -> None:
+    a = FIX["list_ble"][0]
+    with pytest.raises(ValidationError):
+        asyncio.run(svc(FakeHA(details={a["run_id"]: {}})).get("automation.office_ble_away_signal",
+                                                                run_id=a["run_id"]))
+
+
 def test_around_dedupes_domains() -> None:
     runs = [_run("automation", "a", "r1", "2026-11-13T04:18:08+00:00")]
     fake = FakeHA(runs=runs, details={"r1": _detail(runs[0], "C1")})
@@ -444,6 +472,34 @@ def test_cli_around_says_why_the_window_is_empty() -> None:
     assert "rolled off while reading" in unread
     nothing = flat(invoke(FakeHA(runs=[], details={}), args).output)
     assert "No stored runs start in this window" in nothing
+
+
+def test_cli_around_mixed_hidden_and_unreadable_does_not_say_only() -> None:
+    stopped = _run("automation", "tick", "r2", "2026-11-13T04:18:09+00:00", execution="failed_conditions")
+    gone = _run("automation", "a", "r3", "2026-11-13T04:18:10+00:00")
+    out = flat(invoke(FakeHA(runs=[stopped, gone], details={"r2": _detail(stopped, "C2")}),
+                      ["around", "2026-11-13 14:18:09", "--window", "30s", "--domain", "automation"]).output)
+    assert "Only runs" not in out
+    assert "1 run(s) stopped at their conditions" in out
+    assert "1 couldn't be read" in out
+
+
+def test_cli_around_labels_group_members_and_dates_another_day() -> None:
+    head = _run("automation", "a", "r1", "2026-11-12T04:18:08+00:00")
+    same = _run("script", "s", "r2", "2026-11-12T04:18:09+00:00")
+    caused = _run("automation", "b", "r3", "2026-11-12T04:18:10+00:00")
+    fake = FakeHA(runs=[head, same, caused], details={
+        "r1": _detail(head, "C1"), "r2": _detail(same, "C1"), "r3": _detail(caused, "C3", "C1")})
+    out = flat(invoke(fake, ["around", "2026-11-12 14:18:09", "--window", "30s", "--brief"]).output)
+    assert "context group of 3 runs" in out
+    assert "↳ same context 2026-11-12 14:18:09.000" in out
+    assert "⇢ caused by the group 2026-11-12 14:18:10.000" in out
+
+
+def test_cli_show_labels_utc_when_zone_unknown() -> None:
+    out = flat(invoke(FakeHA(tz="Not/AZone"), ["show", "automation.office_ble_away_signal",
+                                               "3e31a971938a313193e7b25ac641d64b"]).output)
+    assert "Times in UTC: HA's time zone couldn't be read" in out
 
 
 def test_cli_show_at_reports_distance() -> None:

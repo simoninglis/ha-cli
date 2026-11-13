@@ -180,10 +180,16 @@ class TracesService:
             value = (s.get("attributes") or {}).get("id")
             return str(value) if value not in (None, "") else None
 
+        def unique(item_id: str) -> None:
+            # Whichever way it was found, the trace key must name one automation
+            holders = [str(s.get("entity_id")) for s in mine if yaml_id(s) == item_id]
+            if len(holders) > 1:
+                raise ValidationError(f"{len(holders)} automations have id {item_id!r}, so their traces "
+                                      f"are mixed: {', '.join(holders)}")
+
         by_id = [s for s in mine if yaml_id(s) == name]
         if len(by_id) > 1:
-            raise ValidationError(f"{len(by_id)} automations have id {name!r}: "
-                                  + ", ".join(str(s.get("entity_id")) for s in by_id))
+            unique(name)
         by_entity = [] if by_id_only else [s for s in mine if s.get("entity_id") == f"automation.{name}"]
         if by_entity and by_id and by_entity[0] is not by_id[0]:
             other = by_entity[0]
@@ -197,6 +203,7 @@ class TracesService:
             item_id = yaml_id(by_entity[0])
             if item_id is None:
                 raise NotFoundError(f"automation.{name} has no id: attribute, so HA keeps no traces for it")
+            unique(item_id)
             return domain, item_id, f"automation.{name}"
         raise NotFoundError(f"No automation with {'id' if by_id_only else 'entity_id or id'} {name!r}")
 
@@ -245,9 +252,10 @@ class TracesService:
             if "not_found" in str(e):
                 raise NotFoundError(f"No run {run_id!r} stored for {domain}.{item_id}") from e
             raise
-        if not isinstance(data, dict):
-            raise ValidationError("Unexpected trace/get response")
-        return TraceDetail.from_dict(data)
+        detail = read_detail(data, run_id)
+        if detail is None:
+            raise ValidationError(f"Unreadable trace/get response for {domain}.{item_id} run {run_id}")
+        return detail
 
     async def around(self, center: datetime, window: timedelta,
                      domains: tuple[str, ...] = DOMAINS) -> AroundResult:
@@ -291,12 +299,33 @@ class TracesService:
                 result.rolled_off.append(ref)  # dropped between trace/list and trace/get
             elif isinstance(d, BaseException):
                 raise d
-            elif isinstance(d, dict):
-                parsed.append(TraceDetail.from_dict(d))
             else:
-                result.unreadable.append(ref)
+                detail = read_detail(d, run.run_id)
+                if detail is None:
+                    result.unreadable.append(ref)
+                else:
+                    parsed.append(detail)
         result.chains = group_chains(parsed)
         return result
+
+
+def read_detail(data: Any, run_id: str) -> TraceDetail | None:
+    """A trace/get payload as a TraceDetail, or None if it isn't one for ``run_id``.
+
+    A payload that parses but lacks the run's identity (``{}`` would show as
+    a run of ".") or names a different run is unusable, not a run.
+    """
+    if not isinstance(data, dict):
+        return None
+    if data.get("run_id") != run_id or not data.get("domain") or not data.get("item_id"):
+        return None
+    if not isinstance(data.get("timestamp"), dict) or not isinstance(data.get("trace", {}), dict):
+        return None
+    try:
+        detail = TraceDetail.from_dict(data)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return detail if detail.run.start is not None else None
 
 
 def _distance(run: TraceRun, at: datetime) -> float:

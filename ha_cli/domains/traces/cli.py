@@ -252,6 +252,7 @@ def show(
             elif json_output:
                 write_output(json.dumps(data, indent=2, default=str))
             else:
+                console.print(f"[dim]Times in {escape(_zone_label(tz))}[/dim]")
                 if when is not None and distance is not None:
                     far = abs(distance) > FAR_SECONDS
                     note = f"nearest stored run to {_clock(when, tz, date=True)}: {distance:+.1f}s"
@@ -284,11 +285,15 @@ def _print_around(result: AroundResult, tz: tzinfo | None, brief: bool, center: 
                     console.print(f"    [dim]{rel}[/dim]")
                 _print_detail(d, tz, indent="    " if rel else "")
     console.print()
+    unread = len(result.rolled_off) + len(result.unreadable)
     if not result.chains:
-        if result.hidden_failed_conditions:
+        if result.hidden_failed_conditions and unread:
+            console.print(f"[yellow]Nothing to show: {result.hidden_failed_conditions} run(s) stopped at their "
+                          f"conditions (--all shows them) and {unread} couldn't be read (see below)[/yellow]")
+        elif result.hidden_failed_conditions:
             console.print(f"[yellow]Only runs that stopped at their conditions are in this window "
                           f"({result.hidden_failed_conditions}): --all shows them[/yellow]")
-        elif result.rolled_off or result.unreadable:
+        elif unread:
             console.print("[yellow]Runs were in this window, but none could be read (see below)[/yellow]")
         else:
             console.print("[yellow]No stored runs start in this window[/yellow]")
