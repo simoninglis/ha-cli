@@ -7,6 +7,7 @@ refused check and a failing state stream.
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import patch
@@ -49,7 +50,8 @@ class FakeHA:
                  refresh_error: Exception | None = None, stream_error: Exception | None = None,
                  snapshot: dict[str, Any] | None = None, device_lag: int = 0,
                  device_before: str = "25.11.0 (ESPHome 2025.11.0)", device_delay: float = 0.0,
-                 revert_to: dict[str, Any] | None = None, entity_entry: Any = "DEFAULT") -> None:
+                 revert_to: dict[str, Any] | None = None, entity_entry: Any = "DEFAULT",
+                 device_block: float = 0.0) -> None:
         self.current = initial
         self.snapshot = snapshot
         self.script = script or []
@@ -64,6 +66,7 @@ class FakeHA:
         self.device_delay = device_delay
         self.revert_to = revert_to      # entity state to switch to while the device lags
         self.entity_entry = entity_entry
+        self.device_block = device_block  # blocks the event loop (wait_for can't pre-empt it)
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
         self.installed = asyncio.Event()
         self.unsubscribed = False
@@ -80,6 +83,8 @@ class FakeHA:
         if msg_type == "config/device_registry/list":
             if self.device_delay:
                 await asyncio.sleep(self.device_delay)
+            if self.device_block:
+                time.sleep(self.device_block)
             if self.device_lag > 0:
                 self.device_lag -= 1
                 if self.revert_to:
@@ -335,6 +340,16 @@ class TestInstall:
         r = install(FakeHA(ustate("on"), VOICE_SCRIPT, after_check=DONE, device_delay=10), verify_wait=0.2)
         assert not r.verified
         assert self._verify_seconds(r) < 1.3
+
+    def test_matching_answer_after_the_deadline_does_not_count(self) -> None:
+        r = install(FakeHA(ustate("on"), VOICE_SCRIPT, after_check=DONE, device_block=1.1), verify_wait=0.2)
+        assert not r.verified
+
+    def test_minimum_budget_gets_an_attempt_at_production_poll(self) -> None:
+        # Real 2 s poll interval, verify_wait under the 1 s minimum: still verifies
+        fake = FakeHA(ustate("on"), VOICE_SCRIPT, after_check=DONE)
+        r = asyncio.run(UpdatesService(fake).install(EID, timeout=30, verify_wait=0.2))  # type: ignore[arg-type]
+        assert r.verified, r.problem
 
     def test_lagging_device_after_entity_matched_respects_deadline(self) -> None:
         # The entity-matched branch pauses between reads: that pause is bounded too,

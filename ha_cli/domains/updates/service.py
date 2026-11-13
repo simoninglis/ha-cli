@@ -156,7 +156,8 @@ class UpdatesService:
                         return CheckResult(info=info, conclusive=False, refresh_error=str(e))
                     logger.debug(f"update_entity on {entity_id}: {e}")
                 next_request = loop.time() + RECHECK_SECONDS
-            await asyncio.sleep(self.poll_seconds)
+            # Never pause past the wait: a short check must still get its re-read
+            await asyncio.sleep(min(self.poll_seconds, max(0.0, deadline - loop.time())))
             info = await self.get(entity_id)
             if done(info):
                 return CheckResult(info=info, conclusive=True)
@@ -362,6 +363,10 @@ class UpdatesService:
                     return problem, False
                 device = await asyncio.wait_for(self.device_version(entity_id), timeout=left())
             except asyncio.TimeoutError:
+                return ("verification ran out of time" if problem == "not verified" else problem), False
+            if left() < 0:
+                # A read can complete after the deadline (wait_for can't pre-empt a
+                # blocked loop): a late answer doesn't count
                 return ("verification ran out of time" if problem == "not verified" else problem), False
             result.installed_version = after.installed_version
             entity_ok = (after.installed_version == target and not after.in_progress
